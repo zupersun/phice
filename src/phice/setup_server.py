@@ -9,8 +9,8 @@ import io
 import json
 import logging
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
 
 import qrcode
 import qrcode.image.svg as qrsvg
@@ -29,7 +29,8 @@ def qr_svg(data: str) -> str:
 
 
 SETUP_CSS = """
-body{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:0;padding:28px;background:#0b0f14;color:#e8eef5}
+body{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:0;padding:28px;
+     background:#0b0f14;color:#e8eef5}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 6px}
 .cols{display:flex;flex-wrap:wrap;gap:28px;margin-top:18px}
 .card{background:#121820;border:1px solid #222c37;border-radius:14px;padding:18px;max-width:330px}
@@ -76,7 +77,8 @@ def setup_html(ca_url: str, pair_url: str, show_ca: bool) -> str:
 class SetupServer:
     """Threaded HTTP server. Loopback-only routes are enforced per request."""
 
-    def __init__(self, port: int, ca_der: Callable[[], bytes], urls: Callable[[], tuple[str, str, bool]],
+    def __init__(self, port: int, ca_der: Callable[[], bytes],
+                 urls: Callable[[], tuple[str, str, bool]],
                  debug_cursor: Callable[[], dict] | None = None):
         self.port = port
         self._ca_der = ca_der

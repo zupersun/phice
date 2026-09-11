@@ -100,7 +100,7 @@ class PointerConfig:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Any) -> "PointerConfig":
+    def from_dict(cls, d: Any) -> PointerConfig:
         if not isinstance(d, dict):
             raise ConfigError("pointer.json must contain an object")
         oe = _sub(d, "one_euro")
@@ -226,7 +226,8 @@ def parse_layout(d: Any) -> Layout:
         if not isinstance(label, str) or len(label) > 32:
             raise ConfigError(f"buttons[{i}].label: expected string <= 32 chars")
         icon = b.get("icon")
-        if icon is not None and (not isinstance(icon, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", icon)
+        if icon is not None and (not isinstance(icon, str)
+                                 or not re.fullmatch(r"[A-Za-z0-9_./-]+", icon)
                                  or ".." in icon):
             raise ConfigError(f"buttons[{i}].icon: expected a relative path under assets/")
         css_class = b.get("class", "")

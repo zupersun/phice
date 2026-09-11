@@ -2,8 +2,15 @@ import json
 
 import pytest
 
-from phice.protocol import (Bye, Hello, Ping, ProtocolError, SensorPacket, parse_client_message,
-                            state_message)
+from phice.protocol import (
+    Bye,
+    Hello,
+    Ping,
+    ProtocolError,
+    SensorPacket,
+    parse_client_message,
+    state_message,
+)
 
 
 def packet(**over):
@@ -57,7 +64,8 @@ def test_rejects_large_frames_and_bad_json():
 
 
 def test_hello_ping_bye():
-    h = parse_client_message(json.dumps({"t": "hello", "ver": 1, "pair": "abcdefghij", "name": "iPhone"}))
+    h = parse_client_message(json.dumps(
+        {"t": "hello", "ver": 1, "pair": "abcdefghij", "name": "iPhone"}))
     assert isinstance(h, Hello) and h.pair == "abcdefghij" and h.token is None
     with pytest.raises(ProtocolError):
         parse_client_message(json.dumps({"t": "hello", "ver": 2}))

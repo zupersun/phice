@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
-from typing import Callable
+from enum import StrEnum
 
 from .config import PointerConfig
 from .cursor_backend import CursorBackend, clamp_to_displays, display_containing
@@ -19,7 +19,7 @@ from .orientation import wrap180, yaw_pitch
 from .protocol import SensorPacket
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     DISCONNECTED = "disconnected"
     OFF = "off"
     ON = "on"
@@ -126,7 +126,8 @@ class PointerEngine:
     def recenter_progress(self, now: float | None = None) -> float:
         if self._phase == Phase.RECENTER_HOLD:
             now = self._clock() if now is None else now
-            return max(0.0, min(1.0, (now - self._hold_started) / (self._cfg.recenter_hold_ms / 1000.0)))
+            hold_s = self._cfg.recenter_hold_ms / 1000.0
+            return max(0.0, min(1.0, (now - self._hold_started) / hold_s))
         return 1.0 if self._phase == Phase.RECENTER_HELD else 0.0
 
     def snapshot(self) -> Snapshot:
@@ -362,7 +363,8 @@ class PointerEngine:
         tx, ty = clamp_to_displays(displays, bx + ix, by + iy, current)
         if (tx, ty) == (bx, by):
             return  # pinned at an edge: overshoot is discarded (edge drag)
-        held = "left" if self._clicks["left"].down else ("right" if self._clicks["right"].down else None)
+        held = ("left" if self._clicks["left"].down
+                else "right" if self._clicks["right"].down else None)
         if held:
             self._backend.drag_to(tx, ty, held)  # type: ignore[arg-type]
         else:
@@ -406,7 +408,8 @@ class PointerEngine:
         else:
             self._rest_since = None
         if cfg.auto_activate and self._enabled and self._phase == Phase.OFF and self._pickup_armed \
-                and self._pickup_since is not None and now - self._pickup_since >= cfg.pickup_ms / 1000.0:
+                and self._pickup_since is not None \
+                and now - self._pickup_since >= cfg.pickup_ms / 1000.0:
             self._power_on(now)
 
     # ----- misc -------------------------------------------------------------

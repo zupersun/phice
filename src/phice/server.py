@@ -15,13 +15,24 @@ from websockets.datastructures import Headers
 from websockets.http11 import Response
 
 from .certs import CertPaths, san_names
-from .config import Layout, PointerConfig, parse_layout
+from .config import Layout, PointerConfig
 from .engine import PointerEngine
 from .pairing import PairingManager
 from .paths import WEB_DIR, Paths
-from .protocol import (Bye, Hello, Ping, ProtocolError, SensorPacket, err_message, layout_message,
-                       parse_client_message, pong_message, state_message, theme_changed_message,
-                       welcome_message)
+from .protocol import (
+    Bye,
+    Hello,
+    Ping,
+    ProtocolError,
+    SensorPacket,
+    err_message,
+    layout_message,
+    parse_client_message,
+    pong_message,
+    state_message,
+    theme_changed_message,
+    welcome_message,
+)
 
 log = logging.getLogger("phice.server")
 
@@ -98,12 +109,14 @@ class PhiceServer:
                 return _resp(HTTPStatus.FORBIDDEN, b"bad origin", "text/plain")
             return None  # let the upgrade proceed
         if path in ("/", "/index.html"):
-            return _resp(HTTPStatus.OK, (WEB_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
+            return _resp(HTTPStatus.OK, (WEB_DIR / "index.html").read_bytes(),
+                         "text/html; charset=utf-8")
         if path == "/app.js":
             return _resp(HTTPStatus.OK, (WEB_DIR / "app.js").read_bytes(),
                          "application/javascript; charset=utf-8")
         if path == "/theme.css":
-            return _resp(HTTPStatus.OK, self.state.paths.theme_css.read_bytes(), "text/css; charset=utf-8")
+            return _resp(HTTPStatus.OK, self.state.paths.theme_css.read_bytes(),
+                         "text/css; charset=utf-8")
         if path == "/layout.json":
             return _resp(HTTPStatus.OK, self.state.paths.layout_json.read_bytes(), "application/json")
         if path.startswith("/assets/"):
@@ -120,7 +133,7 @@ class PhiceServer:
         st = self.state
         try:
             first = await asyncio.wait_for(conn.recv(), timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
+        except (TimeoutError, Exception):
             return
         try:
             msg = parse_client_message(first if isinstance(first, str) else first.decode())

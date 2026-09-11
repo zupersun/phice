@@ -4,8 +4,14 @@ import time
 
 import pytest
 
-from phice.config import (ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config,
-                          parse_layout)
+from phice.config import (
+    ConfigError,
+    FileWatcher,
+    PointerConfig,
+    load_layout,
+    load_pointer_config,
+    parse_layout,
+)
 from phice.paths import DEFAULTS_DIR, Paths
 
 

@@ -160,7 +160,7 @@ def debug_cursor(http_port: int) -> dict:
 
 
 async def replay(phone: FakePhone, path: Path) -> None:
-    records = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    records = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
     if not records:
         return
     t0 = records[0]["rx"]

@@ -6,9 +6,9 @@ import hmac
 import json
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 PAIR_TTL_S = 600.0
 MAX_DEVICES = 16

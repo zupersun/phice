@@ -59,7 +59,7 @@ def analyse(path: Path, config: PointerConfig) -> dict:
     cursor = FakeCursor()
     engine = PointerEngine(config, cursor, clock)
     engine.connected()
-    records = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    records = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
     if not records:
         return {"packets": 0}
     t0 = records[0]["rx"]

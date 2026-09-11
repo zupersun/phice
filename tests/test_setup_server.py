@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 
 import pytest
@@ -50,7 +51,7 @@ def test_setup_page_hides_ca_card_when_external_certs():
 
 def test_help_page_and_404(setup):
     assert get(setup, "/help")[0] == 200
-    with pytest.raises(Exception):
+    with pytest.raises(urllib.error.HTTPError):
         get(setup, "/nope")
 
 

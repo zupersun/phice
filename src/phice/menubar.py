@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import subprocess
 import webbrowser
-from pathlib import Path
 
 import rumps
 
@@ -22,8 +21,7 @@ ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
 
 def accessibility_trusted(prompt: bool = False) -> bool:
     try:
-        from ApplicationServices import (AXIsProcessTrustedWithOptions,
-                                         kAXTrustedCheckOptionPrompt)
+        from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
         return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: prompt}))
     except Exception:
         log.warning("could not query Accessibility trust", exc_info=True)

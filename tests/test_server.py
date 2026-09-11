@@ -4,7 +4,7 @@ import json
 
 import pytest
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 pytestmark = pytest.mark.asyncio
 
@@ -73,7 +73,7 @@ async def test_unpaired_connection_is_rejected(rig, client_ssl):
 async def test_bad_origin_rejected(rig, client_ssl):
     port = await start(rig)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(InvalidHandshake):
             await connect(f"wss://localhost:{port}/ws", ssl=client_ssl,
                           additional_headers={"Origin": "https://evil.example"})
     finally:

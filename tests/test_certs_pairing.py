@@ -1,10 +1,16 @@
 import datetime as dt
 
-import pytest
 from cryptography import x509
 
-from phice.certs import (CertPaths, ca_der, ensure_ca, ensure_server_cert, local_hostname,
-                            san_names, server_cert_is_current)
+from phice.certs import (
+    CertPaths,
+    ca_der,
+    ensure_ca,
+    ensure_server_cert,
+    local_hostname,
+    san_names,
+    server_cert_is_current,
+)
 from phice.pairing import PairingManager
 
 

@@ -67,7 +67,7 @@ class CertPaths:
     server_crt: Path
 
     @classmethod
-    def under(cls, d: Path) -> "CertPaths":
+    def under(cls, d: Path) -> CertPaths:
         return cls(d / "ca.key", d / "ca.crt", d / "server.key", d / "server.crt")
 
 
@@ -89,7 +89,7 @@ def ensure_ca(paths: CertPaths, host: str) -> x509.Certificate:
     key = ec.generate_private_key(ec.SECP256R1())
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Phice Local CA ({host})"),
                       x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Phice")])
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     cert = (x509.CertificateBuilder()
             .subject_name(name).issuer_name(name)
             .public_key(key.public_key())
@@ -117,7 +117,7 @@ def server_cert_is_current(paths: CertPaths, host: str, ips: list[str]) -> bool:
         san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     except Exception:
         return False
-    if cert.not_valid_after_utc - dt.datetime.now(dt.timezone.utc) < dt.timedelta(days=RENEW_WITHIN_DAYS):
+    if cert.not_valid_after_utc - dt.datetime.now(dt.UTC) < dt.timedelta(days=RENEW_WITHIN_DAYS):
         return False
     have_dns = set(san.get_values_for_type(x509.DNSName))
     have_ip = {str(i) for i in san.get_values_for_type(x509.IPAddress)}
@@ -135,7 +135,7 @@ def ensure_server_cert(paths: CertPaths, host: str, ips: list[str] | None = None
     key = ec.generate_private_key(ec.SECP256R1())
     alt: list[x509.GeneralName] = [x509.DNSName(n) for n in san_names(host)]
     alt += [x509.IPAddress(ipaddress.ip_address(a)) for a in [*ips, "127.0.0.1"]]
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.UTC)
     cert = (x509.CertificateBuilder()
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"{host}.local")]))
             .issuer_name(ca_cert.subject)
@@ -145,7 +145,8 @@ def ensure_server_cert(paths: CertPaths, host: str, ips: list[str] | None = None
             .not_valid_after(now + dt.timedelta(days=SERVER_DAYS))
             .add_extension(x509.SubjectAlternativeName(alt), critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-            .add_extension(x509.ExtendedKeyUsage([x509.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            .add_extension(x509.ExtendedKeyUsage([x509.ExtendedKeyUsageOID.SERVER_AUTH]),
+                           critical=False)
             .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
             # RFC 5280 requires an AKI on issued certificates; OpenSSL 3.x strict
             # verification rejects the chain without it.
