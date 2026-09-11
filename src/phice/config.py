@@ -1,0 +1,276 @@
+"""Pointer tuning (pointer.json) and phone layout (layout.json): parsing, validation, watching."""
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+ROLES = frozenset({"left", "right", "scroll", "power", "clutch", "recenter"})
+SINGLETON_ROLES = frozenset({"left", "right", "scroll", "power"})
+BUTTON_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def _num(d: dict, key: str, default: float, lo: float, hi: float) -> float:
+    v = d.get(key, default)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ConfigError(f"{key}: expected a number")
+    if not (lo <= v <= hi):
+        raise ConfigError(f"{key}: must be between {lo} and {hi}")
+    return float(v)
+
+
+def _int(d: dict, key: str, default: int, lo: int, hi: int) -> int:
+    return int(_num(d, key, default, lo, hi))
+
+
+def _bool(d: dict, key: str, default: bool) -> bool:
+    v = d.get(key, default)
+    if not isinstance(v, bool):
+        raise ConfigError(f"{key}: expected true/false")
+    return v
+
+
+def _sub(d: dict, key: str) -> dict:
+    v = d.get(key, {})
+    if not isinstance(v, dict):
+        raise ConfigError(f"{key}: expected an object")
+    return v
+
+
+@dataclass(frozen=True)
+class OneEuroConfig:
+    min_cutoff: float = 1.0
+    beta: float = 0.02
+    d_cutoff: float = 1.0
+
+
+@dataclass(frozen=True)
+class AccelConfig:
+    enabled: bool = False
+    threshold_dps: float = 40.0
+    k: float = 0.01
+    max_mult: float = 3.0
+
+
+@dataclass(frozen=True)
+class UIConfig:
+    haptics: bool = True
+    keep_awake: str = "always"
+
+
+@dataclass(frozen=True)
+class PointerConfig:
+    version: int = 1
+    gain_x_px_per_deg: float = 25.0
+    gain_y_px_per_deg: float = 25.0
+    invert_y: bool = False
+    one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
+    deadzone_dps: float = 0.5
+    accel: AccelConfig = field(default_factory=AccelConfig)
+    freeze_ms_on_touch: int = 120
+    freeze_ms_on_release: int = 60
+    chord_window_ms: int = 50
+    recenter_hold_ms: int = 1000
+    double_click_s: float = 0.5
+    scroll_gain: float = 1.5
+    scroll_natural: bool = True
+    auto_activate: bool = False
+    auto_deactivate: bool = True
+    pickup_ms: int = 300
+    rest_seconds: float = 1.0
+    rest_tilt_deg: float = 15.0
+    rest_rate_dps: float = 8.0
+    idle_hz_when_auto_activate: int = 10
+    timeout_ms: int = 500
+    cert_mode: str = "auto"
+    ui: UIConfig = field(default_factory=UIConfig)
+
+    @property
+    def idle_hz(self) -> int:
+        return self.idle_hz_when_auto_activate if self.auto_activate else 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "PointerConfig":
+        if not isinstance(d, dict):
+            raise ConfigError("pointer.json must contain an object")
+        oe = _sub(d, "one_euro")
+        ac = _sub(d, "accel")
+        ui = _sub(d, "ui")
+        keep_awake = ui.get("keep_awake", "always")
+        if keep_awake not in ("always", "on_only"):
+            raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
+        cert_mode = d.get("cert_mode", "auto")
+        if cert_mode not in ("auto", "external"):
+            raise ConfigError("cert_mode: expected 'auto' or 'external'")
+        return cls(
+            version=_int(d, "version", 1, 1, 1),
+            gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 25.0, 0.1, 500.0),
+            gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 25.0, 0.1, 500.0),
+            invert_y=_bool(d, "invert_y", False),
+            one_euro=OneEuroConfig(
+                min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
+                beta=_num(oe, "beta", 0.02, 0.0, 10.0),
+                d_cutoff=_num(oe, "d_cutoff", 1.0, 0.01, 100.0),
+            ),
+            deadzone_dps=_num(d, "deadzone_dps", 0.5, 0.0, 90.0),
+            accel=AccelConfig(
+                enabled=_bool(ac, "enabled", False),
+                threshold_dps=_num(ac, "threshold_dps", 40.0, 0.0, 1000.0),
+                k=_num(ac, "k", 0.01, 0.0, 1.0),
+                max_mult=_num(ac, "max_mult", 3.0, 1.0, 20.0),
+            ),
+            freeze_ms_on_touch=_int(d, "freeze_ms_on_touch", 120, 0, 2000),
+            freeze_ms_on_release=_int(d, "freeze_ms_on_release", 60, 0, 2000),
+            chord_window_ms=_int(d, "chord_window_ms", 50, 0, 500),
+            recenter_hold_ms=_int(d, "recenter_hold_ms", 1000, 100, 10000),
+            double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
+            scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
+            scroll_natural=_bool(d, "scroll_natural", True),
+            auto_activate=_bool(d, "auto_activate", False),
+            auto_deactivate=_bool(d, "auto_deactivate", True),
+            pickup_ms=_int(d, "pickup_ms", 300, 0, 5000),
+            rest_seconds=_num(d, "rest_seconds", 1.0, 0.1, 60.0),
+            rest_tilt_deg=_num(d, "rest_tilt_deg", 15.0, 1.0, 80.0),
+            rest_rate_dps=_num(d, "rest_rate_dps", 8.0, 0.0, 500.0),
+            idle_hz_when_auto_activate=_int(d, "idle_hz_when_auto_activate", 10, 1, 60),
+            timeout_ms=_int(d, "timeout_ms", 500, 100, 10000),
+            cert_mode=cert_mode,
+            ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
+        )
+
+
+def load_pointer_config(path: Path) -> PointerConfig:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"cannot read {path.name}: {e}") from e
+    return PointerConfig.from_dict(data)
+
+
+# --- layout -----------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LayoutButton:
+    id: str
+    role: str
+    x: float
+    y: float
+    w: float
+    h: float
+    label: str = ""
+    icon: str | None = None
+    css_class: str = ""
+
+    def to_dict(self) -> dict:
+        d = {"id": self.id, "role": self.role, "x": self.x, "y": self.y, "w": self.w, "h": self.h,
+             "label": self.label}
+        if self.icon:
+            d["icon"] = self.icon
+        if self.css_class:
+            d["class"] = self.css_class
+        return d
+
+
+@dataclass(frozen=True)
+class Layout:
+    version: int
+    buttons: tuple[LayoutButton, ...]
+
+    def roles(self) -> dict[str, str]:
+        """Map of button id -> role, consumed by the engine."""
+        return {b.id: b.role for b in self.buttons}
+
+    def to_dict(self) -> dict:
+        return {"version": self.version, "buttons": [b.to_dict() for b in self.buttons]}
+
+
+def parse_layout(d: Any) -> Layout:
+    if not isinstance(d, dict):
+        raise ConfigError("layout.json must contain an object")
+    version = _int(d, "version", 1, 1, 1)
+    raw = d.get("buttons")
+    if not isinstance(raw, list) or not raw or len(raw) > 16:
+        raise ConfigError("buttons: expected a list of 1..16 buttons")
+    buttons: list[LayoutButton] = []
+    seen_ids: set[str] = set()
+    role_count: dict[str, int] = {}
+    for i, b in enumerate(raw):
+        if not isinstance(b, dict):
+            raise ConfigError(f"buttons[{i}]: expected an object")
+        bid = b.get("id")
+        if not isinstance(bid, str) or not BUTTON_ID_RE.match(bid):
+            raise ConfigError(f"buttons[{i}].id: must match [a-z0-9_-]{{1,32}}")
+        if bid in seen_ids:
+            raise ConfigError(f"buttons[{i}].id: duplicate '{bid}'")
+        seen_ids.add(bid)
+        role = b.get("role")
+        if role not in ROLES:
+            raise ConfigError(f"buttons[{i}].role: must be one of {sorted(ROLES)}")
+        role_count[role] = role_count.get(role, 0) + 1
+        x, y = _num(b, "x", 0, 0, 100), _num(b, "y", 0, 0, 100)
+        w, h = _num(b, "w", 10, 0.5, 100), _num(b, "h", 10, 0.5, 100)
+        if x + w > 100.0001 or y + h > 100.0001:
+            raise ConfigError(f"buttons[{i}]: x+w and y+h must be <= 100")
+        label = b.get("label", "")
+        if not isinstance(label, str) or len(label) > 32:
+            raise ConfigError(f"buttons[{i}].label: expected string <= 32 chars")
+        icon = b.get("icon")
+        if icon is not None and (not isinstance(icon, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", icon)
+                                 or ".." in icon):
+            raise ConfigError(f"buttons[{i}].icon: expected a relative path under assets/")
+        css_class = b.get("class", "")
+        if not isinstance(css_class, str) or not re.fullmatch(r"[A-Za-z0-9_ -]*", css_class):
+            raise ConfigError(f"buttons[{i}].class: expected CSS class names")
+        buttons.append(LayoutButton(bid, role, x, y, w, h, label, icon, css_class))
+    if role_count.get("power", 0) != 1:
+        raise ConfigError("layout needs exactly one button with role 'power'")
+    for r in SINGLETON_ROLES:
+        if role_count.get(r, 0) > 1:
+            raise ConfigError(f"at most one button may have role '{r}'")
+    return Layout(version=version, buttons=tuple(buttons))
+
+
+def load_layout(path: Path) -> Layout:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"cannot read {path.name}: {e}") from e
+    return parse_layout(data)
+
+
+# --- watcher ----------------------------------------------------------------
+
+class FileWatcher:
+    """Polls file mtimes; `changed()` returns the paths modified since the previous call."""
+
+    def __init__(self, paths: list[Path]):
+        self._paths = list(paths)
+        self._mtimes = {p: self._mtime(p) for p in self._paths}
+
+    @staticmethod
+    def _mtime(p: Path) -> float | None:
+        try:
+            return os.stat(p).st_mtime_ns
+        except OSError:
+            return None
+
+    def changed(self) -> list[Path]:
+        out = []
+        for p in self._paths:
+            m = self._mtime(p)
+            if m != self._mtimes[p]:
+                self._mtimes[p] = m
+                out.append(p)
+        return out
