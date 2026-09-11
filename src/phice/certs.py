@@ -6,7 +6,9 @@ and re-issue the server certificate whenever the host's addresses change.
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
+import hashlib
 import ipaddress
 import socket
 import subprocess
@@ -164,3 +166,56 @@ def ca_der(paths: CertPaths) -> bytes:
     """DER bytes, which is what Safari wants for a downloadable profile."""
     return x509.load_pem_x509_certificate(paths.ca_crt.read_bytes()).public_bytes(
         serialization.Encoding.DER)
+
+
+def ca_mobileconfig(paths: CertPaths) -> bytes:
+    """Wrap the CA in an Apple configuration profile.
+
+    Modern iOS does not offer to install a bare .crt download: Safari saves it
+    to Files and nothing happens. A .mobileconfig served as
+    application/x-apple-aspen-config triggers the "install this profile" flow
+    instead. The UUIDs are derived from the certificate fingerprint so that
+    re-downloading replaces the profile rather than stacking duplicates.
+    """
+    der = ca_der(paths)
+    fp = hashlib.sha256(der).hexdigest()
+
+    def _uuid(suffix: str) -> str:
+        h = hashlib.sha256((fp + suffix).encode()).hexdigest()
+        return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}".upper()
+
+    b64 = base64.b64encode(der).decode()
+    payload = "\n".join(b64[i:i + 52] for i in range(0, len(b64), 52))
+    cert = x509.load_pem_x509_certificate(paths.ca_crt.read_bytes())
+    cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.security.root</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadIdentifier</key><string>com.phice.ca</string>
+      <key>PayloadUUID</key><string>{_uuid("payload")}</string>
+      <key>PayloadDisplayName</key><string>{cn}</string>
+      <key>PayloadDescription</key><string>Lets this iPhone trust the Phice server on your Mac.</string>
+      <key>PayloadCertificateFileName</key><string>PhiceCA.crt</string>
+      <key>PayloadContent</key>
+      <data>
+{payload}
+      </data>
+    </dict>
+  </array>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadIdentifier</key><string>com.phice.profile</string>
+  <key>PayloadUUID</key><string>{_uuid("profile")}</string>
+  <key>PayloadDisplayName</key><string>Phice</string>
+  <key>PayloadDescription</key><string>Certificate authority for Phice.</string>
+  <key>PayloadOrganization</key><string>Phice</string>
+  <key>PayloadRemovalDisallowed</key><false/>
+</dict>
+</plist>
+""".encode()

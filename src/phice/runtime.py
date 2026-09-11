@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .certs import CertPaths, ca_der, ensure_server_cert, local_hostname, local_ipv4s
+from .certs import CertPaths, ca_der, ca_mobileconfig, ensure_server_cert, local_hostname, local_ipv4s
 from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
 from .cursor_backend import CursorBackend, FakeCursor
 from .engine import PointerEngine
@@ -79,7 +79,8 @@ class Runtime:
                                  layout=self.layout, config=self.config)
         self.server = PhiceServer(self.state, "0.0.0.0", tls_port, self.host)
         self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
-                                 debug_cursor=self._debug_cursor)
+                                 debug_cursor=self._debug_cursor,
+                                 ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths))
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._watcher = FileWatcher([paths.pointer_json, paths.layout_json, paths.theme_css])
@@ -153,21 +154,23 @@ class Runtime:
     # ----- urls -------------------------------------------------------------
 
     def _urls(self) -> tuple[str, str, bool, str | None, str | None]:
-        """(.local ca, .local pair, show_ca, ip ca, ip pair).
+        """(ca, pair, show_ca, ca_alt, pair_alt) -- primaries first, notes after.
 
-        The .local names are stable across DHCP renewals, so they stay primary.
-        But mDNS is blocked on plenty of networks (large campus and corporate
-        subnets especially), and the certificate already carries the IPs in its
-        SANs, so an IP-based alternate always works there. One token serves both
-        URLs: it is single use, and the user scans one or the other.
+        The IP form is primary because it always works on the local network.
+        The .local form needs mDNS, which large campus and corporate subnets
+        commonly block, so it is demoted to a note. The certificate already
+        carries both in its SANs. One token serves both pair URLs: it is single
+        use and the user follows one of them.
         """
         token = self.pairing.mint_pairing_token()
-        ca = f"http://{self.host}.local:{self.setup.port}/ca.crt"
-        pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
+        local_ca = f"http://{self.host}.local:{self.setup.port}/ca.mobileconfig"
+        local_pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
         ip = next(iter(local_ipv4s()), None)
-        alt_ca = f"http://{ip}:{self.setup.port}/ca.crt" if ip else None
-        alt_pair = f"https://{ip}:{self.server.port}/?pair={token}" if ip else None
-        return ca, pair, self.config.cert_mode == "auto", alt_ca, alt_pair
+        if not ip:
+            return local_ca, local_pair, self.config.cert_mode == "auto", None, None
+        ca = f"http://{ip}:{self.setup.port}/ca.mobileconfig"
+        pair = f"https://{ip}:{self.server.port}/?pair={token}"
+        return ca, pair, self.config.cert_mode == "auto", local_ca, local_pair
 
     def _debug_cursor(self) -> dict:
         if isinstance(self.backend, FakeCursor):

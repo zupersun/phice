@@ -38,24 +38,19 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 6px}
 code{background:#1a2230;padding:2px 6px;border-radius:5px;font-size:13px;word-break:break-all}
 ol{padding-left:18px;color:#9fb3c8}li{margin:6px 0}
 .muted{color:#6b7a8c;font-size:13px}
-.alt{margin-top:14px;padding-top:12px;border-top:1px solid #222c37}
-.alt svg{width:132px;height:132px}
+.alt{margin-top:12px;padding-top:10px;border-top:1px solid #222c37;font-size:12px}
 .alt b{color:#9fb3c8}
 """
 
 
 def _alt_block(url: str | None, what: str) -> str:
-    """Fallback QR using the IP address, for networks where mDNS is blocked."""
+    """The .local equivalent, as a note. It is stabler across DHCP renewals but
+    needs mDNS, which many networks block, so it is not the primary path."""
     if not url:
         return ""
     return f"""
-      <div class="alt">
-        <p class="muted"><b>QR above does nothing?</b> Your network is blocking
-           <code>.local</code> lookups. Scan this instead &mdash; same {what},
-           by IP address.</p>
-        {qr_svg(url)}
-        <p class="muted"><code>{url}</code></p>
-      </div>"""
+      <p class="muted alt">Stable alternative for this {what}, if your network
+         resolves <code>.local</code> names:<br><code>{url}</code></p>"""
 
 
 def setup_html(ca_url: str, pair_url: str, show_ca: bool,
@@ -65,12 +60,15 @@ def setup_html(ca_url: str, pair_url: str, show_ca: bool,
       <h2>1 · Trust the certificate (once)</h2>
       {qr_svg(ca_url)}
       <ol>
-        <li>Scan with the iPhone camera and open the link.</li>
-        <li>Allow the profile download.</li>
-        <li>Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; install it.</li>
-        <li>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings &rsaquo;
-            turn on full trust for <b>Phice Local CA</b>.</li>
+        <li>Point the iPhone camera at this code and tap the banner.</li>
+        <li>Safari says <b>This website is trying to download a configuration
+            profile</b> &rsaquo; <b>Allow</b>, then <b>Close</b>.</li>
+        <li>Settings &rsaquo; <b>Profile Downloaded</b> (near the top) &rsaquo;
+            <b>Install</b>, enter your passcode, <b>Install</b> again.</li>
+        <li>Settings &rsaquo; General &rsaquo; About &rsaquo; scroll to
+            <b>Certificate Trust Settings</b> &rsaquo; turn <b>Phice Local CA</b> on.</li>
       </ol>
+      <p class="muted"><b>Do this first.</b> Step 2 shows a black screen until it is done.</p>
       <p class="muted"><code>{ca_url}</code></p>
       {_alt_block(alt_ca_url, "certificate")}
     </div>"""
@@ -99,9 +97,11 @@ class SetupServer:
 
     def __init__(self, port: int, ca_der: Callable[[], bytes],
                  urls: Callable[[], tuple[str, str, bool, str | None, str | None]],
-                 debug_cursor: Callable[[], dict] | None = None):
+                 debug_cursor: Callable[[], dict] | None = None,
+                 ca_mobileconfig: Callable[[], bytes] | None = None):
         self.port = port
         self._ca_der = ca_der
+        self._ca_mobileconfig = ca_mobileconfig
         self._urls = urls
         self._debug_cursor = debug_cursor
         self._httpd: ThreadingHTTPServer | None = None
@@ -131,7 +131,13 @@ class SetupServer:
 
             def do_GET(self):  # noqa: N802
                 path = self.path.split("?", 1)[0]
-                if path == "/ca.crt":
+                if path == "/ca.mobileconfig":
+                    if outer._ca_mobileconfig is None:
+                        self._send(404, b"not found", "text/plain")
+                        return
+                    self._send(200, outer._ca_mobileconfig(), "application/x-apple-aspen-config",
+                               {"Content-Disposition": 'attachment; filename="Phice.mobileconfig"'})
+                elif path == "/ca.crt":
                     self._send(200, outer._ca_der(), "application/x-x509-ca-cert",
                                {"Content-Disposition": 'attachment; filename="PhiceCA.crt"'})
                 elif path in ("/", "/setup"):
