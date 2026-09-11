@@ -53,6 +53,57 @@ def _alt_block(url: str | None, what: str) -> str:
          resolves <code>.local</code> names:<br><code>{url}</code></p>"""
 
 
+def check_html(ca_url: str, pair_url: str) -> str:
+    """Self-diagnosing page, served over plain HTTP so it always loads.
+
+    It probes an ungated asset on the TLS port with an <img>. That load can
+    only succeed if the phone already trusts the local CA, which turns "is the
+    certificate installed?" from a question into an answer.
+    """
+    origin = pair_url.split("/?", 1)[0]
+    probe = f"{origin}/assets/apple-touch-icon.png"
+    return f"""<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phice check</title>
+<style>{SETUP_CSS}
+.big{{font-size:19px;font-weight:700;margin:14px 0 6px}}
+.ok{{color:#4ade80}} .bad{{color:#ff5a5f}}
+a.btn{{display:block;text-align:center;background:#3ea6ff;color:#04121f;font-weight:700;
+      padding:15px;border-radius:12px;text-decoration:none;margin:14px 0}}
+a.btn2{{background:transparent;color:#9fb3c8;border:1px solid #232c37}}
+</style>
+<div class="card" style="max-width:520px;margin:0 auto">
+<h1>Phice</h1>
+<div id="out"><p class="muted">Checking whether this phone trusts your Mac&hellip;</p></div>
+</div>
+<script>
+var out = document.getElementById("out");
+var done = false;
+function verdict(ok) {{
+  if (done) return; done = true;
+  out.innerHTML = ok
+    ? '<p class="big ok">Certificate is trusted.</p>'
+      + '<p class="muted">Step 1 is complete. Open Phice below, or scan the second QR '
+      + 'code on your Mac.</p>'
+      + '<a class="btn" href="{pair_url}">Open Phice</a>'
+    : '<p class="big bad">Certificate is not trusted yet.</p>'
+      + '<p class="muted">This is why the pairing link warns you and then shows a black '
+      + 'screen. Install the profile, then <b>turn it on</b> &mdash; installing alone is '
+      + 'not enough.</p>'
+      + '<a class="btn" href="{ca_url}">1 &middot; Download the profile</a>'
+      + '<p class="muted">2 &middot; Settings &rsaquo; <b>Profile Downloaded</b> &rsaquo; Install.<br>'
+      + '3 &middot; Settings &rsaquo; General &rsaquo; About &rsaquo; <b>Certificate Trust '
+      + 'Settings</b> &rsaquo; turn <b>Phice Local CA</b> on.</p>'
+      + '<a class="btn btn2" href="/check">Check again</a>';
+}}
+var img = new Image();
+img.onload = function () {{ verdict(true); }};
+img.onerror = function () {{ verdict(false); }};
+img.src = "{probe}?t=" + Date.now();
+setTimeout(function () {{ verdict(false); }}, 8000);
+</script>"""
+
+
 def setup_html(ca_url: str, pair_url: str, show_ca: bool,
                alt_ca_url: str | None = None, alt_pair_url: str | None = None) -> str:
     ca_card = "" if not show_ca else f"""
@@ -147,6 +198,10 @@ class SetupServer:
                     ca_url, pair_url, show_ca, alt_ca, alt_pair = outer._urls()
                     self._send(200,
                                setup_html(ca_url, pair_url, show_ca, alt_ca, alt_pair).encode(),
+                               "text/html; charset=utf-8")
+                elif path == "/check":
+                    ca_url, pair_url, *_ = outer._urls()  # one call: each mints a token
+                    self._send(200, check_html(ca_url, pair_url).encode(),
                                "text/html; charset=utf-8")
                 elif path == "/help":
                     ca_url = outer._urls()[0]

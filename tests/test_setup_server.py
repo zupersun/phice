@@ -5,7 +5,7 @@ import urllib.request
 import pytest
 
 from phice.certs import CertPaths, ca_der, ca_mobileconfig, ensure_ca
-from phice.setup_server import SetupServer, qr_svg, setup_html
+from phice.setup_server import SetupServer, check_html, qr_svg, setup_html
 
 
 @pytest.fixture
@@ -81,3 +81,20 @@ def test_serves_installable_configuration_profile(setup, tmp_path):
     payload = d["PayloadContent"][0]
     assert payload["PayloadType"] == "com.apple.security.root"
     assert payload["PayloadContent"]  # the DER certificate is embedded
+
+
+def test_check_page_probes_the_tls_port_over_plain_http(setup):
+    status, ctype, body = get(setup, "/check")
+    html = body.decode()
+    assert status == 200 and ctype.startswith("text/html")
+    # It must probe an asset on the TLS origin: that load only succeeds if the
+    # phone already trusts the CA, which is the whole diagnostic.
+    assert "https://10.0.0.5:8443/assets/apple-touch-icon.png" in html
+    # Both remedies are offered.
+    assert "ca.mobileconfig" in html and "Certificate Trust" in html
+
+
+def test_check_page_links_to_the_pairing_url_when_trusted():
+    html = check_html("http://m/ca.mobileconfig", "https://m:8443/?pair=tok")
+    assert 'href="https://m:8443/?pair=tok"' in html
+    assert "https://m:8443/assets/apple-touch-icon.png" in html
