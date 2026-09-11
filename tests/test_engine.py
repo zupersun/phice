@@ -309,7 +309,9 @@ def test_recenter_button_role_snaps_immediately():
 
 
 def test_edge_clamp_and_edge_drag():
-    r = Rig(cursor=FakeCursor(x=1435, y=100))
+    """Relative mapping: overshoot past an edge is discarded, so turning back
+    moves immediately. That is the 're-grip' property absolute mapping gives up."""
+    r = Rig(PointerConfig(mapping="relative"), cursor=FakeCursor(x=1435, y=100))
     r.power()
     r.stream(5, alpha=0)
     r.stream(60, alpha=350)  # far past the right edge
@@ -433,3 +435,43 @@ def test_change_callback_fires_on_phase_change():
     r.power()
     r.power()
     assert seen == [Phase.ON, Phase.OFF]
+
+
+def test_absolute_edge_clamp_holds_until_aim_returns():
+    """Absolute mapping parks the cursor at the edge while you aim past it, and
+    brings it back when your aim comes back -- the Wii property: the cursor is a
+    function of where you point, not of how far you have turned."""
+    r = Rig(cursor=FakeCursor(x=1435, y=100))
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(60, alpha=350)  # +10 deg -> 1685, clamped
+    assert r.cursor.x == 1439
+    r.stream(60, alpha=355)  # +5 deg -> 1560, still past the edge: stays parked
+    assert r.cursor.x == 1439
+    r.stream(90, alpha=0)  # aim back at the anchor -> cursor returns to it
+    assert r.cursor.x == pytest.approx(1435, abs=3)
+
+
+def test_absolute_aim_and_cursor_do_not_drift_apart():
+    """Return to the same aim and the cursor returns to the same pixel, however
+    much turning happened in between. Relative integration cannot promise this."""
+    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(90, alpha=0)
+    home = (r.cursor.x, r.cursor.y)
+    for alpha in (350, 10, 340, 20, 0):
+        r.stream(60, alpha=alpha)
+    assert (r.cursor.x, r.cursor.y) == pytest.approx(home, abs=3)
+
+
+def test_absolute_clutch_reanchors_without_jumping():
+    r = Rig(roles={"left": "left", "right": "right", "power": "power", "hold": "clutch"})
+    r.power()
+    r.stream(30, alpha=0)
+    r.send(alpha=0, hold=True)
+    r.stream(60, alpha=330)  # turn 30 deg while clutched: cursor must not move
+    assert r.cursor.events == []
+    r.send(alpha=330, hold=False)
+    r.cursor.clear()
+    r.stream(5, alpha=330)
+    assert r.cursor.events == []  # released at the new aim: still no jump

@@ -110,6 +110,7 @@ whatever was there.
 | `gain_x_px_per_deg` | Horizontal pixels of cursor travel per degree of turn. Raise for a faster pointer. |
 | `gain_y_px_per_deg` | Vertical pixels per degree of tilt. |
 | `invert_y` | Flip the vertical direction. Set this if raising the top edge moves the cursor down. |
+| `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter — the Wii-like feel, aim and cursor cannot drift apart. `relative` integrates turn deltas like a trackpad in the air, which allows edge re-gripping but lets aim and cursor diverge. |
 | `one_euro.min_cutoff` | Baseline smoothing. Lower is smoother and laggier. |
 | `one_euro.beta` | How much the filter opens up as you move faster. The jitter-versus-lag knob; tune this first. |
 | `one_euro.d_cutoff` | Smoothing applied to the speed estimate itself. |

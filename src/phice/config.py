@@ -71,6 +71,7 @@ class PointerConfig:
     gain_x_px_per_deg: float = 25.0
     gain_y_px_per_deg: float = 25.0
     invert_y: bool = False
+    mapping: str = "absolute"
     one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
     deadzone_dps: float = 0.5
     accel: AccelConfig = field(default_factory=AccelConfig)
@@ -112,11 +113,15 @@ class PointerConfig:
         cert_mode = d.get("cert_mode", "auto")
         if cert_mode not in ("auto", "external"):
             raise ConfigError("cert_mode: expected 'auto' or 'external'")
+        mapping = d.get("mapping", "absolute")
+        if mapping not in ("absolute", "relative"):
+            raise ConfigError("mapping: expected 'absolute' or 'relative'")
         return cls(
             version=_int(d, "version", 1, 1, 1),
             gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 25.0, 0.1, 500.0),
             gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 25.0, 0.1, 500.0),
             invert_y=_bool(d, "invert_y", False),
+            mapping=mapping,
             one_euro=OneEuroConfig(
                 min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
                 beta=_num(oe, "beta", 0.02, 0.0, 10.0),

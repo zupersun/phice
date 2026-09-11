@@ -307,6 +307,7 @@ class PointerEngine:
         self._f_yaw.reset()
         self._f_pitch.reset()
         self._prev_f: tuple[float, float] | None = None
+        self._anchor = None  # re-anchor on the next packet, or the cursor jumps
 
     def _reset_motion(self) -> None:
         self._make_filters()
@@ -316,6 +317,8 @@ class PointerEngine:
         self._last_ts: float | None = None
         self._carry = [0.0, 0.0]
         self._scroll_carry = 0.0
+        self._anchor: tuple[float, float] | None = None
+        self._anchor_pos: tuple[float, float] = (0.0, 0.0)
 
     def _apply_motion(self, p: SensorPacket, now: float) -> None:
         if not p.has_orientation:
@@ -335,7 +338,11 @@ class PointerEngine:
         yf = self._f_yaw.filter(self._yaw_cont, p.ts)
         pf = self._f_pitch.filter(pitch, p.ts)
         prev, self._prev_f = self._prev_f, (yf, pf)
-        if prev is None or self._frozen(now) or p.rate_dps < self._cfg.deadzone_dps:
+        frozen = self._frozen(now)
+        if self._cfg.mapping == "absolute":
+            self._apply_absolute(yf, pf, frozen, p.rate_dps)
+            return
+        if prev is None or frozen or p.rate_dps < self._cfg.deadzone_dps:
             return
         dyaw, dpitch = yf - prev[0], pf - prev[1]
         mult = 1.0
@@ -348,6 +355,43 @@ class PointerEngine:
         if self._cfg.invert_y:
             dy = -dy
         self._move_by(dx, dy)
+
+    def _apply_absolute(self, yaw: float, pitch: float, frozen: bool, rate_dps: float) -> None:
+        """Map aim directly onto the screen, anchored where the pointer was armed.
+
+        This is the Wii-like mapping: the cursor is a function of where you are
+        pointing, not of how far you have turned, so aim and cursor cannot drift
+        apart. The anchor re-tracks continuously while the cursor is frozen, for
+        the same reason the relative filter reference does: otherwise releasing a
+        clutch or a scroll strip snaps the cursor by however far you turned while
+        it was held.
+        """
+        if self._anchor is None or frozen:
+            self._anchor = (yaw, pitch)
+            self._anchor_pos = self._backend.get_position()
+            return
+        if rate_dps < self._cfg.deadzone_dps:
+            return  # hold still; do not re-anchor, or slow aiming could never move
+        dx = (yaw - self._anchor[0]) * self._cfg.gain_x_px_per_deg
+        dy = -(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
+        if self._cfg.invert_y:
+            dy = -dy
+        self._move_to(self._anchor_pos[0] + dx, self._anchor_pos[1] + dy)
+
+    def _move_to(self, tx: float, ty: float) -> None:
+        """Move to an absolute target, clamped across displays, dragging if held."""
+        bx, by = self._backend.get_position()
+        displays = self._backend.displays()
+        current = display_containing(displays, bx, by)
+        tx, ty = clamp_to_displays(displays, int(tx), int(ty), current)
+        if (tx, ty) == (bx, by):
+            return
+        held = ("left" if self._clicks["left"].down
+                else "right" if self._clicks["right"].down else None)
+        if held:
+            self._backend.drag_to(tx, ty, held)  # type: ignore[arg-type]
+        else:
+            self._backend.move_to(tx, ty)
 
     def _move_by(self, dx: float, dy: float) -> None:
         self._carry[0] += dx

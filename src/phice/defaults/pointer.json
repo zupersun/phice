@@ -3,6 +3,7 @@
   "gain_x_px_per_deg": 25.0,
   "gain_y_px_per_deg": 25.0,
   "invert_y": false,
+  "mapping": "absolute",
   "one_euro": {"min_cutoff": 1.0, "beta": 0.02, "d_cutoff": 1.0},
   "deadzone_dps": 0.5,
   "accel": {"enabled": false, "threshold_dps": 40.0, "k": 0.01, "max_mult": 3.0},
