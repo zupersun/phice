@@ -35,6 +35,50 @@ All eleven must pass before shipping. Drop `--backend fake` to drive the real cu
 offline and prints path statistics — the tuning loop, and a language-independent
 golden-master suite if the engine is ever ported.
 
+## Diagnosing "it doesn't work"
+
+Check this first. It answers, in one look, which layer is broken:
+
+```bash
+curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
+```
+
+```json
+{"connected": true, "phase": "on", "accessibility": false, ...}
+```
+
+| Reading | Meaning |
+|---|---|
+| `connected: false` | The phone never reached the server. Network or certificate. |
+| `connected: true, phase: "off"` | Connected, pointer not armed. Tap POWER. |
+| `phase: "on", accessibility: false` | Everything works except the macOS permission. |
+| `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
+
+A blank page on the phone has three unrelated causes that look identical: an
+untrusted certificate, a WebSocket origin 403, and the phone being unable to route
+to the Mac at all. Do not guess between them — `http://<mac>:8080/check` loads over
+plain HTTP and probes the TLS port, which separates the first from the others.
+
+## macOS integration
+
+Two rough edges, both caused by the same thing: the app has no macOS identity. It
+runs as a bare `python3.13` out of a uv-managed venv, not an app bundle.
+
+- **Accessibility** must be granted to the real interpreter,
+  `~/.local/share/uv/python/cpython-*/bin/python3.13`, not to `phice`. It is in a
+  hidden directory, so `open` that folder in Finder and drag the binary into
+  System Settings rather than fighting the file picker. Re-adding an entry that is
+  already listed does nothing; remove it with **−** first.
+  Running the binary from a terminal reports `AXIsProcessTrusted() == True` because
+  it inherits the terminal's grant — that tells you nothing about the launch agent.
+- **The menu bar icon may be invisible.** macOS adds new status items to the left of
+  existing ones; on a notched Mac with a full menu bar they land behind the notch.
+  Never rely on the menu bar as the only way to see state — that is why the debug
+  hook above reports the full status.
+
+A minimal `Phice.app` bundle would fix both: a real name and icon in the
+Accessibility list, and a proper status item. Not built yet.
+
 ## Architecture
 
 Dependency order, and nothing may point backwards:
@@ -55,6 +99,16 @@ menubar cli  <- runtime
 - All visual design lives in `defaults/theme.css` and `defaults/layout.json`. `web/app.js`
   sets no colour, size, font or label — it renders whatever `layout.json` describes. Never
   hardcode appearance in JS.
+
+  When the page needs to drive an animation, it publishes a **number** as a CSS custom
+  property and lets the theme decide what that means. The scroll strip is the pattern to
+  copy: `app.js` sets `--scroll-pos` (0..1, where the finger is along the strip) and
+  `theme.css` turns it into the thumb's position, size, colour and easing. Adding a
+  `transform` or a colour to the JS would break the contract.
+
+Editing `defaults/` does **not** change a running install: `Paths.ensure()` deliberately
+never overwrites user-edited files. Copy to `~/Library/Application Support/Phice/` as well,
+or tell the user to run `phice reset-ui`.
 
 ## Constraints that are not negotiable
 
