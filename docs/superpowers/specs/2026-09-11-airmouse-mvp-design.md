@@ -1,7 +1,9 @@
 # AirMouse MVP — Design Spec
 
 Date: 2026-09-11
-Status: approved by user, ready for implementation plan
+Status: approved by user. A reference build validated the whole design end to end
+(121 unit tests, 11 live patterns over real TLS). Implementation plan:
+`docs/superpowers/plans/2026-09-11-airmouse-mvp.md`
 
 ## 1. Summary
 
@@ -184,7 +186,9 @@ address). Hostname for URLs comes from `scutil --get LocalHostName` + `.local`.
 ### 4.8 Pairing and authentication
 
 - A **pairing token** is 16 random bytes (base64url), valid 10 minutes, single use. Minted by the
-  setup page load or `airmouse pair-token`. Only one outstanding at a time (newest replaces).
+  setup page load or `airmouse pair-token`. Only one outstanding at a time (newest replaces). Its
+  SHA-256 hash and expiry are persisted to `pair.json` (mode 0600), because `airmouse pair-token`
+  runs in a different process from the menu-bar app and an in-memory token would be invisible to it.
 - The phone URL is `https://<host>.local:8443/?pair=<token>`. The page sends it in `hello`. The Mac
   validates, mints a **device token** (32 random bytes, base64url), stores `{token_hash, name,
   created, last_seen}` in `devices.json` (SHA-256 of token, never the token itself), and returns it
@@ -253,6 +257,10 @@ replay tool, and `--backend fake`).
 When enabled, every received text frame is appended to `sessions/<timestamp>.jsonl` as
 `{"rx": <monotonic seconds>, "raw": <frame>}`. Used by `tools/replay.py`.
 
+The `hello` frame is **never** recorded raw, because it carries a token. A scrubbed marker
+(`{"t":"hello","ver":1,"name":...}`) is written in its place, which also gives `replay.py` the
+session boundary it needs: a recording can span several connections and each restarts `seq` at 1.
+
 ### 4.13 Logging
 
 `logging` with a rotating file handler (1 MB × 3) at INFO; DEBUG via `AIRMOUSE_DEBUG=1`. Never log
@@ -263,6 +271,10 @@ tokens.
 `engine.py` contains `PointerEngine(config, backend, clock)`. It has exactly two entry points:
 `handle(packet: SensorPacket)` and `tick(now: float)`. Everything is deterministic given inputs and
 the injected clock, so it is fully unit-testable with `FakeCursor` and a fake clock.
+
+`tick` must also be driven by a **periodic task in the server** (50 Hz while active, 5 Hz otherwise),
+not only from `handle`. Pending clicks, the recenter countdown and the packet timeout are all
+time-based: a phone that stops transmitting mid-press would otherwise leave a button held forever.
 
 ### 5.1 Orientation → aim
 
@@ -580,14 +592,16 @@ message; theme triggers `theme_changed`. Asset changes need only a page reload.
 
 ## 10. Performance and battery budget
 
-| Item | Target |
-|---|---|
-| Mac CPU, idle (phone off or disconnected) | < 1 % |
-| Mac CPU, pointer on at 60 Hz | < 3 % |
-| Mac RSS | < 80 MB |
-| Sensor-to-cursor latency on LAN | < 35 ms typical |
-| Phone network | ≈ 12 KB/s while on; ~0 while off |
-| Phone CPU while off with auto-activate off | sensors off, one ping per 5 s |
+Targets, with figures measured on a reference build (M-series MacBook Air, macOS 26.6):
+
+| Item | Target | Measured |
+|---|---|---|
+| Mac CPU, idle (phone off or disconnected) | < 1 % | 0.1 % |
+| Mac CPU, pointer on at 60 Hz | < 3 % | 2.7 % (5.4 % at a forced 120 Hz) |
+| Mac RSS | < 80 MB | 43 MB |
+| Sensor-to-cursor latency on LAN | < 35 ms typical | not yet measured on-device |
+| Phone network | ≈ 12 KB/s while on; ~0 while off | as designed |
+| Phone CPU while off with auto-activate off | sensors off, one ping per 5 s | as designed |
 
 ## 11. Testing strategy and tooling
 

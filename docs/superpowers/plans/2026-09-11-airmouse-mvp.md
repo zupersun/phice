@@ -1,0 +1,5753 @@
+# AirMouse MVP Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Ship a background macOS app that lets an iPhone, held flat like a Wii remote, drive the Mac cursor, with a configurable on-screen mouse served as a web page from the Mac.
+
+**Architecture:** The phone runs a plain web page that the Mac serves over TLS. It streams orientation and touch state at 60 Hz over a WebSocket. Every pointer decision (mapping, filtering, clicks, recentering, safety) happens on the Mac in a pure, unit-testable engine that drives a swappable cursor backend. All visual design lives in three user-editable files the Mac serves and hot-reloads.
+
+**Tech Stack:** Python 3.12 with `uv`; `websockets` for TLS + WebSocket, `cryptography` for a local certificate authority, `pyobjc`/Quartz for cursor injection, `rumps` for the menu bar, `qrcode` for setup. Vanilla HTML/CSS/JS on the phone, no framework and no build step.
+
+**Source spec:** `docs/superpowers/specs/2026-09-11-airmouse-mvp-design.md`
+
+---
+
+## Pre-flight: read this before Task 1
+
+Every code block in this plan has been **executed and verified**, not sketched. The reference build passed 121 unit tests plus 11 live end-to-end patterns driven over a real TLS socket against a real server process. Type the code as given. If a test fails, the transcription is wrong, not the design.
+
+### Measured on the reference build (M-series MacBook Air, macOS 26.6)
+
+| Metric | Measured |
+|---|---|
+| Mac CPU, idle, no phone connected | 0.1 % |
+| Mac CPU, sustained 120 Hz packet stream | 5.4 % (so roughly 2.7 % at the real 60 Hz) |
+| Mac resident memory | 43 MB |
+| Unit tests | 121 passing in 3.6 s |
+| Live end-to-end patterns | 11 passing |
+
+### Eight non-obvious failures the reference build hit. Do not rediscover them.
+
+1. **A periodic engine tick is mandatory.** Pending clicks, the recenter hold, and the packet timeout are all time-based. Without a tick task, a phone that stops sending mid-press leaves the mouse button held down forever. The server runs one at 50 Hz while active and 5 Hz while idle (Task 12).
+2. **The motion filter reference must update even while the cursor is frozen.** `_prev_f` is assigned *before* the frozen check in `_apply_motion`. If you skip the update while frozen, releasing a clutch or scroll strip snaps the cursor across the screen by however far you turned while frozen.
+3. **A button absent from a packet must be skipped, not treated as released.** The page sends every layout button in every packet, so absence means "this button does not exist yet", typically right after a layout change. Treating absence as a release fires phantom events.
+4. **Adopt button counters silently on first sighting.** After a reconnect the page's press counters keep climbing. Diffing against zero replays every press the page ever registered.
+5. **Pairing tokens must live in a file, not in memory.** `airmouse pair-token` runs in a different process from the menu bar app. An in-memory token is invisible to it.
+6. **Never record the raw `hello` frame.** It carries a pairing token. The recorder writes a scrubbed session marker instead, which `replay.py` also needs to reset the engine between sessions.
+7. **iOS rejects user-trusted leaf certificates valid for more than 825 days.** The reference uses 820. Re-issuing the leaf must never touch the CA, or the phone's one-time trust breaks.
+8. **Do not call blocking HTTP from the asyncio thread in tests.** `asyncio.to_thread` it, or the server cannot answer and the test times out.
+
+### Things only a human can verify
+
+The agent cannot hold a phone and `CoreMotion` does not exist in a browser on the Mac. Tasks 1 to 19 are fully verifiable by the agent using the fake phone. Task 21 is the human checklist: sensor sign conventions, haptics, certificate install flow, and pointer feel.
+
+---
+
+## File structure
+
+```
+airmouse/
+  pyproject.toml
+  README.md
+  pytest.ini
+  src/airmouse/
+    __init__.py
+    __main__.py          entry point for `python -m airmouse`
+    orientation.py       Euler angles -> aim vector -> yaw/pitch (roll-invariant)
+    filters.py           One Euro filter
+    protocol.py          wire format, validation at the system boundary
+    paths.py             config directory layout, first-run defaults
+    config.py            pointer.json + layout.json parsing, validation, file watcher
+    icons.py             procedurally drawn default menu-bar and Home Screen icons
+    cursor_backend.py    display geometry, FakeCursor, QuartzCursor
+    engine.py            all pointer behaviour; pure, no I/O
+    certs.py             local certificate authority and server certificate
+    pairing.py           pairing tokens and device tokens
+    server.py            TLS server: page, assets, WebSocket, engine tick, recorder
+    setup_server.py      plain HTTP: CA download, QR setup page, debug hooks
+    runtime.py           owns the loop, both servers, hot reload, status
+    menubar.py           rumps menu bar, Accessibility polling
+    cli.py               command line and launch-agent install
+    web/index.html       phone page skeleton
+    web/app.js           phone client
+    defaults/pointer.json
+    defaults/layout.json
+    defaults/theme.css
+    defaults/assets/     seeds copied on first run
+  tools/
+    fake_phone.py        drives a live server over real TLS; the agent's hands
+    replay.py            replays a recording offline; the human's tuning loop
+  tests/
+    conftest.py test_orientation.py test_filters.py test_protocol.py test_config.py
+    test_cursor_backend.py test_engine.py test_certs_pairing.py test_server.py
+    test_setup_server.py
+```
+
+**Dependency order.** `orientation`, `filters`, `protocol`, `paths` depend on nothing. `config` needs `paths`. `engine` needs `config`, `cursor_backend`, `filters`, `orientation`, `protocol`. `server` needs `engine`, `pairing`, `certs`, `config`, `paths`. `runtime` needs `server` and `setup_server`. `menubar` and `cli` sit on top. Build in task order and nothing is ever missing.
+
+---
+
+### Task 1: Project scaffold
+
+**Files:**
+- Create: `pyproject.toml`, `pytest.ini`, `src/airmouse/__init__.py`, `.gitignore`
+
+- [ ] **Step 1: Create the directory skeleton**
+
+```bash
+cd ~/airmouse
+mkdir -p src/airmouse/web src/airmouse/defaults/assets tools tests
+touch src/airmouse/__init__.py tests/__init__.py
+```
+
+- [ ] **Step 2: Write `pyproject.toml`**
+
+```toml
+[project]
+name = "airmouse"
+version = "0.1.0"
+description = "Use an iPhone as a Wii-remote-style air mouse for macOS"
+requires-python = ">=3.12"
+dependencies = [
+    "websockets>=13",
+    "cryptography>=42",
+    "rumps>=0.4.0",
+    "qrcode>=7.4",
+    "pyobjc-framework-Quartz>=10",
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-ApplicationServices>=10",
+]
+
+[project.scripts]
+airmouse = "airmouse.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/airmouse"]
+
+[tool.ruff]
+line-length = 104
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+```
+
+- [ ] **Step 3: Write `pytest.ini`**
+
+```ini
+[pytest]
+asyncio_mode = auto
+testpaths = tests
+pythonpath = src
+```
+
+- [ ] **Step 4: Write `.gitignore`**
+
+```
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.bak
+.DS_Store
+```
+
+- [ ] **Step 5: Install and confirm the toolchain**
+
+Run: `uv sync && uv run python -c "import websockets, cryptography, rumps, qrcode, Quartz; print('ok')"`
+Expected: `ok`
+
+If `uv` is missing: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+- [ ] **Step 6: Confirm pytest collects nothing yet**
+
+Run: `uv run pytest -q`
+Expected: `no tests ran`
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "chore: scaffold airmouse project"
+```
+
+---
+
+### Task 2: Orientation maths (roll-invariant aim)
+
+**Files:**
+- Create: `src/airmouse/orientation.py`
+- Test: `tests/test_orientation.py`
+
+This is the heart of the product. The phone's top edge is device +Y. Rotating it into the room frame gives the aim direction. Because the W3C rotation order applies gamma last about that exact axis, roll cancels algebraically rather than by approximation. The property test proves it over 2000 random poses.
+
+- [ ] **Step 1: Write the failing test — `tests/test_orientation.py`**
+
+```python
+import math
+import random
+
+import pytest
+
+from airmouse.orientation import pointing_vector, rotation_matrix, wrap180, yaw_pitch
+
+
+def test_identity_points_along_y():
+    assert pointing_vector(0, 0, 0) == pytest.approx((0.0, 1.0, 0.0))
+    assert yaw_pitch(0, 0, 0) == pytest.approx((0.0, 0.0))
+
+
+def test_turning_right_is_positive_yaw():
+    # W3C alpha grows counter-clockwise seen from above, so turning right is alpha = 270.
+    yaw, pitch = yaw_pitch(270, 0, 0)
+    assert yaw == pytest.approx(90.0)
+    assert pitch == pytest.approx(0.0)
+    yaw, _ = yaw_pitch(90, 0, 0)
+    assert yaw == pytest.approx(-90.0)
+
+
+def test_raising_top_edge_is_positive_pitch():
+    _, pitch = yaw_pitch(0, 30, 0)
+    assert pitch == pytest.approx(30.0)
+    _, pitch = yaw_pitch(0, -20, 0)
+    assert pitch == pytest.approx(-20.0)
+
+
+def test_roll_never_changes_aim():
+    rng = random.Random(42)
+    for _ in range(200):
+        alpha = rng.uniform(0, 360)
+        beta = rng.uniform(-80, 80)
+        ref = yaw_pitch(alpha, beta, 0.0)
+        for _ in range(10):
+            gamma = rng.uniform(-90, 90)
+            assert yaw_pitch(alpha, beta, gamma) == pytest.approx(ref, abs=1e-9)
+
+
+def test_rotation_matrix_is_orthonormal():
+    r = rotation_matrix(33, -47, 12)
+    for i in range(3):
+        for j in range(3):
+            dot = sum(r[k][i] * r[k][j] for k in range(3))
+            assert dot == pytest.approx(1.0 if i == j else 0.0, abs=1e-12)
+
+
+def test_wrap180():
+    assert wrap180(190) == pytest.approx(-170)
+    assert wrap180(-190) == pytest.approx(170)
+    assert wrap180(179) == pytest.approx(179)
+    assert wrap180(360) == pytest.approx(0)
+    assert wrap180(-180) == pytest.approx(-180)
+    assert math.isclose(wrap180(0), 0)
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_orientation.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.orientation'`
+
+- [ ] **Step 3: Write `src/airmouse/orientation.py`**
+
+```python
+"""Orientation math: W3C DeviceOrientation Euler angles -> pointing direction.
+
+The phone's "top" axis is device +Y. Rotating it into the room frame gives the
+aim vector; yaw/pitch of that vector drive the cursor. Because the W3C order is
+Z (alpha) · X' (beta) · Y'' (gamma) and gamma rotates about the very axis we
+project, roll (gamma) cancels out exactly.
+"""
+from __future__ import annotations
+
+import math
+
+Vec3 = tuple[float, float, float]
+Mat3 = tuple[Vec3, Vec3, Vec3]
+
+
+def wrap180(deg: float) -> float:
+    """Wrap an angle (difference) into [-180, 180)."""
+    return (deg + 180.0) % 360.0 - 180.0
+
+
+def _mul(m: Mat3, n: Mat3) -> Mat3:
+    return tuple(  # type: ignore[return-value]
+        tuple(sum(m[i][k] * n[k][j] for k in range(3)) for j in range(3)) for i in range(3)
+    )
+
+
+def rotation_matrix(alpha: float, beta: float, gamma: float) -> Mat3:
+    """R = Rz(alpha) · Rx(beta) · Ry(gamma), angles in degrees (W3C convention)."""
+    a, b, g = (math.radians(v) for v in (alpha, beta, gamma))
+    ca, sa = math.cos(a), math.sin(a)
+    cb, sb = math.cos(b), math.sin(b)
+    cg, sg = math.cos(g), math.sin(g)
+    rz: Mat3 = ((ca, -sa, 0.0), (sa, ca, 0.0), (0.0, 0.0, 1.0))
+    rx: Mat3 = ((1.0, 0.0, 0.0), (0.0, cb, -sb), (0.0, sb, cb))
+    ry: Mat3 = ((cg, 0.0, sg), (0.0, 1.0, 0.0), (-sg, 0.0, cg))
+    return _mul(_mul(rz, rx), ry)
+
+
+def pointing_vector(alpha: float, beta: float, gamma: float) -> Vec3:
+    """Room-frame direction of the phone's top edge (R · (0, 1, 0))."""
+    r = rotation_matrix(alpha, beta, gamma)
+    return (r[0][1], r[1][1], r[2][1])
+
+
+def yaw_pitch(alpha: float, beta: float, gamma: float) -> tuple[float, float]:
+    """Yaw (deg, positive = turning right) and pitch (deg, positive = top edge up)."""
+    x, y, z = pointing_vector(alpha, beta, gamma)
+    yaw = math.degrees(math.atan2(x, y))
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, z))))
+    return yaw, pitch
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_orientation.py -q`
+Expected: 6 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: roll-invariant orientation maths"
+```
+
+---
+
+### Task 3: One Euro filter
+
+**Files:**
+- Create: `src/airmouse/filters.py`
+- Test: `tests/test_filters.py`
+
+A plain low-pass filter forces a choice between jittery and laggy. The One Euro filter widens its own cutoff as the input speeds up, so a resting hand is smoothed hard while a fast flick is barely delayed. The two tests that matter are the noise-reduction test and the low-lag test: they encode that trade-off numerically.
+
+- [ ] **Step 1: Write the failing test — `tests/test_filters.py`**
+
+```python
+import math
+
+import pytest
+
+from airmouse.filters import OneEuroFilter
+
+
+def test_first_sample_passes_through():
+    f = OneEuroFilter()
+    assert f.filter(5.0, 0.0) == 5.0
+
+
+def test_constant_input_stays_constant():
+    f = OneEuroFilter()
+    out = [f.filter(3.0, i * 0.016) for i in range(50)]
+    assert all(v == pytest.approx(3.0) for v in out)
+
+
+def test_noise_is_reduced_at_low_speed():
+    f = OneEuroFilter(min_cutoff=1.0, beta=0.0)
+    raw, out = [], []
+    for i in range(400):
+        x = 0.5 * math.sin(i * 0.9)  # high-frequency jitter around 0
+        raw.append(x)
+        out.append(f.filter(x, i * 0.016))
+    rms = lambda xs: math.sqrt(sum(v * v for v in xs[100:]) / len(xs[100:]))
+    assert rms(out) < 0.3 * rms(raw)
+
+
+def test_fast_motion_has_low_lag():
+    slow = OneEuroFilter(min_cutoff=1.0, beta=0.0)
+    fast = OneEuroFilter(min_cutoff=1.0, beta=0.5)
+    lag_slow = lag_fast = 0.0
+    for i in range(200):
+        t = i * 0.016
+        x = 500.0 * t  # 500 units/s ramp
+        lag_slow = x - slow.filter(x, t)
+        lag_fast = x - fast.filter(x, t)
+    assert lag_fast < lag_slow * 0.2
+
+
+def test_reset_forgets_history():
+    f = OneEuroFilter()
+    f.filter(0.0, 0.0)
+    f.filter(100.0, 0.016)
+    f.reset()
+    assert f.filter(7.0, 1.0) == 7.0
+
+
+def test_rejects_bad_params():
+    with pytest.raises(ValueError):
+        OneEuroFilter(min_cutoff=0)
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_filters.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.filters'`
+
+- [ ] **Step 3: Write `src/airmouse/filters.py`**
+
+```python
+"""Signal filters used by the pointer engine."""
+from __future__ import annotations
+
+import math
+
+
+class OneEuroFilter:
+    """One Euro filter (Casiez, Roussel, Vogel 2012).
+
+    Smooths jitter at low speeds while keeping lag low at high speeds.
+    `filter(x, t)` takes the sample and its timestamp in seconds.
+    """
+
+    def __init__(self, min_cutoff: float = 1.0, beta: float = 0.02, d_cutoff: float = 1.0):
+        if min_cutoff <= 0 or d_cutoff <= 0 or beta < 0:
+            raise ValueError("min_cutoff and d_cutoff must be > 0, beta >= 0")
+        self.min_cutoff = float(min_cutoff)
+        self.beta = float(beta)
+        self.d_cutoff = float(d_cutoff)
+        self._x_prev: float | None = None
+        self._dx_prev = 0.0
+        self._t_prev: float | None = None
+
+    def reset(self) -> None:
+        self._x_prev = None
+        self._dx_prev = 0.0
+        self._t_prev = None
+
+    @staticmethod
+    def _smoothing(cutoff: float, dt: float) -> float:
+        tau = 1.0 / (2.0 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def filter(self, x: float, t: float) -> float:
+        if self._x_prev is None or self._t_prev is None or t <= self._t_prev:
+            self._x_prev, self._t_prev, self._dx_prev = x, t, 0.0
+            return x
+        dt = t - self._t_prev
+        dx = (x - self._x_prev) / dt
+        a_d = self._smoothing(self.d_cutoff, dt)
+        dx_hat = a_d * dx + (1.0 - a_d) * self._dx_prev
+        cutoff = self.min_cutoff + self.beta * abs(dx_hat)
+        a = self._smoothing(cutoff, dt)
+        x_hat = a * x + (1.0 - a) * self._x_prev
+        self._x_prev, self._dx_prev, self._t_prev = x_hat, dx_hat, t
+        return x_hat
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_filters.py -q`
+Expected: 6 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: One Euro filter for pointer smoothing"
+```
+
+---
+
+### Task 4: Wire protocol and validation
+
+**Files:**
+- Create: `src/airmouse/protocol.py`
+- Test: `tests/test_protocol.py`
+
+Everything arriving from the phone is untrusted input crossing a system boundary, so it is range-checked here and nowhere else. Downstream code may assume a `SensorPacket` is sane. Note `alpha` may legitimately be `null`: Safari fires a motion event before the first orientation event.
+
+- [ ] **Step 1: Write the failing test — `tests/test_protocol.py`**
+
+```python
+import json
+
+import pytest
+
+from airmouse.protocol import (Bye, Hello, Ping, ProtocolError, SensorPacket, parse_client_message,
+                               state_message)
+
+
+def packet(**over):
+    d = {"t": "s", "seq": 1, "ts": 1.5, "o": [10, 20, 30], "rr": [1, 2, 3], "g": [0, 0, 9.8],
+         "b": {"left": 1, "right": 0}, "c": {"left": 3, "right": 0}, "sd": -4.5}
+    d.update(over)
+    return json.dumps(d)
+
+
+def test_parses_sensor_packet():
+    p = parse_client_message(packet())
+    assert isinstance(p, SensorPacket)
+    assert (p.alpha, p.beta, p.gamma) == (10, 20, 30)
+    assert p.buttons == {"left": True, "right": False}
+    assert p.counters == {"left": 3, "right": 0}
+    assert p.scroll_delta == -4.5
+    assert p.rate_dps == pytest.approx((1 + 4 + 9) ** 0.5)
+
+
+def test_orientation_may_be_null_before_first_event():
+    p = parse_client_message(packet(o=None))
+    assert not p.has_orientation
+    p = parse_client_message(packet(o=[None, None, None]))
+    assert not p.has_orientation
+
+
+@pytest.mark.parametrize("over", [
+    {"o": [400, 0, 0]}, {"o": [0, 200, 0]}, {"o": [0, 0, 95]}, {"o": [1, 2]},
+    {"rr": [6000, 0, 0]}, {"g": [0, 0, 60]}, {"sd": 20000}, {"seq": 0}, {"seq": "1"},
+    {"b": {"Left": 1}}, {"b": {"left": 2}}, {"c": {"left": -1}}, {"c": {"left": 1.5}},
+    {"ts": "now"}, {"t": "zzz"},
+])
+def test_rejects_out_of_range(over):
+    with pytest.raises(ProtocolError):
+        parse_client_message(packet(**over))
+
+
+def test_rejects_too_many_buttons():
+    b = {f"b{i}": 0 for i in range(17)}
+    with pytest.raises(ProtocolError):
+        parse_client_message(packet(b=b))
+
+
+def test_rejects_large_frames_and_bad_json():
+    with pytest.raises(ProtocolError):
+        parse_client_message("x" * 3000)
+    with pytest.raises(ProtocolError):
+        parse_client_message("{not json")
+    with pytest.raises(ProtocolError):
+        parse_client_message("[1,2]")
+
+
+def test_hello_ping_bye():
+    h = parse_client_message(json.dumps({"t": "hello", "ver": 1, "pair": "abcdefghij", "name": "iPhone"}))
+    assert isinstance(h, Hello) and h.pair == "abcdefghij" and h.token is None
+    with pytest.raises(ProtocolError):
+        parse_client_message(json.dumps({"t": "hello", "ver": 2}))
+    with pytest.raises(ProtocolError):
+        parse_client_message(json.dumps({"t": "hello", "ver": 1, "token": "bad token!"}))
+    assert isinstance(parse_client_message('{"t":"ping"}'), Ping)
+    assert isinstance(parse_client_message('{"t":"bye"}'), Bye)
+
+
+def test_state_message_shape():
+    d = json.loads(state_message(conn=True, power=False, phase="off", recenter=0.12345, idle_hz=0,
+                                 accessibility=True, ui={"haptics": True}))
+    assert d["t"] == "state" and d["recenter"] == 0.123 and d["ui"] == {"haptics": True}
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_protocol.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.protocol'`
+
+- [ ] **Step 3: Write `src/airmouse/protocol.py`**
+
+```python
+"""Wire protocol: JSON text frames between the phone page and the Mac.
+
+Every inbound message is validated here (system boundary). Outbound messages
+are built by the `*_message` helpers so the schema lives in one place.
+"""
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass
+from typing import Any
+
+MAX_FRAME_BYTES = 2048
+MAX_BUTTONS = 16
+BUTTON_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+PROTOCOL_VERSION = 1
+
+Vec3 = tuple[float, float, float]
+
+
+class ProtocolError(ValueError):
+    """Raised for any malformed or out-of-range client message."""
+
+
+@dataclass(frozen=True)
+class Hello:
+    ver: int
+    pair: str | None
+    token: str | None
+    name: str
+
+
+@dataclass(frozen=True)
+class Ping:
+    pass
+
+
+@dataclass(frozen=True)
+class Bye:
+    pass
+
+
+@dataclass(frozen=True)
+class SensorPacket:
+    seq: int
+    ts: float
+    alpha: float | None
+    beta: float | None
+    gamma: float | None
+    rr: Vec3
+    g: Vec3
+    buttons: dict[str, bool]
+    counters: dict[str, int]
+    scroll_delta: float
+
+    @property
+    def rate_dps(self) -> float:
+        return math.sqrt(sum(v * v for v in self.rr))
+
+    @property
+    def has_orientation(self) -> bool:
+        return self.alpha is not None and self.beta is not None
+
+
+def _num(v: Any, lo: float, hi: float, name: str, allow_none: bool = False) -> float | None:
+    if v is None and allow_none:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ProtocolError(f"{name}: not a number")
+    f = float(v)
+    if math.isnan(f) or f < lo or f > hi:
+        raise ProtocolError(f"{name}: out of range")
+    return f
+
+
+def _vec3(v: Any, lim: float, name: str) -> Vec3:
+    if not isinstance(v, list) or len(v) != 3:
+        raise ProtocolError(f"{name}: expected 3 numbers")
+    return tuple(_num(x if x is not None else 0.0, -lim, lim, name) for x in v)  # type: ignore[return-value]
+
+
+def _token(v: Any, name: str) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, str) or not (8 <= len(v) <= 128) or not re.fullmatch(r"[A-Za-z0-9_-]+", v):
+        raise ProtocolError(f"{name}: malformed")
+    return v
+
+
+def _button_map(v: Any, name: str, as_bool: bool) -> dict:
+    if not isinstance(v, dict) or len(v) > MAX_BUTTONS:
+        raise ProtocolError(f"{name}: expected object with <= {MAX_BUTTONS} keys")
+    out = {}
+    for k, val in v.items():
+        if not isinstance(k, str) or not BUTTON_ID_RE.match(k):
+            raise ProtocolError(f"{name}: bad button id")
+        if as_bool:
+            if val not in (0, 1, True, False):
+                raise ProtocolError(f"{name}.{k}: expected 0/1")
+            out[k] = bool(val)
+        else:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 10**9:
+                raise ProtocolError(f"{name}.{k}: expected non-negative int")
+            out[k] = val
+    return out
+
+
+def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
+    if len(text.encode("utf-8", "replace")) > MAX_FRAME_BYTES:
+        raise ProtocolError("frame too large")
+    try:
+        d = json.loads(text)
+    except ValueError as e:
+        raise ProtocolError(f"bad json: {e}") from e
+    if not isinstance(d, dict):
+        raise ProtocolError("expected object")
+    t = d.get("t")
+    if t == "s":
+        o = d.get("o")
+        if o is None:
+            alpha = beta = gamma = None
+        else:
+            if not isinstance(o, list) or len(o) != 3:
+                raise ProtocolError("o: expected 3 values")
+            alpha = _num(o[0], 0.0, 360.0, "alpha", allow_none=True)
+            beta = _num(o[1], -180.0, 180.0, "beta", allow_none=True)
+            gamma = _num(o[2], -90.0, 90.0, "gamma", allow_none=True)
+        seq = d.get("seq")
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq <= 0:
+            raise ProtocolError("seq: expected positive int")
+        return SensorPacket(
+            seq=seq,
+            ts=_num(d.get("ts"), 0.0, 1e9, "ts"),  # type: ignore[arg-type]
+            alpha=alpha,
+            beta=beta,
+            gamma=gamma,
+            rr=_vec3(d.get("rr", [0, 0, 0]), 5000.0, "rr"),
+            g=_vec3(d.get("g", [0, 0, 0]), 50.0, "g"),
+            buttons=_button_map(d.get("b", {}), "b", as_bool=True),
+            counters=_button_map(d.get("c", {}), "c", as_bool=False),
+            scroll_delta=_num(d.get("sd", 0.0), -10000.0, 10000.0, "sd"),  # type: ignore[arg-type]
+        )
+    if t == "hello":
+        ver = d.get("ver")
+        if ver != PROTOCOL_VERSION:
+            raise ProtocolError("unsupported protocol version")
+        name = d.get("name", "phone")
+        if not isinstance(name, str):
+            raise ProtocolError("name: expected string")
+        return Hello(ver=ver, pair=_token(d.get("pair"), "pair"), token=_token(d.get("token"), "token"),
+                     name=name[:64])
+    if t == "ping":
+        return Ping()
+    if t == "bye":
+        return Bye()
+    raise ProtocolError("unknown message type")
+
+
+# --- server -> phone -------------------------------------------------------
+
+def welcome_message(device_token: str) -> str:
+    return json.dumps({"t": "welcome", "device_token": device_token})
+
+
+def state_message(*, conn: bool, power: bool, phase: str, recenter: float, idle_hz: int,
+                  accessibility: bool, ui: dict) -> str:
+    return json.dumps({"t": "state", "conn": conn, "power": power, "phase": phase,
+                       "recenter": round(recenter, 3), "idle_hz": idle_hz,
+                       "accessibility": accessibility, "ui": ui})
+
+
+def layout_message(layout_dict: dict) -> str:
+    return json.dumps({"t": "layout", **layout_dict})
+
+
+def theme_changed_message() -> str:
+    return json.dumps({"t": "theme_changed"})
+
+
+def err_message(code: str, msg: str) -> str:
+    return json.dumps({"t": "err", "code": code, "msg": msg})
+
+
+def pong_message() -> str:
+    return json.dumps({"t": "pong"})
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_protocol.py -q`
+Expected: 21 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: wire protocol with strict inbound validation"
+```
+
+---
+
+### Task 5: Config paths and packaged defaults
+
+**Files:**
+- Create: `src/airmouse/paths.py`, `src/airmouse/defaults/pointer.json`, `src/airmouse/defaults/layout.json`
+- Test: covered by `tests/test_config.py` in Task 6
+
+`paths.ensure()` is the first-run seeder. It never overwrites a file the user has edited, which is what makes every UI file safely user-owned. `AIRMOUSE_CONFIG_DIR` lets tests and the fake phone point at a scratch directory.
+
+- [ ] **Step 1: Write `src/airmouse/paths.py`**
+
+```python
+"""Filesystem layout of the config directory and packaged resources."""
+from __future__ import annotations
+
+import os
+import shutil
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+APP_NAME = "AirMouse"
+PACKAGE_DIR = Path(__file__).resolve().parent
+DEFAULTS_DIR = PACKAGE_DIR / "defaults"
+WEB_DIR = PACKAGE_DIR / "web"
+UI_FILES = ("layout.json", "theme.css")
+
+
+def default_config_dir() -> Path:
+    env = os.environ.get("AIRMOUSE_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser()
+    return Path.home() / "Library" / "Application Support" / APP_NAME
+
+
+@dataclass(frozen=True)
+class Paths:
+    root: Path
+
+    @property
+    def pointer_json(self) -> Path: return self.root / "pointer.json"
+    @property
+    def layout_json(self) -> Path: return self.root / "layout.json"
+    @property
+    def theme_css(self) -> Path: return self.root / "theme.css"
+    @property
+    def assets(self) -> Path: return self.root / "assets"
+    @property
+    def devices_json(self) -> Path: return self.root / "devices.json"
+    @property
+    def certs(self) -> Path: return self.root / "certs"
+    @property
+    def logs(self) -> Path: return self.root / "logs"
+    @property
+    def sessions(self) -> Path: return self.root / "sessions"
+
+    def ensure(self) -> None:
+        """Create directories and copy packaged defaults for anything missing."""
+        for d in (self.root, self.certs, self.logs, self.sessions):
+            d.mkdir(parents=True, exist_ok=True)
+        for name in ("pointer.json", *UI_FILES):
+            dst = self.root / name
+            if not dst.exists():
+                shutil.copy(DEFAULTS_DIR / name, dst)
+        if not self.assets.exists():
+            shutil.copytree(DEFAULTS_DIR / "assets", self.assets)
+        from .icons import write_defaults
+        write_defaults(self.assets)
+
+    def reset_ui(self) -> list[Path]:
+        """Restore layout/theme/assets from package defaults, backing up existing files."""
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backed_up: list[Path] = []
+        for name in UI_FILES:
+            dst = self.root / name
+            if dst.exists():
+                bak = dst.with_name(f"{name}.{stamp}.bak")
+                dst.rename(bak)
+                backed_up.append(bak)
+            shutil.copy(DEFAULTS_DIR / name, dst)
+        if self.assets.exists():
+            bak = self.assets.with_name(f"assets.{stamp}.bak")
+            self.assets.rename(bak)
+            backed_up.append(bak)
+        shutil.copytree(DEFAULTS_DIR / "assets", self.assets)
+        from .icons import write_defaults
+        write_defaults(self.assets)
+        return backed_up
+```
+
+- [ ] **Step 2: Write `src/airmouse/defaults/pointer.json`**
+
+```json
+{
+  "version": 1,
+  "gain_x_px_per_deg": 25.0,
+  "gain_y_px_per_deg": 25.0,
+  "invert_y": false,
+  "one_euro": {"min_cutoff": 1.0, "beta": 0.02, "d_cutoff": 1.0},
+  "deadzone_dps": 0.5,
+  "accel": {"enabled": false, "threshold_dps": 40.0, "k": 0.01, "max_mult": 3.0},
+  "freeze_ms_on_touch": 120,
+  "freeze_ms_on_release": 60,
+  "chord_window_ms": 50,
+  "recenter_hold_ms": 1000,
+  "double_click_s": 0.5,
+  "scroll_gain": 1.5,
+  "scroll_natural": true,
+  "auto_activate": false,
+  "auto_deactivate": true,
+  "pickup_ms": 300,
+  "rest_seconds": 1.0,
+  "rest_tilt_deg": 15.0,
+  "rest_rate_dps": 8.0,
+  "idle_hz_when_auto_activate": 10,
+  "timeout_ms": 500,
+  "cert_mode": "auto",
+  "ui": {"haptics": true, "keep_awake": "always"}
+}
+```
+
+- [ ] **Step 3: Write `src/airmouse/defaults/layout.json`**
+
+```json
+{
+  "version": 1,
+  "buttons": [
+    {"id": "power",  "role": "power",  "x": 32, "y": 3,  "w": 36, "h": 9,  "label": "POWER"},
+    {"id": "left",   "role": "left",   "x": 3,  "y": 50, "w": 42, "h": 46, "label": "L"},
+    {"id": "scroll", "role": "scroll", "x": 46, "y": 48, "w": 8,  "h": 50, "label": ""},
+    {"id": "right",  "role": "right",  "x": 55, "y": 50, "w": 42, "h": 46, "label": "R"}
+  ]
+}
+```
+
+Every number in `pointer.json` is a tuning knob the user edits live. Every entry in `layout.json` is a button whose role, position, size, label, icon and CSS class the user controls. Positions are percentages of the pad, so the layout is resolution independent.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat: config directory layout and packaged defaults"
+```
+
+---
+
+### Task 6: Configuration parsing, validation and hot-reload watching
+
+**Files:**
+- Create: `src/airmouse/config.py`
+- Test: `tests/test_config.py`
+
+Two rules make live editing safe. A malformed file is **rejected with a logged reason and the previous good value stays in effect**, so a stray comma never kills the pointer mid-use. And `FileWatcher` reports each change exactly once, so a save triggers one reload.
+
+The layout validator enforces exactly one `power` button and at most one each of `left`, `right` and `scroll`, because the engine maps roles to behaviour and duplicates would be ambiguous. `clutch` and `recenter` may appear any number of times.
+
+Note: `tests/test_config.py` ends with two tests covering the icon defaults from Task 7. They fail until Task 7 lands, so this task finishes at 23 passed and 2 failed. That is expected, and it is the only forward reference in this plan.
+
+- [ ] **Step 1: Write the failing test — `tests/test_config.py`**
+
+```python
+import json
+import os
+import time
+
+import pytest
+
+from airmouse.config import (ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config,
+                             parse_layout)
+from airmouse.paths import DEFAULTS_DIR, Paths
+
+
+def test_defaults_file_matches_dataclass_defaults():
+    cfg = load_pointer_config(DEFAULTS_DIR / "pointer.json")
+    assert cfg == PointerConfig()
+    assert cfg.idle_hz == 0
+
+
+def test_partial_config_uses_defaults(tmp_path):
+    p = tmp_path / "pointer.json"
+    p.write_text(json.dumps({"gain_x_px_per_deg": 40, "auto_activate": True}))
+    cfg = load_pointer_config(p)
+    assert cfg.gain_x_px_per_deg == 40.0
+    assert cfg.gain_y_px_per_deg == 25.0
+    assert cfg.idle_hz == 10
+
+
+@pytest.mark.parametrize("bad", [
+    {"gain_x_px_per_deg": 0}, {"gain_x_px_per_deg": "fast"}, {"invert_y": 1},
+    {"one_euro": {"min_cutoff": -1}}, {"chord_window_ms": 5000}, {"ui": {"keep_awake": "never"}},
+    {"cert_mode": "magic"}, {"recenter_hold_ms": 10},
+])
+def test_rejects_invalid_values(bad):
+    with pytest.raises(ConfigError):
+        PointerConfig.from_dict(bad)
+
+
+def test_unreadable_file_raises(tmp_path):
+    p = tmp_path / "pointer.json"
+    p.write_text("{oops")
+    with pytest.raises(ConfigError):
+        load_pointer_config(p)
+
+
+def test_default_layout_parses():
+    layout = load_layout(DEFAULTS_DIR / "layout.json")
+    assert layout.roles() == {"power": "power", "left": "left", "scroll": "scroll", "right": "right"}
+    assert layout.to_dict()["buttons"][0]["label"] == "POWER"
+
+
+def _layout(buttons):
+    return {"version": 1, "buttons": buttons}
+
+
+def _btn(**kw):
+    d = {"id": "power", "role": "power", "x": 0, "y": 0, "w": 10, "h": 10}
+    d.update(kw)
+    return d
+
+
+@pytest.mark.parametrize("buttons", [
+    [],
+    [_btn(id="Power")],
+    [_btn(role="middle")],
+    [_btn(x=95, w=10)],
+    [_btn(), _btn(id="p2")],
+    [_btn(), _btn(id="a", role="left"), _btn(id="b", role="left")],
+    [_btn(id="left", role="left")],
+    [_btn(icon="../secret.svg")],
+])
+def test_layout_validation(buttons):
+    with pytest.raises(ConfigError):
+        parse_layout(_layout(buttons))
+
+
+def test_layout_allows_optional_roles_and_fields():
+    layout = parse_layout(_layout([
+        _btn(), _btn(id="c1", role="clutch", x=50), _btn(id="c2", role="clutch", y=50),
+        _btn(id="rc", role="recenter", x=50, y=50, icon="icons/target.svg", **{"class": "big"}),
+    ]))
+    assert layout.roles()["c2"] == "clutch"
+    assert layout.to_dict()["buttons"][3]["class"] == "big"
+
+
+def test_watcher_reports_changes_once(tmp_path):
+    p = tmp_path / "a.json"
+    p.write_text("1")
+    w = FileWatcher([p, tmp_path / "missing"])
+    assert w.changed() == []
+    time.sleep(0.01)
+    p.write_text("2")
+    os.utime(p, ns=(time.time_ns(), time.time_ns()))
+    assert w.changed() == [p]
+    assert w.changed() == []
+    (tmp_path / "missing").write_text("x")
+    assert w.changed() == [tmp_path / "missing"]
+
+
+def test_paths_ensure_and_reset(tmp_path):
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    assert paths.pointer_json.exists() and paths.layout_json.exists() and paths.theme_css.exists()
+    assert (paths.assets / "logo.svg").exists()
+    paths.theme_css.write_text("body{color:red}")
+    backups = paths.reset_ui()
+    assert len(backups) == 3
+    assert paths.theme_css.read_text() == (DEFAULTS_DIR / "theme.css").read_text()
+
+
+def test_ensure_creates_menubar_icons_and_touch_icon(tmp_path):
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    for name in ("warn", "disconnected", "off", "on"):
+        p = paths.assets / "menubar" / f"{name}.png"
+        assert p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (paths.assets / "apple-touch-icon.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (paths.assets / "logo.svg").read_text().startswith("<svg")
+
+
+def test_ensure_never_overwrites_user_assets(tmp_path):
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    (paths.assets / "logo.svg").write_text("<svg>mine</svg>")
+    (paths.assets / "menubar" / "on.png").write_bytes(b"mine")
+    paths.ensure()
+    assert (paths.assets / "logo.svg").read_text() == "<svg>mine</svg>"
+    assert (paths.assets / "menubar" / "on.png").read_bytes() == b"mine"
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_config.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.config'`
+
+- [ ] **Step 3: Write `src/airmouse/config.py`**
+
+```python
+"""Pointer tuning (pointer.json) and phone layout (layout.json): parsing, validation, watching."""
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+ROLES = frozenset({"left", "right", "scroll", "power", "clutch", "recenter"})
+SINGLETON_ROLES = frozenset({"left", "right", "scroll", "power"})
+BUTTON_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def _num(d: dict, key: str, default: float, lo: float, hi: float) -> float:
+    v = d.get(key, default)
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ConfigError(f"{key}: expected a number")
+    if not (lo <= v <= hi):
+        raise ConfigError(f"{key}: must be between {lo} and {hi}")
+    return float(v)
+
+
+def _int(d: dict, key: str, default: int, lo: int, hi: int) -> int:
+    return int(_num(d, key, default, lo, hi))
+
+
+def _bool(d: dict, key: str, default: bool) -> bool:
+    v = d.get(key, default)
+    if not isinstance(v, bool):
+        raise ConfigError(f"{key}: expected true/false")
+    return v
+
+
+def _sub(d: dict, key: str) -> dict:
+    v = d.get(key, {})
+    if not isinstance(v, dict):
+        raise ConfigError(f"{key}: expected an object")
+    return v
+
+
+@dataclass(frozen=True)
+class OneEuroConfig:
+    min_cutoff: float = 1.0
+    beta: float = 0.02
+    d_cutoff: float = 1.0
+
+
+@dataclass(frozen=True)
+class AccelConfig:
+    enabled: bool = False
+    threshold_dps: float = 40.0
+    k: float = 0.01
+    max_mult: float = 3.0
+
+
+@dataclass(frozen=True)
+class UIConfig:
+    haptics: bool = True
+    keep_awake: str = "always"
+
+
+@dataclass(frozen=True)
+class PointerConfig:
+    version: int = 1
+    gain_x_px_per_deg: float = 25.0
+    gain_y_px_per_deg: float = 25.0
+    invert_y: bool = False
+    one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
+    deadzone_dps: float = 0.5
+    accel: AccelConfig = field(default_factory=AccelConfig)
+    freeze_ms_on_touch: int = 120
+    freeze_ms_on_release: int = 60
+    chord_window_ms: int = 50
+    recenter_hold_ms: int = 1000
+    double_click_s: float = 0.5
+    scroll_gain: float = 1.5
+    scroll_natural: bool = True
+    auto_activate: bool = False
+    auto_deactivate: bool = True
+    pickup_ms: int = 300
+    rest_seconds: float = 1.0
+    rest_tilt_deg: float = 15.0
+    rest_rate_dps: float = 8.0
+    idle_hz_when_auto_activate: int = 10
+    timeout_ms: int = 500
+    cert_mode: str = "auto"
+    ui: UIConfig = field(default_factory=UIConfig)
+
+    @property
+    def idle_hz(self) -> int:
+        return self.idle_hz_when_auto_activate if self.auto_activate else 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Any) -> "PointerConfig":
+        if not isinstance(d, dict):
+            raise ConfigError("pointer.json must contain an object")
+        oe = _sub(d, "one_euro")
+        ac = _sub(d, "accel")
+        ui = _sub(d, "ui")
+        keep_awake = ui.get("keep_awake", "always")
+        if keep_awake not in ("always", "on_only"):
+            raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
+        cert_mode = d.get("cert_mode", "auto")
+        if cert_mode not in ("auto", "external"):
+            raise ConfigError("cert_mode: expected 'auto' or 'external'")
+        return cls(
+            version=_int(d, "version", 1, 1, 1),
+            gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 25.0, 0.1, 500.0),
+            gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 25.0, 0.1, 500.0),
+            invert_y=_bool(d, "invert_y", False),
+            one_euro=OneEuroConfig(
+                min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
+                beta=_num(oe, "beta", 0.02, 0.0, 10.0),
+                d_cutoff=_num(oe, "d_cutoff", 1.0, 0.01, 100.0),
+            ),
+            deadzone_dps=_num(d, "deadzone_dps", 0.5, 0.0, 90.0),
+            accel=AccelConfig(
+                enabled=_bool(ac, "enabled", False),
+                threshold_dps=_num(ac, "threshold_dps", 40.0, 0.0, 1000.0),
+                k=_num(ac, "k", 0.01, 0.0, 1.0),
+                max_mult=_num(ac, "max_mult", 3.0, 1.0, 20.0),
+            ),
+            freeze_ms_on_touch=_int(d, "freeze_ms_on_touch", 120, 0, 2000),
+            freeze_ms_on_release=_int(d, "freeze_ms_on_release", 60, 0, 2000),
+            chord_window_ms=_int(d, "chord_window_ms", 50, 0, 500),
+            recenter_hold_ms=_int(d, "recenter_hold_ms", 1000, 100, 10000),
+            double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
+            scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
+            scroll_natural=_bool(d, "scroll_natural", True),
+            auto_activate=_bool(d, "auto_activate", False),
+            auto_deactivate=_bool(d, "auto_deactivate", True),
+            pickup_ms=_int(d, "pickup_ms", 300, 0, 5000),
+            rest_seconds=_num(d, "rest_seconds", 1.0, 0.1, 60.0),
+            rest_tilt_deg=_num(d, "rest_tilt_deg", 15.0, 1.0, 80.0),
+            rest_rate_dps=_num(d, "rest_rate_dps", 8.0, 0.0, 500.0),
+            idle_hz_when_auto_activate=_int(d, "idle_hz_when_auto_activate", 10, 1, 60),
+            timeout_ms=_int(d, "timeout_ms", 500, 100, 10000),
+            cert_mode=cert_mode,
+            ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
+        )
+
+
+def load_pointer_config(path: Path) -> PointerConfig:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"cannot read {path.name}: {e}") from e
+    return PointerConfig.from_dict(data)
+
+
+# --- layout -----------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LayoutButton:
+    id: str
+    role: str
+    x: float
+    y: float
+    w: float
+    h: float
+    label: str = ""
+    icon: str | None = None
+    css_class: str = ""
+
+    def to_dict(self) -> dict:
+        d = {"id": self.id, "role": self.role, "x": self.x, "y": self.y, "w": self.w, "h": self.h,
+             "label": self.label}
+        if self.icon:
+            d["icon"] = self.icon
+        if self.css_class:
+            d["class"] = self.css_class
+        return d
+
+
+@dataclass(frozen=True)
+class Layout:
+    version: int
+    buttons: tuple[LayoutButton, ...]
+
+    def roles(self) -> dict[str, str]:
+        """Map of button id -> role, consumed by the engine."""
+        return {b.id: b.role for b in self.buttons}
+
+    def to_dict(self) -> dict:
+        return {"version": self.version, "buttons": [b.to_dict() for b in self.buttons]}
+
+
+def parse_layout(d: Any) -> Layout:
+    if not isinstance(d, dict):
+        raise ConfigError("layout.json must contain an object")
+    version = _int(d, "version", 1, 1, 1)
+    raw = d.get("buttons")
+    if not isinstance(raw, list) or not raw or len(raw) > 16:
+        raise ConfigError("buttons: expected a list of 1..16 buttons")
+    buttons: list[LayoutButton] = []
+    seen_ids: set[str] = set()
+    role_count: dict[str, int] = {}
+    for i, b in enumerate(raw):
+        if not isinstance(b, dict):
+            raise ConfigError(f"buttons[{i}]: expected an object")
+        bid = b.get("id")
+        if not isinstance(bid, str) or not BUTTON_ID_RE.match(bid):
+            raise ConfigError(f"buttons[{i}].id: must match [a-z0-9_-]{{1,32}}")
+        if bid in seen_ids:
+            raise ConfigError(f"buttons[{i}].id: duplicate '{bid}'")
+        seen_ids.add(bid)
+        role = b.get("role")
+        if role not in ROLES:
+            raise ConfigError(f"buttons[{i}].role: must be one of {sorted(ROLES)}")
+        role_count[role] = role_count.get(role, 0) + 1
+        x, y = _num(b, "x", 0, 0, 100), _num(b, "y", 0, 0, 100)
+        w, h = _num(b, "w", 10, 0.5, 100), _num(b, "h", 10, 0.5, 100)
+        if x + w > 100.0001 or y + h > 100.0001:
+            raise ConfigError(f"buttons[{i}]: x+w and y+h must be <= 100")
+        label = b.get("label", "")
+        if not isinstance(label, str) or len(label) > 32:
+            raise ConfigError(f"buttons[{i}].label: expected string <= 32 chars")
+        icon = b.get("icon")
+        if icon is not None and (not isinstance(icon, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", icon)
+                                 or ".." in icon):
+            raise ConfigError(f"buttons[{i}].icon: expected a relative path under assets/")
+        css_class = b.get("class", "")
+        if not isinstance(css_class, str) or not re.fullmatch(r"[A-Za-z0-9_ -]*", css_class):
+            raise ConfigError(f"buttons[{i}].class: expected CSS class names")
+        buttons.append(LayoutButton(bid, role, x, y, w, h, label, icon, css_class))
+    if role_count.get("power", 0) != 1:
+        raise ConfigError("layout needs exactly one button with role 'power'")
+    for r in SINGLETON_ROLES:
+        if role_count.get(r, 0) > 1:
+            raise ConfigError(f"at most one button may have role '{r}'")
+    return Layout(version=version, buttons=tuple(buttons))
+
+
+def load_layout(path: Path) -> Layout:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"cannot read {path.name}: {e}") from e
+    return parse_layout(data)
+
+
+# --- watcher ----------------------------------------------------------------
+
+class FileWatcher:
+    """Polls file mtimes; `changed()` returns the paths modified since the previous call."""
+
+    def __init__(self, paths: list[Path]):
+        self._paths = list(paths)
+        self._mtimes = {p: self._mtime(p) for p in self._paths}
+
+    @staticmethod
+    def _mtime(p: Path) -> float | None:
+        try:
+            return os.stat(p).st_mtime_ns
+        except OSError:
+            return None
+
+    def changed(self) -> list[Path]:
+        out = []
+        for p in self._paths:
+            m = self._mtime(p)
+            if m != self._mtimes[p]:
+                self._mtimes[p] = m
+                out.append(p)
+        return out
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_config.py -q`
+Expected: 23 passed, 2 failed. The two failures are the icon tests at the end of the file; they need Task 7.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: pointer and layout configuration with validation"
+```
+
+---
+
+### Task 7: Procedural default icons
+
+**Files:**
+- Create: `src/airmouse/icons.py`
+- Modify: `src/airmouse/paths.py` (wire `write_defaults` into `ensure` and `reset_ui`)
+- Test: the two icon tests already at the end of `tests/test_config.py`
+
+Menu-bar icons are template images: the alpha channel is the shape, macOS supplies the colour for light and dark menu bars. Generating them from code keeps binary blobs out of the repository and still leaves the user free to drop in their own PNGs, which `write_defaults` will never overwrite. The Home Screen icon has to be a real PNG because iOS ignores SVG there, so there is a small RGBA encoder alongside the grayscale one.
+
+- [ ] **Step 1: Write `src/airmouse/icons.py`**
+
+```python
+"""Procedurally drawn default assets.
+
+Menu-bar icons are template images: black pixels with an alpha mask, which
+macOS recolours for light and dark menu bars. Generating them avoids shipping
+binary blobs, and the user can overwrite the PNGs with their own at any time.
+"""
+from __future__ import annotations
+
+import math
+import struct
+import zlib
+from pathlib import Path
+
+SIZE = 36  # 18 pt at 2x
+
+
+def _chunk(tag: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + tag + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+
+def _png_bytes(w: int, h: int, colour_type: int, raw: bytes) -> bytes:
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, colour_type, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(raw, 9))
+            + _chunk(b"IEND", b""))
+
+
+def _png(pixels: list[list[int]]) -> bytes:
+    """Encode an 8-bit grayscale+alpha template image (colour is always black)."""
+    h, w = len(pixels), len(pixels[0])
+    raw = b"".join(b"\x00" + bytes(b for a in row for b in (0, a)) for row in pixels)
+    return _png_bytes(w, h, 4, raw)
+
+
+def _png_rgba(pixels: list[list[tuple[int, int, int, int]]]) -> bytes:
+    h, w = len(pixels), len(pixels[0])
+    raw = b"".join(b"\x00" + bytes(c for px in row for c in px) for row in pixels)
+    return _png_bytes(w, h, 6, raw)
+
+
+def touch_icon(size: int = 180) -> bytes:
+    """Home Screen icon: iOS requires PNG here, so draw one rather than ship SVG."""
+    bg, accent = (11, 15, 20, 255), (62, 166, 255, 255)
+    cx, cy = size / 2, size / 2
+    rx, ry = size * 0.17, size * 0.29
+    stroke = size * 0.039
+    wheel_w, wheel_top, wheel_h = size * 0.045, size * 0.32, size * 0.145
+    rows = []
+    for y in range(size):
+        row = []
+        for x in range(size):
+            fx, fy = (x - cx + 0.5) / rx, (y - cy + 0.5) / ry
+            d = math.hypot(fx, fy)
+            on_body = abs(d - 1.0) * min(rx, ry) <= stroke / 2
+            in_wheel = (abs(x - cx + 0.5) <= wheel_w / 2
+                        and wheel_top <= y <= wheel_top + wheel_h)
+            row.append(accent if (on_body or in_wheel) else bg)
+        rows.append(row)
+    return _png_rgba(rows)
+
+
+def _blank() -> list[list[int]]:
+    return [[0] * SIZE for _ in range(SIZE)]
+
+
+def _ring(px, cx, cy, r, thickness, alpha=255):
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d = math.hypot(x - cx + 0.5, y - cy + 0.5)
+            if abs(d - r) <= thickness / 2:
+                px[y][x] = max(px[y][x], alpha)
+
+
+def _disc(px, cx, cy, r, alpha=255):
+    for y in range(SIZE):
+        for x in range(SIZE):
+            if math.hypot(x - cx + 0.5, y - cy + 0.5) <= r:
+                px[y][x] = max(px[y][x], alpha)
+
+
+def _rect(px, x0, y0, x1, y1, alpha=255):
+    for y in range(max(0, y0), min(SIZE, y1)):
+        for x in range(max(0, x0), min(SIZE, x1)):
+            px[y][x] = max(px[y][x], alpha)
+
+
+def _mouse_body(px, alpha=255):
+    """A rounded mouse outline: the shared silhouette of every state icon."""
+    cx, top, bottom, rx = SIZE / 2, 6, 30, 9
+    for y in range(SIZE):
+        for x in range(SIZE):
+            fx = (x - cx + 0.5) / rx
+            if top <= y <= bottom:
+                cy = (top + bottom) / 2
+                fy = (y - cy + 0.5) / ((bottom - top) / 2)
+                d = math.hypot(fx, fy)
+                if 0.82 <= d <= 1.0:
+                    px[y][x] = max(px[y][x], alpha)
+
+
+def icon_disconnected() -> bytes:
+    px = _blank()
+    _mouse_body(px, 150)
+    return _png(px)
+
+
+def icon_off() -> bytes:
+    px = _blank()
+    _mouse_body(px)
+    _rect(px, 17, 10, 19, 17)  # the scroll wheel
+    return _png(px)
+
+
+def icon_on() -> bytes:
+    px = _blank()
+    _mouse_body(px)
+    _disc(px, SIZE / 2, 13.5, 4.2)
+    return _png(px)
+
+
+def icon_warn() -> bytes:
+    px = _blank()
+    _mouse_body(px, 140)
+    _rect(px, 17, 11, 19, 20)  # exclamation stem
+    _rect(px, 17, 22, 19, 25)  # exclamation dot
+    return _png(px)
+
+
+LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 24" fill="none">
+  <rect x="1" y="3" width="12" height="18" rx="6" stroke="currentColor" stroke-width="1.6"/>
+  <rect x="6.2" y="7" width="1.6" height="5" rx="0.8" fill="currentColor"/>
+  <text x="19" y="17" font-family="-apple-system, system-ui, sans-serif" font-size="12"
+        font-weight="600" letter-spacing="1.5" fill="currentColor">AIRMOUSE</text>
+</svg>
+"""
+
+def write_defaults(assets: Path) -> None:
+    """Create any default asset that is missing. Never overwrites the user's files."""
+    (assets / "menubar").mkdir(parents=True, exist_ok=True)
+    for name, data in (("warn", icon_warn()), ("disconnected", icon_disconnected()),
+                       ("off", icon_off()), ("on", icon_on())):
+        p = assets / "menubar" / f"{name}.png"
+        if not p.exists():
+            p.write_bytes(data)
+    logo = assets / "logo.svg"
+    if not logo.exists():
+        logo.write_text(LOGO_SVG)
+    touch = assets / "apple-touch-icon.png"
+    if not touch.exists():
+        touch.write_bytes(touch_icon())
+    (assets / "icons").mkdir(exist_ok=True)
+```
+
+- [ ] **Step 2: Wire it into `src/airmouse/paths.py`**
+
+In `Paths.ensure`, after the `copytree` of the assets directory, add:
+
+```python
+        from .icons import write_defaults
+        write_defaults(self.assets)
+```
+
+In `Paths.reset_ui`, after its `copytree`, add the same two lines before `return backed_up`.
+
+- [ ] **Step 3: Run the config tests, now including the icon tests**
+
+Run: `uv run pytest tests/test_config.py -q`
+Expected: `25 passed`
+
+- [ ] **Step 4: Confirm macOS accepts the generated PNGs**
+
+```bash
+uv run python -c "
+from pathlib import Path
+from airmouse.icons import write_defaults
+write_defaults(Path('/tmp/am-icons'))"
+sips -g pixelWidth -g pixelHeight -g hasAlpha /tmp/am-icons/menubar/on.png
+```
+Expected: `pixelWidth: 36`, `pixelHeight: 36`, `hasAlpha: yes`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: procedurally generated default icons"
+```
+
+---
+
+### Task 8: Cursor backends and display geometry
+
+**Files:**
+- Create: `src/airmouse/cursor_backend.py`
+- Test: `tests/test_cursor_backend.py`
+
+`clamp_to_displays` is what makes multi-monitor work: a target inside *any* display is allowed through, so the cursor crosses between screens, and only a target outside all of them is clamped to the display it came from. That same rule produces edge-drag for free, because overshoot past an edge is silently discarded rather than accumulated.
+
+Three Quartz details are load-bearing and easy to get wrong. While a button is held you must post *dragged* events, not *moved*, or drags silently do nothing. `kCGMouseEventClickState` must be set to 1, 2 or 3 or macOS never recognises a double-click. And scroll events need `kCGScrollWheelEventIsContinuous` to feel like a trackpad rather than a notched wheel.
+
+- [ ] **Step 1: Write the failing test — `tests/test_cursor_backend.py`**
+
+```python
+from airmouse.cursor_backend import FakeCursor, Rect, clamp_to_displays, display_containing
+
+MAIN = Rect(0, 0, 1440, 900)
+SIDE = Rect(1440, 0, 1920, 1080)
+
+
+def test_rect_contains_and_clamp():
+    assert MAIN.contains(0, 0) and MAIN.contains(1439, 899)
+    assert not MAIN.contains(1440, 0) and not MAIN.contains(-1, 5)
+    assert MAIN.clamp(2000, -50) == (1439, 0)
+    assert MAIN.center() == (720, 450)
+
+
+def test_display_containing_prefers_holder_then_nearest():
+    assert display_containing([MAIN, SIDE], 1500, 10) == SIDE
+    assert display_containing([MAIN, SIDE], 10, 10) == MAIN
+    assert display_containing([MAIN, SIDE], 1500, 1500) == SIDE
+    assert display_containing([MAIN, SIDE], -100, -100) == MAIN
+
+
+def test_clamp_allows_crossing_into_neighbor():
+    assert clamp_to_displays([MAIN, SIDE], 1450, 100, MAIN) == (1450, 100)
+    assert clamp_to_displays([MAIN, SIDE], 1450, 1100, MAIN) == (1439, 899)
+    assert clamp_to_displays([MAIN, SIDE], -5, 100, MAIN) == (0, 100)
+
+
+def test_fake_cursor_records():
+    f = FakeCursor()
+    f.move_to(5, 6)
+    f.button_down("left", 5, 6, 1)
+    f.drag_to(9, 9, "left")
+    f.button_up("left", 9, 9, 1)
+    f.scroll(-3)
+    assert f.kinds() == ["move", "down", "drag", "up", "scroll"]
+    assert f.summary() == {"x": 9, "y": 9, "held": [], "moves": 2, "clicks": 1, "scroll": -3}
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_cursor_backend.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.cursor_backend'`
+
+- [ ] **Step 3: Write `src/airmouse/cursor_backend.py`**
+
+```python
+"""Cursor backends: the Quartz implementation and an in-memory fake for tests and tools.
+
+All coordinates are Quartz global points: origin at the top-left of the main
+display, y grows downward.
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Literal, Protocol
+
+Button = Literal["left", "right"]
+
+
+@dataclass(frozen=True)
+class Rect:
+    x: float
+    y: float
+    w: float
+    h: float
+
+    def contains(self, px: float, py: float) -> bool:
+        return self.x <= px < self.x + self.w and self.y <= py < self.y + self.h
+
+    def center(self) -> tuple[float, float]:
+        return (self.x + self.w / 2, self.y + self.h / 2)
+
+    def clamp(self, px: float, py: float) -> tuple[float, float]:
+        return (min(max(px, self.x), self.x + self.w - 1), min(max(py, self.y), self.y + self.h - 1))
+
+
+def display_containing(displays: list[Rect], x: float, y: float) -> Rect:
+    """The display holding (x, y), or the nearest one if the point is outside all of them."""
+    for d in displays:
+        if d.contains(x, y):
+            return d
+
+    def dist2(d: Rect) -> float:
+        cx, cy = d.clamp(x, y)
+        return (cx - x) ** 2 + (cy - y) ** 2
+
+    return min(displays, key=dist2)
+
+
+def clamp_to_displays(displays: list[Rect], x: float, y: float, current: Rect) -> tuple[float, float]:
+    """Keep a target inside any display; otherwise clamp it to the current one."""
+    for d in displays:
+        if d.contains(x, y):
+            return (x, y)
+    return current.clamp(x, y)
+
+
+class CursorBackend(Protocol):
+    def get_position(self) -> tuple[float, float]: ...
+    def move_to(self, x: float, y: float) -> None: ...
+    def drag_to(self, x: float, y: float, button: Button) -> None: ...
+    def button_down(self, button: Button, x: float, y: float, click_count: int) -> None: ...
+    def button_up(self, button: Button, x: float, y: float, click_count: int) -> None: ...
+    def scroll(self, dy_px: int) -> None: ...
+    def displays(self) -> list[Rect]: ...
+
+
+@dataclass(frozen=True)
+class CursorEvent:
+    kind: str  # move | drag | down | up | scroll
+    x: float = 0.0
+    y: float = 0.0
+    button: str | None = None
+    count: int = 0
+    dy: int = 0
+
+
+@dataclass
+class FakeCursor:
+    """Records every call; used by unit tests, the replay tool, and `--backend fake`."""
+
+    x: float = 100.0
+    y: float = 100.0
+    display_list: list[Rect] = field(default_factory=lambda: [Rect(0, 0, 1440, 900)])
+    events: list[CursorEvent] = field(default_factory=list)
+    held: set[str] = field(default_factory=set)
+
+    def get_position(self) -> tuple[float, float]:
+        return (self.x, self.y)
+
+    def move_to(self, x: float, y: float) -> None:
+        self.x, self.y = x, y
+        self.events.append(CursorEvent("move", x, y))
+
+    def drag_to(self, x: float, y: float, button: Button) -> None:
+        self.x, self.y = x, y
+        self.events.append(CursorEvent("drag", x, y, button))
+
+    def button_down(self, button: Button, x: float, y: float, click_count: int) -> None:
+        self.held.add(button)
+        self.events.append(CursorEvent("down", x, y, button, click_count))
+
+    def button_up(self, button: Button, x: float, y: float, click_count: int) -> None:
+        self.held.discard(button)
+        self.events.append(CursorEvent("up", x, y, button, click_count))
+
+    def scroll(self, dy_px: int) -> None:
+        self.events.append(CursorEvent("scroll", self.x, self.y, dy=dy_px))
+
+    def displays(self) -> list[Rect]:
+        return list(self.display_list)
+
+    def kinds(self) -> list[str]:
+        return [e.kind for e in self.events]
+
+    def clear(self) -> None:
+        self.events.clear()
+
+    def summary(self) -> dict:
+        return {"x": self.x, "y": self.y, "held": sorted(self.held),
+                "moves": sum(1 for e in self.events if e.kind in ("move", "drag")),
+                "clicks": sum(1 for e in self.events if e.kind == "down"),
+                "scroll": sum(e.dy for e in self.events if e.kind == "scroll")}
+
+
+class QuartzCursor:
+    """Posts real events through Quartz Event Services. Needs Accessibility permission."""
+
+    def __init__(self) -> None:
+        import Quartz  # type: ignore[import-not-found]
+
+        self._q = Quartz
+        self._displays_cache: list[Rect] = []
+        self._displays_ts = 0.0
+
+    def _post(self, ev) -> None:
+        self._q.CGEventPost(self._q.kCGHIDEventTap, ev)
+
+    def _btn(self, button: Button):
+        return self._q.kCGMouseButtonLeft if button == "left" else self._q.kCGMouseButtonRight
+
+    def get_position(self) -> tuple[float, float]:
+        p = self._q.CGEventGetLocation(self._q.CGEventCreate(None))
+        return (float(p.x), float(p.y))
+
+    def move_to(self, x: float, y: float) -> None:
+        q = self._q
+        self._post(q.CGEventCreateMouseEvent(None, q.kCGEventMouseMoved, (x, y), q.kCGMouseButtonLeft))
+
+    def drag_to(self, x: float, y: float, button: Button) -> None:
+        q = self._q
+        kind = q.kCGEventLeftMouseDragged if button == "left" else q.kCGEventRightMouseDragged
+        self._post(q.CGEventCreateMouseEvent(None, kind, (x, y), self._btn(button)))
+
+    def button_down(self, button: Button, x: float, y: float, click_count: int) -> None:
+        q = self._q
+        kind = q.kCGEventLeftMouseDown if button == "left" else q.kCGEventRightMouseDown
+        ev = q.CGEventCreateMouseEvent(None, kind, (x, y), self._btn(button))
+        q.CGEventSetIntegerValueField(ev, q.kCGMouseEventClickState, click_count)
+        self._post(ev)
+
+    def button_up(self, button: Button, x: float, y: float, click_count: int) -> None:
+        q = self._q
+        kind = q.kCGEventLeftMouseUp if button == "left" else q.kCGEventRightMouseUp
+        ev = q.CGEventCreateMouseEvent(None, kind, (x, y), self._btn(button))
+        q.CGEventSetIntegerValueField(ev, q.kCGMouseEventClickState, click_count)
+        self._post(ev)
+
+    def scroll(self, dy_px: int) -> None:
+        q = self._q
+        ev = q.CGEventCreateScrollWheelEvent(None, q.kCGScrollEventUnitPixel, 1, int(dy_px))
+        q.CGEventSetIntegerValueField(ev, q.kCGScrollWheelEventIsContinuous, 1)
+        self._post(ev)
+
+    def displays(self) -> list[Rect]:
+        now = time.monotonic()
+        if now - self._displays_ts > 2.0 or not self._displays_cache:
+            q = self._q
+            err, ids, count = q.CGGetActiveDisplayList(16, None, None)
+            rects = []
+            if err == 0:
+                for did in list(ids)[:count]:
+                    b = q.CGDisplayBounds(did)
+                    rects.append(Rect(b.origin.x, b.origin.y, b.size.width, b.size.height))
+            self._displays_cache = rects or [Rect(0, 0, 1440, 900)]
+            self._displays_ts = now
+        return list(self._displays_cache)
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_cursor_backend.py -q`
+Expected: 4 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: Quartz and fake cursor backends"
+```
+
+---
+
+### Task 9: The pointer engine
+
+**Files:**
+- Create: `src/airmouse/engine.py`
+- Test: `tests/test_engine.py`
+
+This is the largest file and every behaviour the user asked for lives here. It takes a clock and a cursor backend by injection, so the whole thing is deterministic under test: no sleeping, no real time, no real cursor.
+
+The test rig deserves a read before the implementation. `Rig.send()` mirrors what the real page does, including reporting every button in every packet, and `Rig.stream(n)` sends n packets at 60 Hz. Several tests settle the filter with a first `stream()` before measuring, because the One Euro filter takes about a second to converge; a test that measures immediately will read a smaller displacement and look like a gain bug.
+
+Behaviours encoded here, each with a test: power-on never moves the cursor, roll never moves the cursor, a touch freezes the cursor so clicks land where you aimed, a tap shorter than the chord window still clicks, both buttons within the chord window start a recenter hold instead of clicking, a hold of one second snaps to the centre of the current display and suppresses clicks until every button is released, holding a button turns motion into a drag, the scroll strip freezes motion while in use, a clutch freezes motion without clicking, losing packets for half a second releases everything, and laying the phone flat turns the pointer off.
+
+- [ ] **Step 1: Write the failing test — `tests/test_engine.py`**
+
+```python
+"""Behavioral tests for the pointer engine, driven with a fake clock and a fake cursor."""
+import json
+
+import pytest
+
+from airmouse.config import PointerConfig
+from airmouse.cursor_backend import FakeCursor, Rect
+from airmouse.engine import Phase, PointerEngine
+from airmouse.protocol import parse_client_message
+
+DT = 1 / 60
+
+
+class Clock:
+    def __init__(self, t=0.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+
+class Rig:
+    """Helper that owns clock, cursor and engine and makes sending packets terse."""
+
+    def __init__(self, cfg=None, cursor=None, roles=None):
+        self.clock = Clock(10.0)
+        self.cursor = cursor or FakeCursor()
+        self.engine = PointerEngine(cfg or PointerConfig(), self.cursor, self.clock)
+        if roles:
+            self.engine.set_roles(roles)
+        self.engine.connected()
+        self.seq = 0
+        # The real page reports every layout button in every packet, so mirror that.
+        ids = list(roles) if roles else ["left", "right", "scroll", "power"]
+        self.buttons = {b: False for b in ids}
+        self.counters = {b: 0 for b in ids}
+
+    def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0, advance=DT, **presses):
+        """Send one packet. presses: left=True/False etc. changes button state (counts presses)."""
+        for bid, pressed in presses.items():
+            if pressed and not self.buttons.get(bid, False):
+                self.counters[bid] = self.counters.get(bid, 0) + 1
+            self.buttons[bid] = pressed
+        self.clock.t += advance
+        self.seq += 1
+        text = json.dumps({"t": "s", "seq": self.seq, "ts": self.clock.t, "o": [alpha, beta, gamma],
+                           "rr": list(rr), "g": [0, 0, 9.8],
+                           "b": {k: int(v) for k, v in self.buttons.items()},
+                           "c": dict(self.counters), "sd": sd})
+        self.engine.handle(parse_client_message(text))
+
+    def stream(self, n, **kw):
+        for _ in range(n):
+            self.send(**kw)
+
+    def power(self):
+        self.send(power=True)
+        self.send(power=False)
+
+    def tick(self, advance):
+        self.clock.t += advance
+        self.engine.tick(self.clock.t)
+
+
+def test_off_ignores_motion():
+    r = Rig()
+    assert r.engine.phase == Phase.OFF
+    r.stream(30, alpha=350)
+    assert r.cursor.events == []
+
+
+def test_power_on_keeps_cursor_where_it_is():
+    r = Rig()
+    r.power()
+    assert r.engine.phase == Phase.ON
+    assert r.cursor.events == []
+    assert r.engine.snapshot().power is True
+
+
+def test_turning_right_moves_right_by_gain():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(90, alpha=350)  # 10 degrees to the right, filter settles within ~1 s
+    assert r.cursor.y == 100
+    assert r.cursor.x == pytest.approx(100 + 250, abs=3)
+    assert all(k == "move" for k in r.cursor.kinds())
+
+
+def test_raising_top_edge_moves_up():
+    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(5, beta=0)
+    r.stream(90, beta=10)
+    assert r.cursor.x == 700
+    assert r.cursor.y == pytest.approx(500 - 250, abs=3)
+
+
+def test_invert_y_flips_vertical():
+    r = Rig(PointerConfig(invert_y=True), cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(5, beta=0)
+    r.stream(90, beta=10)
+    assert r.cursor.y == pytest.approx(500 + 250, abs=3)
+
+
+def test_roll_never_moves_cursor():
+    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(90, alpha=30, beta=10, gamma=0)  # settle on the new aim
+    r.cursor.clear()
+    for i in range(60):
+        r.send(alpha=30, beta=10, gamma=(i % 30) * 3 - 45)
+    assert r.cursor.events == []
+
+
+def test_yaw_wraps_across_zero():
+    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(90, alpha=5)  # 5 degrees left of the power-on aim
+    assert r.cursor.x == pytest.approx(700 - 125, abs=3)
+    r.stream(90, alpha=355)  # crossing 0 -> right by 10 degrees, not a 350-degree jump
+    assert r.cursor.x == pytest.approx(700 + 125, abs=3)
+
+
+def test_deadzone_discards_slow_creep():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(60, alpha=359, rr=(0.1, 0, 0))
+    assert r.cursor.events == []
+
+
+def test_touch_freezes_then_pending_becomes_down():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.send(alpha=0, left=True)  # press at t0
+    r.stream(2, alpha=340)  # within chord window: nothing yet
+    assert r.cursor.events == []
+    r.stream(2, alpha=340)  # > 50 ms: mouse-down fires at the frozen position
+    assert r.cursor.kinds() == ["down"]
+    assert r.cursor.events[0].x == 100 and r.cursor.events[0].count == 1
+    r.stream(3, alpha=340)  # t0 + 116 ms: still inside the 120 ms freeze
+    assert r.cursor.kinds() == ["down"]
+    r.stream(30, alpha=340)  # freeze over: motion becomes a drag
+    assert r.cursor.kinds()[1] == "drag"
+    assert "move" not in r.cursor.kinds()
+    r.send(alpha=340, left=False)
+    assert r.cursor.kinds()[-1] == "up"
+    assert r.cursor.held == set()
+
+
+def test_short_tap_is_a_click_at_the_touch_position():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.send(left=False)
+    assert r.cursor.kinds() == ["down", "up"]
+    assert (r.cursor.events[0].x, r.cursor.events[0].y) == (100, 100)
+
+
+def test_missed_tap_is_recovered_from_counter():
+    r = Rig()
+    r.power()
+    r.counters["left"] += 1  # page counted a press, but the packet with b.left=1 was lost
+    r.send()
+    assert r.cursor.kinds() == ["down", "up"]
+
+
+def test_reconnect_does_not_replay_stale_counters():
+    r = Rig()
+    r.power()
+    r.engine.connected()  # e.g. the phone's socket dropped and came back
+    r.counters.update({"left": 7, "right": 3})  # counters kept climbing in the page
+    r.send()  # first packet after reconnect: adopted as the baseline, silently
+    r.power()
+    r.send()
+    assert r.cursor.kinds() == []
+
+
+def test_right_button_clicks():
+    r = Rig()
+    r.power()
+    r.send(right=True)
+    r.tick(0.1)
+    r.send(right=False)
+    assert [(e.kind, e.button) for e in r.cursor.events] == [("down", "right"), ("up", "right")]
+
+
+def test_double_click_count():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.send(left=False)
+    r.send(left=True)
+    r.send(left=False)
+    r.stream(60)  # a second passes (packets keep flowing, so no timeout)
+    r.send(left=True)
+    r.send(left=False)
+    counts = [e.count for e in r.cursor.events if e.kind == "down"]
+    assert counts == [1, 2, 1]
+
+
+def test_chord_produces_no_click_and_cancels_on_early_release():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.send(right=True)  # 16 ms later: chord
+    assert r.engine.phase == Phase.RECENTER_HOLD
+    r.stream(20, alpha=340)  # frozen while holding
+    assert r.cursor.events == []
+    r.send(alpha=340, right=False)  # released before 1 s
+    assert r.engine.phase == Phase.ON
+    r.send(alpha=340, left=False)
+    r.stream(30, alpha=340)
+    assert r.cursor.events == []
+
+
+def test_chord_hold_snaps_to_center_and_suppresses_clicks():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.send(right=True)
+    assert 0.0 <= r.engine.recenter_progress() < 0.1
+    r.stream(70, alpha=0)  # > 1 s of holding
+    assert r.engine.phase == Phase.RECENTER_HELD
+    assert r.cursor.kinds() == ["move"]
+    assert (r.cursor.x, r.cursor.y) == (720, 450)
+    assert r.engine.recenter_progress() == 1.0
+    r.stream(5, alpha=0)
+    r.stream(60, alpha=350)  # motion works while still holding
+    assert r.cursor.x == pytest.approx(720 + 250, abs=3)
+    assert "down" not in r.cursor.kinds()
+    r.send(alpha=350, left=False)
+    r.send(alpha=350, left=True)  # re-press while right is still held: still no click
+    r.send(alpha=350, left=False)
+    r.tick(0.2)
+    assert "down" not in r.cursor.kinds()
+    assert r.engine.phase == Phase.RECENTER_HELD
+    r.send(alpha=350, right=False)
+    assert r.engine.phase == Phase.ON
+
+
+def test_two_buttons_outside_chord_window_both_click():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.tick(0.1)
+    r.send(right=True)
+    r.tick(0.1)
+    r.send(left=False, right=False)
+    assert [e.kind for e in r.cursor.events] == ["down", "down", "up", "up"]
+
+
+def test_scroll_natural_and_inverted():
+    r = Rig()
+    r.power()
+    r.send(scroll=True, sd=-10)
+    assert [(e.kind, e.dy) for e in r.cursor.events] == [("scroll", -15)]
+    r2 = Rig(PointerConfig(scroll_natural=False))
+    r2.power()
+    r2.send(scroll=True, sd=-10)
+    assert r2.cursor.events[0].dy == 15
+
+
+def test_scroll_carries_fractions():
+    r = Rig(PointerConfig(scroll_gain=0.5))
+    r.power()
+    r.send(scroll=True, sd=1)
+    r.send(scroll=True, sd=1)
+    assert [e.dy for e in r.cursor.events] == [1]
+
+
+def test_scroll_touch_freezes_cursor():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.send(alpha=0, scroll=True)
+    r.stream(30, alpha=340, sd=0)
+    assert "move" not in r.cursor.kinds()
+    r.send(alpha=340, scroll=False)
+    r.stream(30, alpha=340)
+    assert r.cursor.kinds() == []  # reference re-synced while frozen: no jump after release
+    r.stream(30, alpha=330)
+    assert "move" in r.cursor.kinds()
+
+
+def test_clutch_freezes_cursor():
+    r = Rig(roles={"left": "left", "right": "right", "power": "power", "hold": "clutch"})
+    r.power()
+    r.stream(5, alpha=0)
+    r.send(alpha=0, hold=True)
+    r.stream(30, alpha=340)
+    assert r.cursor.events == []
+    r.send(alpha=340, hold=False)
+    r.stream(30, alpha=340)
+    assert r.cursor.kinds() == []  # reference re-synced while frozen: no jump after release
+    r.stream(30, alpha=330)
+    assert r.cursor.x > 100
+
+
+def test_recenter_button_role_snaps_immediately():
+    r = Rig(roles={"left": "left", "right": "right", "power": "power", "rc": "recenter"})
+    r.power()
+    r.send(rc=True)
+    assert r.cursor.kinds() == ["move"] and (r.cursor.x, r.cursor.y) == (720, 450)
+    assert r.engine.phase == Phase.ON
+
+
+def test_edge_clamp_and_edge_drag():
+    r = Rig(cursor=FakeCursor(x=1435, y=100))
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(60, alpha=350)  # far past the right edge
+    assert r.cursor.x == 1439
+    r.stream(5, alpha=350)
+    r.cursor.clear()
+    r.stream(60, alpha=355)  # turning back 5 degrees moves immediately
+    assert r.cursor.x == pytest.approx(1439 - 125, abs=3)
+
+
+def test_multi_display_crossing_and_clamp():
+    cursor = FakeCursor(x=1435, y=100, display_list=[Rect(0, 0, 1440, 900), Rect(1440, 0, 1920, 1080)])
+    r = Rig(cursor=cursor)
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(60, alpha=359)  # 1 degree right = 25 px, crosses into the second display
+    assert r.cursor.x == pytest.approx(1460, abs=3)
+    r.stream(60, beta=-40)  # far below both displays: clamped to the current one's bottom
+    assert r.cursor.y == 1079
+
+
+def test_timeout_releases_buttons_and_turns_off():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.tick(0.1)
+    assert r.cursor.held == {"left"}
+    r.tick(0.6)
+    assert r.cursor.held == set() and r.cursor.kinds()[-1] == "up"
+    assert r.engine.phase == Phase.OFF
+
+
+def test_disconnect_releases_buttons():
+    r = Rig()
+    r.power()
+    r.send(left=True)
+    r.tick(0.1)
+    r.engine.disconnected()
+    assert r.cursor.held == set()
+    assert r.engine.phase == Phase.DISCONNECTED
+    r.send(alpha=350)
+    assert r.engine.phase == Phase.DISCONNECTED
+
+
+def test_kill_switch():
+    r = Rig()
+    r.power()
+    r.engine.set_enabled(False)
+    assert r.engine.phase == Phase.OFF
+    r.power()
+    assert r.engine.phase == Phase.OFF
+    r.engine.set_enabled(True)
+    r.power()
+    assert r.engine.phase == Phase.ON
+
+
+def test_sequence_regression_is_dropped():
+    r = Rig()
+    r.power()
+    r.seq = 50
+    r.send(left=True)
+    r.seq = 10  # next packet gets seq 11 < 51
+    r.send(left=False)
+    r.tick(0.1)
+    assert r.cursor.kinds() == ["down"]  # release never seen
+
+
+def test_auto_deactivate_at_rest():
+    r = Rig()
+    r.power()
+    r.stream(70, beta=0, gamma=0, rr=(0.5, 0.5, 0.5))
+    assert r.engine.phase == Phase.OFF
+
+
+def test_auto_deactivate_can_be_disabled():
+    r = Rig(PointerConfig(auto_deactivate=False))
+    r.power()
+    r.stream(120, beta=0, gamma=0, rr=(0.5, 0.5, 0.5))
+    assert r.engine.phase == Phase.ON
+
+
+def test_auto_activate_after_pickup_but_not_after_manual_off():
+    r = Rig(PointerConfig(auto_activate=True))
+    r.stream(5, beta=0)  # resting: arms pickup
+    r.stream(25, beta=40)  # lifted for > 300 ms
+    assert r.engine.phase == Phase.ON
+    r.send(beta=40, power=True)
+    r.send(beta=40, power=False)
+    assert r.engine.phase == Phase.OFF
+    r.stream(60, beta=40)  # still raised: must not re-activate
+    assert r.engine.phase == Phase.OFF
+    r.stream(5, beta=0, rr=(0.1, 0, 0))  # put down: re-arms
+    r.stream(25, beta=40)
+    assert r.engine.phase == Phase.ON
+
+
+def test_gap_in_packets_resets_filter_without_jump():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.send(alpha=350, advance=0.5)  # half-second gap: filters reset, no delta applied
+    assert r.cursor.events == []
+    r.stream(60, alpha=350)
+    assert r.cursor.events == []  # same angle after reset: nothing moves
+
+
+def test_set_config_applies_new_gain():
+    r = Rig()
+    r.power()
+    r.stream(5, alpha=0)
+    r.engine.set_config(PointerConfig(gain_x_px_per_deg=50.0))
+    r.stream(5, alpha=0)
+    r.stream(90, alpha=350)
+    assert r.cursor.x == pytest.approx(100 + 500, abs=5)
+
+
+def test_change_callback_fires_on_phase_change():
+    r = Rig()
+    seen = []
+    r.engine.on_change = lambda: seen.append(r.engine.phase)
+    r.power()
+    r.power()
+    assert seen == [Phase.ON, Phase.OFF]
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_engine.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.engine'`
+
+- [ ] **Step 3: Write `src/airmouse/engine.py`**
+
+```python
+"""Pointer engine: turns sensor packets into cursor actions. Pure logic, no I/O.
+
+Entry points: `handle(packet)` for every sensor packet and `tick(now)` for
+time-based transitions. Everything else is driven by the injected clock and
+the injected cursor backend, so the whole thing is unit-testable.
+"""
+from __future__ import annotations
+
+import math
+import time
+from dataclasses import dataclass
+from enum import Enum
+from typing import Callable
+
+from .config import PointerConfig
+from .cursor_backend import CursorBackend, clamp_to_displays, display_containing
+from .filters import OneEuroFilter
+from .orientation import wrap180, yaw_pitch
+from .protocol import SensorPacket
+
+
+class Phase(str, Enum):
+    DISCONNECTED = "disconnected"
+    OFF = "off"
+    ON = "on"
+    RECENTER_HOLD = "hold"
+    RECENTER_HELD = "held"
+
+
+ACTIVE_PHASES = (Phase.ON, Phase.RECENTER_HOLD, Phase.RECENTER_HELD)
+MOTION_PHASES = (Phase.ON, Phase.RECENTER_HELD)
+DOUBLE_CLICK_RADIUS_PX = 6.0
+FILTER_GAP_RESET_S = 0.25
+
+
+@dataclass
+class _ButtonState:
+    pressed: bool = False
+    counter: int = 0
+
+
+@dataclass
+class _ClickState:
+    pending_since: float | None = None
+    down: bool = False
+    last_click_t: float = -1e9
+    last_click_pos: tuple[float, float] = (0.0, 0.0)
+    click_count: int = 0
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    phase: Phase
+    power: bool
+    recenter: float
+    enabled: bool
+
+
+class PointerEngine:
+    def __init__(self, config: PointerConfig, backend: CursorBackend,
+                 clock: Callable[[], float] = time.monotonic):
+        self._cfg = config
+        self._backend = backend
+        self._clock = clock
+        self._roles: dict[str, str] = {"left": "left", "right": "right", "scroll": "scroll",
+                                       "power": "power"}
+        self._enabled = True
+        self._phase = Phase.DISCONNECTED
+        self._buttons: dict[str, _ButtonState] = {}
+        self._clicks = {"left": _ClickState(), "right": _ClickState()}
+        self._last_seq = 0
+        self._last_rx = 0.0
+        self._frozen_until = 0.0
+        self._hold_started = 0.0
+        self._rest_since: float | None = None
+        self._pickup_since: float | None = None
+        self._pickup_armed = True
+        self._f_yaw = OneEuroFilter()
+        self._f_pitch = OneEuroFilter()
+        self._reset_motion()
+        self.on_change: Callable[[], None] | None = None
+
+    # ----- external control -------------------------------------------------
+
+    @property
+    def phase(self) -> Phase:
+        return self._phase
+
+    @property
+    def config(self) -> PointerConfig:
+        return self._cfg
+
+    def set_config(self, cfg: PointerConfig) -> None:
+        self._cfg = cfg
+        self._make_filters()
+        self._reset_filters()
+
+    def set_roles(self, roles: dict[str, str]) -> None:
+        self._roles = dict(roles)
+        for bid in list(self._buttons):
+            if bid not in self._roles:
+                del self._buttons[bid]
+
+    def set_enabled(self, enabled: bool) -> None:
+        if not enabled and self._phase in ACTIVE_PHASES:
+            self._go_off(self._clock())
+        self._enabled = enabled
+        self._notify()
+
+    def connected(self) -> None:
+        self._buttons.clear()
+        self._clicks = {"left": _ClickState(), "right": _ClickState()}
+        self._last_seq = 0
+        self._frozen_until = 0.0
+        self._rest_since = None
+        self._pickup_since = None
+        self._pickup_armed = True
+        self._reset_motion()
+        self._set_phase(Phase.OFF)
+
+    def disconnected(self) -> None:
+        if self._phase in ACTIVE_PHASES:
+            self._go_off(self._clock())
+        self._set_phase(Phase.DISCONNECTED)
+
+    def recenter_progress(self, now: float | None = None) -> float:
+        if self._phase == Phase.RECENTER_HOLD:
+            now = self._clock() if now is None else now
+            return max(0.0, min(1.0, (now - self._hold_started) / (self._cfg.recenter_hold_ms / 1000.0)))
+        return 1.0 if self._phase == Phase.RECENTER_HELD else 0.0
+
+    def snapshot(self) -> Snapshot:
+        return Snapshot(phase=self._phase, power=self._phase in ACTIVE_PHASES,
+                        recenter=self.recenter_progress(), enabled=self._enabled)
+
+    # ----- inputs -----------------------------------------------------------
+
+    def handle(self, p: SensorPacket) -> None:
+        if self._phase == Phase.DISCONNECTED or p.seq <= self._last_seq:
+            return
+        self._last_seq = p.seq
+        now = self._clock()
+        self._last_rx = now
+        for role, kind in self._button_events(p):
+            self._dispatch(role, kind, now)
+        if self._phase in ACTIVE_PHASES:
+            self._apply_motion(p, now)
+        if self._phase in MOTION_PHASES:
+            self._apply_scroll(p)
+        self._update_rest(p, now)
+        self.tick(now)
+
+    def tick(self, now: float | None = None) -> None:
+        now = self._clock() if now is None else now
+        if self._phase not in ACTIVE_PHASES:
+            return
+        if now - self._last_rx > self._cfg.timeout_ms / 1000.0:
+            self._go_off(now)
+            return
+        chord_s = self._cfg.chord_window_ms / 1000.0
+        if self._phase == Phase.ON:
+            for role, st in self._clicks.items():
+                if st.pending_since is not None and now - st.pending_since >= chord_s:
+                    st.pending_since = None
+                    self._press_down(role, st, now)
+        if self._phase == Phase.RECENTER_HOLD and \
+                now - self._hold_started >= self._cfg.recenter_hold_ms / 1000.0:
+            self._snap()
+            self._set_phase(Phase.RECENTER_HELD)
+
+    # ----- buttons ----------------------------------------------------------
+
+    def _button_events(self, p: SensorPacket) -> list[tuple[str, str]]:
+        events: list[tuple[str, str]] = []
+        for bid, role in self._roles.items():
+            if bid not in p.buttons and bid not in p.counters:
+                continue
+            pressed = p.buttons.get(bid, False)
+            st = self._buttons.get(bid)
+            if st is None:
+                # First sighting: adopt the counter silently so stale presses never fire.
+                st = _ButtonState(pressed=False, counter=p.counters.get(bid, 0))
+                self._buttons[bid] = st
+            counter = p.counters.get(bid, st.counter)
+            press = counter > st.counter or (pressed and not st.pressed)
+            release = (st.pressed or press) and not pressed
+            st.pressed, st.counter = pressed, counter
+            if press:
+                events.append((role, "press"))
+            if release:
+                events.append((role, "release"))
+        return events
+
+    def _dispatch(self, role: str, kind: str, now: float) -> None:
+        if role == "power":
+            if kind == "press":
+                self._toggle_power(now)
+        elif role in ("left", "right"):
+            if kind == "press":
+                self._click_press(role, now)
+            else:
+                self._click_release(role, now)
+        elif role in ("clutch", "scroll"):
+            self._freeze(now, self._cfg.freeze_ms_on_touch if kind == "press"
+                         else self._cfg.freeze_ms_on_release)
+        elif role == "recenter":
+            if kind == "press" and self._phase in MOTION_PHASES:
+                self._snap()
+
+    def _toggle_power(self, now: float) -> None:
+        if self._phase == Phase.OFF:
+            if self._enabled:
+                self._power_on(now)
+        elif self._phase in ACTIVE_PHASES:
+            self._go_off(now)
+
+    def _power_on(self, now: float) -> None:
+        self._reset_motion()
+        self._last_rx = now
+        self._frozen_until = 0.0
+        self._set_phase(Phase.ON)
+
+    def _go_off(self, now: float) -> None:
+        for role, st in self._clicks.items():
+            if st.down:
+                self._press_up(role, st)
+            st.pending_since = None
+        self._frozen_until = 0.0
+        self._pickup_armed = False
+        self._set_phase(Phase.OFF)
+
+    def _freeze(self, now: float, ms: int) -> None:
+        self._frozen_until = max(self._frozen_until, now + ms / 1000.0)
+
+    def _frozen(self, now: float) -> bool:
+        if now < self._frozen_until or self._phase == Phase.RECENTER_HOLD:
+            return True
+        return any(self._buttons.get(bid, _ButtonState()).pressed
+                   for bid, role in self._roles.items() if role in ("clutch", "scroll"))
+
+    def _any_click_button_pressed(self) -> bool:
+        return any(self._buttons.get(bid, _ButtonState()).pressed
+                   for bid, role in self._roles.items() if role in ("left", "right"))
+
+    def _click_press(self, role: str, now: float) -> None:
+        if self._phase not in MOTION_PHASES:
+            return
+        self._freeze(now, self._cfg.freeze_ms_on_touch)
+        if self._phase == Phase.RECENTER_HELD:
+            return
+        st = self._clicks[role]
+        other = self._clicks["right" if role == "left" else "left"]
+        st.pending_since = now
+        if other.pending_since is not None and \
+                abs(now - other.pending_since) <= self._cfg.chord_window_ms / 1000.0:
+            st.pending_since = None
+            other.pending_since = None
+            self._hold_started = now
+            self._set_phase(Phase.RECENTER_HOLD)
+
+    def _click_release(self, role: str, now: float) -> None:
+        if self._phase == Phase.RECENTER_HOLD:
+            self._freeze(now, self._cfg.freeze_ms_on_release)
+            self._set_phase(Phase.ON)
+            return
+        if self._phase == Phase.RECENTER_HELD:
+            if not self._any_click_button_pressed():
+                self._set_phase(Phase.ON)
+            return
+        if self._phase != Phase.ON:
+            return
+        st = self._clicks[role]
+        if st.pending_since is not None:
+            st.pending_since = None
+            self._press_down(role, st, now)
+            self._press_up(role, st)
+        elif st.down:
+            self._press_up(role, st)
+        self._freeze(now, self._cfg.freeze_ms_on_release)
+
+    def _press_down(self, role: str, st: _ClickState, now: float) -> None:
+        x, y = self._backend.get_position()
+        near = math.hypot(x - st.last_click_pos[0], y - st.last_click_pos[1]) <= DOUBLE_CLICK_RADIUS_PX
+        if now - st.last_click_t <= self._cfg.double_click_s and near:
+            st.click_count = min(st.click_count + 1, 3)
+        else:
+            st.click_count = 1
+        st.last_click_t = now
+        st.last_click_pos = (x, y)
+        st.down = True
+        self._backend.button_down(role, x, y, st.click_count)  # type: ignore[arg-type]
+
+    def _press_up(self, role: str, st: _ClickState) -> None:
+        x, y = self._backend.get_position()
+        st.down = False
+        self._backend.button_up(role, x, y, st.click_count)  # type: ignore[arg-type]
+
+    # ----- motion -----------------------------------------------------------
+
+    def _make_filters(self) -> None:
+        oe = self._cfg.one_euro
+        self._f_yaw = OneEuroFilter(oe.min_cutoff, oe.beta, oe.d_cutoff)
+        self._f_pitch = OneEuroFilter(oe.min_cutoff, oe.beta, oe.d_cutoff)
+
+    def _reset_filters(self) -> None:
+        self._f_yaw.reset()
+        self._f_pitch.reset()
+        self._prev_f: tuple[float, float] | None = None
+
+    def _reset_motion(self) -> None:
+        self._make_filters()
+        self._reset_filters()
+        self._yaw_raw_prev: float | None = None
+        self._yaw_cont = 0.0
+        self._last_ts: float | None = None
+        self._carry = [0.0, 0.0]
+        self._scroll_carry = 0.0
+
+    def _apply_motion(self, p: SensorPacket, now: float) -> None:
+        if not p.has_orientation:
+            return
+        yaw, pitch = yaw_pitch(p.alpha, p.beta, p.gamma or 0.0)  # type: ignore[arg-type]
+        if self._yaw_raw_prev is None:
+            self._yaw_cont = yaw
+        else:
+            self._yaw_cont += wrap180(yaw - self._yaw_raw_prev)
+        self._yaw_raw_prev = yaw
+        dt = 0.0
+        if self._last_ts is not None:
+            dt = p.ts - self._last_ts
+            if dt > FILTER_GAP_RESET_S or dt <= 0:
+                self._reset_filters()
+        self._last_ts = p.ts
+        yf = self._f_yaw.filter(self._yaw_cont, p.ts)
+        pf = self._f_pitch.filter(pitch, p.ts)
+        prev, self._prev_f = self._prev_f, (yf, pf)
+        if prev is None or self._frozen(now) or p.rate_dps < self._cfg.deadzone_dps:
+            return
+        dyaw, dpitch = yf - prev[0], pf - prev[1]
+        mult = 1.0
+        ac = self._cfg.accel
+        if ac.enabled and dt > 0:
+            speed = math.hypot(dyaw, dpitch) / dt
+            mult = max(1.0, min(ac.max_mult, 1.0 + ac.k * max(0.0, speed - ac.threshold_dps)))
+        dx = dyaw * self._cfg.gain_x_px_per_deg * mult
+        dy = -dpitch * self._cfg.gain_y_px_per_deg * mult
+        if self._cfg.invert_y:
+            dy = -dy
+        self._move_by(dx, dy)
+
+    def _move_by(self, dx: float, dy: float) -> None:
+        self._carry[0] += dx
+        self._carry[1] += dy
+        ix, iy = int(self._carry[0]), int(self._carry[1])
+        if ix == 0 and iy == 0:
+            return
+        self._carry[0] -= ix
+        self._carry[1] -= iy
+        bx, by = self._backend.get_position()
+        displays = self._backend.displays()
+        current = display_containing(displays, bx, by)
+        tx, ty = clamp_to_displays(displays, bx + ix, by + iy, current)
+        if (tx, ty) == (bx, by):
+            return  # pinned at an edge: overshoot is discarded (edge drag)
+        held = "left" if self._clicks["left"].down else ("right" if self._clicks["right"].down else None)
+        if held:
+            self._backend.drag_to(tx, ty, held)  # type: ignore[arg-type]
+        else:
+            self._backend.move_to(tx, ty)
+
+    def _snap(self) -> None:
+        bx, by = self._backend.get_position()
+        cx, cy = display_containing(self._backend.displays(), bx, by).center()
+        self._backend.move_to(cx, cy)
+        self._reset_motion()
+
+    def _apply_scroll(self, p: SensorPacket) -> None:
+        if p.scroll_delta == 0:
+            return
+        direction = 1.0 if self._cfg.scroll_natural else -1.0
+        self._scroll_carry += p.scroll_delta * self._cfg.scroll_gain * direction
+        step = int(self._scroll_carry)
+        if step:
+            self._scroll_carry -= step
+            self._backend.scroll(step)
+
+    # ----- rest / pickup ----------------------------------------------------
+
+    def _update_rest(self, p: SensorPacket, now: float) -> None:
+        if not p.has_orientation:
+            return
+        cfg = self._cfg
+        rest_pose = abs(p.beta) < cfg.rest_tilt_deg and abs(p.gamma or 0.0) < cfg.rest_tilt_deg  # type: ignore[arg-type]
+        still = p.rate_dps < cfg.rest_rate_dps
+        if rest_pose:
+            self._pickup_armed = True
+            self._pickup_since = None
+        elif self._pickup_since is None:
+            self._pickup_since = now
+        if rest_pose and still:
+            if self._rest_since is None:
+                self._rest_since = now
+            elif now - self._rest_since >= cfg.rest_seconds and self._phase in ACTIVE_PHASES \
+                    and cfg.auto_deactivate:
+                self._go_off(now)
+        else:
+            self._rest_since = None
+        if cfg.auto_activate and self._enabled and self._phase == Phase.OFF and self._pickup_armed \
+                and self._pickup_since is not None and now - self._pickup_since >= cfg.pickup_ms / 1000.0:
+            self._power_on(now)
+
+    # ----- misc -------------------------------------------------------------
+
+    def _set_phase(self, phase: Phase) -> None:
+        if phase != self._phase:
+            self._phase = phase
+            self._notify()
+
+    def _notify(self) -> None:
+        if self.on_change:
+            self.on_change()
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_engine.py -q`
+Expected: 34 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: pointer engine with clicks, recenter, scroll and safety"
+```
+
+---
+
+### Task 10: Local certificate authority
+
+**Files:**
+- Create: `src/airmouse/certs.py`
+- Test: `tests/test_certs_pairing.py` (written in this task, extended in Task 11)
+
+Safari exposes motion sensors only to secure pages, and a secure page cannot open an insecure WebSocket, so TLS is not optional. The Mac mints its own certificate authority once; the user trusts it on the iPhone once; from then on everything is offline and automatic.
+
+Two constraints shape this file. iOS refuses user-trusted leaf certificates valid beyond 825 days, hence 820. And the leaf must be re-issued whenever the Mac's addresses change, while the CA must survive untouched, or the phone's one-time trust would break every time you join a new network.
+
+The test file is written in Task 11 so that certificates and pairing are covered together.
+
+- [ ] **Step 1: Write `src/airmouse/certs.py`**
+
+```python
+"""Local certificate authority and server certificate.
+
+Safari only exposes motion sensors on secure pages, so the page must be served
+over HTTPS. We mint a local CA once (the user trusts it on the iPhone one time)
+and re-issue the server certificate whenever the host's addresses change.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import ipaddress
+import socket
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
+
+CA_DAYS = 3650
+SERVER_DAYS = 820  # iOS rejects user-trusted leaf certs valid for more than 825 days
+RENEW_WITHIN_DAYS = 30
+
+
+def local_hostname() -> str:
+    try:
+        out = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True,
+                             timeout=5)
+        name = out.stdout.strip()
+        if name:
+            return name
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return socket.gethostname().split(".")[0] or "localhost"
+
+
+def local_ipv4s() -> list[str]:
+    """Non-loopback IPv4 addresses currently configured on this Mac."""
+    addrs: set[str] = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addrs.add(info[4][0])
+    except OSError:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))  # TEST-NET-1: no packets are sent
+            addrs.add(s.getsockname()[0])
+        finally:
+            s.close()
+    except OSError:
+        pass
+    return sorted(a for a in addrs if not a.startswith("127."))
+
+
+def san_names(host: str) -> list[str]:
+    return [f"{host}.local", host, "localhost"]
+
+
+@dataclass(frozen=True)
+class CertPaths:
+    ca_key: Path
+    ca_crt: Path
+    server_key: Path
+    server_crt: Path
+
+    @classmethod
+    def under(cls, d: Path) -> "CertPaths":
+        return cls(d / "ca.key", d / "ca.crt", d / "server.key", d / "server.crt")
+
+
+def _write_private(path: Path, key) -> None:
+    path.write_bytes(key.private_bytes(serialization.Encoding.PEM,
+                                       serialization.PrivateFormat.PKCS8,
+                                       serialization.NoEncryption()))
+    path.chmod(0o600)
+
+
+def _write_cert(path: Path, cert: x509.Certificate) -> None:
+    path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    path.chmod(0o644)
+
+
+def ensure_ca(paths: CertPaths, host: str) -> x509.Certificate:
+    if paths.ca_key.exists() and paths.ca_crt.exists():
+        return x509.load_pem_x509_certificate(paths.ca_crt.read_bytes())
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"AirMouse Local CA ({host})"),
+                      x509.NameAttribute(NameOID.ORGANIZATION_NAME, "AirMouse")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(days=CA_DAYS))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .add_extension(x509.KeyUsage(digital_signature=False, content_commitment=False,
+                                         key_encipherment=False, data_encipherment=False,
+                                         key_agreement=False, key_cert_sign=True, crl_sign=True,
+                                         encipher_only=False, decipher_only=False), critical=True)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+            .sign(key, hashes.SHA256()))
+    paths.ca_key.parent.mkdir(parents=True, exist_ok=True)
+    _write_private(paths.ca_key, key)
+    _write_cert(paths.ca_crt, cert)
+    return cert
+
+
+def server_cert_is_current(paths: CertPaths, host: str, ips: list[str]) -> bool:
+    if not (paths.server_crt.exists() and paths.server_key.exists()):
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(paths.server_crt.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except Exception:
+        return False
+    if cert.not_valid_after_utc - dt.datetime.now(dt.timezone.utc) < dt.timedelta(days=RENEW_WITHIN_DAYS):
+        return False
+    have_dns = set(san.get_values_for_type(x509.DNSName))
+    have_ip = {str(i) for i in san.get_values_for_type(x509.IPAddress)}
+    return set(san_names(host)) <= have_dns and set(ips) <= have_ip
+
+
+def ensure_server_cert(paths: CertPaths, host: str, ips: list[str] | None = None) -> bool:
+    """Create or renew the leaf certificate. Returns True if it was (re)issued."""
+    ips = local_ipv4s() if ips is None else ips
+    ensure_ca(paths, host)
+    if server_cert_is_current(paths, host, ips):
+        return False
+    ca_key = serialization.load_pem_private_key(paths.ca_key.read_bytes(), password=None)
+    ca_cert = x509.load_pem_x509_certificate(paths.ca_crt.read_bytes())
+    key = ec.generate_private_key(ec.SECP256R1())
+    alt: list[x509.GeneralName] = [x509.DNSName(n) for n in san_names(host)]
+    alt += [x509.IPAddress(ipaddress.ip_address(a)) for a in [*ips, "127.0.0.1"]]
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"{host}.local")]))
+            .issuer_name(ca_cert.subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(days=SERVER_DAYS))
+            .add_extension(x509.SubjectAlternativeName(alt), critical=False)
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+            .add_extension(x509.ExtendedKeyUsage([x509.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            .sign(ca_key, hashes.SHA256()))
+    _write_private(paths.server_key, key)
+    _write_cert(paths.server_crt, cert)
+    return True
+
+
+def ca_der(paths: CertPaths) -> bytes:
+    """DER bytes, which is what Safari wants for a downloadable profile."""
+    return x509.load_pem_x509_certificate(paths.ca_crt.read_bytes()).public_bytes(
+        serialization.Encoding.DER)
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add -A
+git commit -m "feat: local certificate authority and server certificate"
+```
+
+---
+
+### Task 11: Pairing and device tokens
+
+**Files:**
+- Create: `src/airmouse/pairing.py`
+- Test: `tests/test_certs_pairing.py`
+
+Without this, anyone on the coffee-shop Wi-Fi could move your cursor. A pairing token is minted on the Mac, shown as a QR code, valid ten minutes, single use. Redeeming it issues a long-lived device token that the page stores.
+
+Both token files hold only SHA-256 hashes and are written with mode 0600, so a leaked file cannot be replayed. Comparison is constant-time. The pending token lives in a file rather than memory specifically so that `airmouse pair-token`, typed in a terminal, reaches the menu-bar app running in a different process.
+
+- [ ] **Step 1: Write the failing test — `tests/test_certs_pairing.py`**
+
+```python
+import datetime as dt
+
+import pytest
+from cryptography import x509
+
+from airmouse.certs import (CertPaths, ca_der, ensure_ca, ensure_server_cert, local_hostname,
+                            san_names, server_cert_is_current)
+from airmouse.pairing import PairingManager
+
+
+def test_ca_is_created_once_and_reused(tmp_path):
+    p = CertPaths.under(tmp_path)
+    ca1 = ensure_ca(p, "mac")
+    assert p.ca_key.stat().st_mode & 0o777 == 0o600
+    ca2 = ensure_ca(p, "mac")
+    assert ca1.serial_number == ca2.serial_number
+    assert "AirMouse Local CA (mac)" in ca1.subject.rfc4514_string()
+    bc = ca1.extensions.get_extension_for_class(x509.BasicConstraints).value
+    assert bc.ca is True
+
+
+def test_server_cert_has_expected_sans_and_is_signed_by_ca(tmp_path):
+    p = CertPaths.under(tmp_path)
+    assert ensure_server_cert(p, "mac", ["192.168.1.5"]) is True
+    cert = x509.load_pem_x509_certificate(p.server_crt.read_bytes())
+    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    assert set(san_names("mac")) <= set(san.get_values_for_type(x509.DNSName))
+    assert {"192.168.1.5", "127.0.0.1"} <= {str(i) for i in san.get_values_for_type(x509.IPAddress)}
+    ca = x509.load_pem_x509_certificate(p.ca_crt.read_bytes())
+    assert cert.issuer == ca.subject
+    lifetime = cert.not_valid_after_utc - cert.not_valid_before_utc
+    assert lifetime < dt.timedelta(days=825)
+
+
+def test_server_cert_reissued_when_ip_changes_but_ca_is_stable(tmp_path):
+    p = CertPaths.under(tmp_path)
+    ensure_server_cert(p, "mac", ["192.168.1.5"])
+    ca_before = p.ca_crt.read_bytes()
+    assert ensure_server_cert(p, "mac", ["192.168.1.5"]) is False
+    assert ensure_server_cert(p, "mac", ["10.0.0.9"]) is True
+    assert p.ca_crt.read_bytes() == ca_before
+    assert server_cert_is_current(p, "mac", ["10.0.0.9"])
+    assert not server_cert_is_current(p, "other-mac", ["10.0.0.9"])
+
+
+def test_ca_der_is_der(tmp_path):
+    p = CertPaths.under(tmp_path)
+    ensure_ca(p, "mac")
+    assert ca_der(p)[:1] == b"\x30"
+
+
+def test_local_hostname_is_nonempty():
+    assert local_hostname()
+
+
+def test_pairing_flow(tmp_path):
+    now = [1000.0]
+    m = PairingManager(tmp_path / "devices.json", clock=lambda: now[0])
+    assert m.redeem_pairing_token("nope", "iPhone") is None
+    tok = m.mint_pairing_token()
+    assert m.redeem_pairing_token("wrong-token", "iPhone") is None
+    dev = m.redeem_pairing_token(tok, "iPhone")
+    assert dev and m.check_device_token(dev)
+    assert m.redeem_pairing_token(tok, "iPhone") is None  # single use
+    assert m.device_count() == 1
+
+
+def test_pairing_token_expires(tmp_path):
+    now = [1000.0]
+    m = PairingManager(tmp_path / "devices.json", clock=lambda: now[0])
+    tok = m.mint_pairing_token()
+    now[0] += 601
+    assert m.redeem_pairing_token(tok, "iPhone") is None
+
+
+def test_unknown_device_token_rejected_and_revoke(tmp_path):
+    m = PairingManager(tmp_path / "devices.json")
+    tok = m.mint_pairing_token()
+    dev = m.redeem_pairing_token(tok, "iPhone")
+    assert not m.check_device_token("a" * 43)
+    assert m.path.stat().st_mode & 0o777 == 0o600
+    m.revoke_all()
+    assert not m.check_device_token(dev)
+    assert m.device_count() == 0
+
+
+def test_device_token_never_stored_in_plaintext(tmp_path):
+    m = PairingManager(tmp_path / "devices.json")
+    dev = m.redeem_pairing_token(m.mint_pairing_token(), "iPhone")
+    assert dev not in m.path.read_text()
+
+
+def test_pairing_token_is_shared_between_processes(tmp_path):
+    """`airmouse pair-token` runs in a different process from the menu-bar app."""
+    cli = PairingManager(tmp_path / "devices.json")
+    app = PairingManager(tmp_path / "devices.json")
+    token = cli.mint_pairing_token()
+    assert app.redeem_pairing_token(token, "iPhone")
+    assert app.pending_path.exists() is False
+
+
+def test_pending_token_is_never_stored_in_plaintext(tmp_path):
+    m = PairingManager(tmp_path / "devices.json")
+    tok = m.mint_pairing_token()
+    assert tok not in m.pending_path.read_text()
+    assert m.pending_path.stat().st_mode & 0o777 == 0o600
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_certs_pairing.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.pairing'`
+
+- [ ] **Step 3: Write `src/airmouse/pairing.py`**
+
+```python
+"""Pairing tokens (short-lived, single-use) and device tokens (persistent)."""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import secrets
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+PAIR_TTL_S = 600.0
+MAX_DEVICES = 16
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+@dataclass
+class PairingManager:
+    """Tokens live in two files so that `airmouse pair-token` in a terminal can
+    hand a token to the already-running menu-bar process."""
+
+    path: Path
+    clock: Callable[[], float] = time.time
+
+    @property
+    def pending_path(self) -> Path:
+        return self.path.with_name("pair.json")
+
+    def mint_pairing_token(self) -> str:
+        token = secrets.token_urlsafe(16)
+        self._write_json(self.pending_path, {"hash": _hash(token),
+                                             "expires": self.clock() + PAIR_TTL_S})
+        return token
+
+    def _pending(self) -> dict | None:
+        try:
+            d = json.loads(self.pending_path.read_text())
+            return d if isinstance(d, dict) else None
+        except (OSError, ValueError):
+            return None
+
+    def _write_json(self, path: Path, obj) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(obj, indent=2))
+        tmp.replace(path)
+        path.chmod(0o600)
+
+    def _devices(self) -> list[dict]:
+        try:
+            data = json.loads(self.path.read_text())
+            return data if isinstance(data, list) else []
+        except (OSError, ValueError):
+            return []
+
+    def _save(self, devices: list[dict]) -> None:
+        self._write_json(self.path, devices)
+
+    def redeem_pairing_token(self, token: str, name: str) -> str | None:
+        """Consume a pairing token and return a fresh device token, or None if invalid."""
+        pending = self._pending()
+        if not pending or self.clock() > float(pending.get("expires", 0)):
+            return None
+        if not hmac.compare_digest(_hash(token), str(pending.get("hash", ""))):
+            return None
+        self.pending_path.unlink(missing_ok=True)
+        device_token = secrets.token_urlsafe(32)
+        devices = self._devices()[-(MAX_DEVICES - 1):]
+        devices.append({"hash": _hash(device_token), "name": name[:64], "created": self.clock(),
+                        "last_seen": self.clock()})
+        self._save(devices)
+        return device_token
+
+    def check_device_token(self, token: str) -> bool:
+        h = _hash(token)
+        devices = self._devices()
+        found = False
+        for d in devices:
+            if hmac.compare_digest(str(d.get("hash", "")), h):
+                d["last_seen"] = self.clock()
+                found = True
+        if found:
+            self._save(devices)
+        return found
+
+    def revoke_all(self) -> None:
+        self.pending_path.unlink(missing_ok=True)
+        self._save([])
+
+    def device_count(self) -> int:
+        return len(self._devices())
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_certs_pairing.py -q`
+Expected: 11 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: pairing tokens and persistent device tokens"
+```
+
+---
+
+### Task 12: TLS server: page, assets, WebSocket, engine tick, recorder
+
+**Files:**
+- Create: `src/airmouse/server.py`, `tests/conftest.py`
+- Test: `tests/test_server.py`
+
+One TLS port serves the page, the user's theme, layout and assets, and the WebSocket, so the phone only ever needs one URL.
+
+The tick loop is the single most important detail in this file. Pending clicks, the recenter countdown and the packet timeout are all time-based; without a tick, a phone that stops transmitting mid-press leaves a mouse button held down indefinitely. It runs at 50 Hz while the pointer is active and drops to 5 Hz when it is not.
+
+Asset serving is whitelisted by extension and confined to the assets directory by resolving the path and checking containment, so `/assets/../devices.json` cannot escape.
+
+The recorder writes a **scrubbed** session marker in place of the raw `hello`, because the raw frame carries a pairing token and recordings are meant to be shareable.
+
+- [ ] **Step 1: Write `src/airmouse/server.py`**
+
+```python
+"""TLS server: serves the phone page and the WebSocket control channel on one port."""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import ssl
+import time
+from dataclasses import dataclass
+from http import HTTPStatus
+from pathlib import Path
+
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.datastructures import Headers
+from websockets.http11 import Response
+
+from .certs import CertPaths, san_names
+from .config import Layout, PointerConfig, parse_layout
+from .engine import PointerEngine
+from .pairing import PairingManager
+from .paths import WEB_DIR, Paths
+from .protocol import (Bye, Hello, Ping, ProtocolError, SensorPacket, err_message, layout_message,
+                       parse_client_message, pong_message, state_message, theme_changed_message,
+                       welcome_message)
+
+log = logging.getLogger("airmouse.server")
+
+MAX_BAD_PACKETS = 20
+MAX_FRAMES_PER_SEC = 200
+TICK_HZ_ACTIVE = 50.0
+TICK_HZ_IDLE = 5.0
+ASSET_TYPES = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
+               ".jpeg": "image/jpeg", ".css": "text/css; charset=utf-8",
+               ".json": "application/json", ".woff2": "font/woff2", ".ico": "image/x-icon"}
+
+
+def _resp(status: HTTPStatus, body: bytes, content_type: str, cache: str = "no-store") -> Response:
+    headers = Headers({"Content-Type": content_type, "Content-Length": str(len(body)),
+                       "Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
+    return Response(status.value, status.phrase, headers, body)
+
+
+def _safe_asset(assets_dir: Path, rel: str) -> Path | None:
+    if not rel or rel.startswith("/") or ".." in rel:
+        return None
+    target = (assets_dir / rel).resolve()
+    try:
+        target.relative_to(assets_dir.resolve())
+    except ValueError:
+        return None
+    if not target.is_file() or target.suffix.lower() not in ASSET_TYPES:
+        return None
+    return target
+
+
+@dataclass
+class ServerState:
+    paths: Paths
+    pairing: PairingManager
+    engine: PointerEngine
+    layout: Layout
+    config: PointerConfig
+    accessibility: bool = True
+    client: ServerConnection | None = None
+    client_name: str = ""
+    recorder: object | None = None  # an open text file while recording
+
+    def record(self, raw: str) -> None:
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.write(json.dumps({"rx": time.monotonic(), "raw": raw}) + "\n")
+        except Exception:
+            log.warning("recording stopped", exc_info=True)
+            self.recorder = None
+
+
+class AirMouseServer:
+    def __init__(self, state: ServerState, host: str, port: int, tls_host: str):
+        self.state = state
+        self.host = host
+        self.port = port
+        self.tls_host = tls_host
+        self._server = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._ticker: asyncio.Task | None = None
+
+    # ----- HTTP -------------------------------------------------------------
+
+    def _process_request(self, conn: ServerConnection, request) -> Response | None:
+        path = request.path.split("?", 1)[0]
+        if path == "/ws":
+            origin = request.headers.get("Origin")
+            allowed = {f"https://{n}:{self.port}" for n in san_names(self.tls_host)}
+            allowed |= {f"https://{n}" for n in san_names(self.tls_host)}
+            if origin is not None and origin not in allowed:
+                log.warning("rejecting websocket with origin %s", origin)
+                return _resp(HTTPStatus.FORBIDDEN, b"bad origin", "text/plain")
+            return None  # let the upgrade proceed
+        if path in ("/", "/index.html"):
+            return _resp(HTTPStatus.OK, (WEB_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/app.js":
+            return _resp(HTTPStatus.OK, (WEB_DIR / "app.js").read_bytes(),
+                         "application/javascript; charset=utf-8")
+        if path == "/theme.css":
+            return _resp(HTTPStatus.OK, self.state.paths.theme_css.read_bytes(), "text/css; charset=utf-8")
+        if path == "/layout.json":
+            return _resp(HTTPStatus.OK, self.state.paths.layout_json.read_bytes(), "application/json")
+        if path.startswith("/assets/"):
+            target = _safe_asset(self.state.paths.assets, path[len("/assets/"):])
+            if target is None:
+                return _resp(HTTPStatus.NOT_FOUND, b"not found", "text/plain")
+            return _resp(HTTPStatus.OK, target.read_bytes(), ASSET_TYPES[target.suffix.lower()],
+                         cache="max-age=60")
+        return _resp(HTTPStatus.NOT_FOUND, b"not found", "text/plain")
+
+    # ----- WebSocket --------------------------------------------------------
+
+    async def _handler(self, conn: ServerConnection) -> None:
+        st = self.state
+        try:
+            first = await asyncio.wait_for(conn.recv(), timeout=5.0)
+        except (asyncio.TimeoutError, Exception):
+            return
+        try:
+            msg = parse_client_message(first if isinstance(first, str) else first.decode())
+        except ProtocolError as e:
+            await conn.send(err_message("bad_packet", str(e)))
+            await conn.close(4002, "bad hello")
+            return
+        if not isinstance(msg, Hello):
+            await conn.close(4002, "expected hello")
+            return
+        token = None
+        if msg.token and st.pairing.check_device_token(msg.token):
+            token = msg.token
+        elif msg.pair:
+            token = st.pairing.redeem_pairing_token(msg.pair, msg.name)
+            if token:
+                await conn.send(welcome_message(token))
+        if not token:
+            await conn.send(err_message("unpaired", "scan the pairing QR code on the Mac"))
+            await conn.close(4003, "unpaired")
+            return
+
+        if st.client is not None and st.client is not conn:
+            old = st.client
+            st.client = None
+            await old.close(4001, "replaced")
+        st.client = conn
+        st.client_name = msg.name
+        # Session marker for tools/replay.py. Never record the raw hello: it carries a token.
+        st.record(json.dumps({"t": "hello", "ver": msg.ver, "name": msg.name}))
+        st.engine.connected()
+        st.engine.on_change = lambda: self._schedule_state()
+        await conn.send(layout_message(st.layout.to_dict()))
+        await self._send_state()
+
+        bad = 0
+        window_start = asyncio.get_running_loop().time()
+        frames = 0
+        try:
+            async for raw in conn:
+                now = asyncio.get_running_loop().time()
+                if now - window_start >= 1.0:
+                    window_start, frames = now, 0
+                frames += 1
+                text = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+                st.record(text)
+                if frames > MAX_FRAMES_PER_SEC:
+                    await conn.close(4008, "too fast")
+                    break
+                try:
+                    m = parse_client_message(text)
+                except ProtocolError as e:
+                    bad += 1
+                    if bad >= MAX_BAD_PACKETS:
+                        await conn.send(err_message("bad_packet", str(e)))
+                        await conn.close(4002, "too many bad packets")
+                        break
+                    continue
+                bad = 0
+                if isinstance(m, SensorPacket):
+                    st.engine.handle(m)
+                elif isinstance(m, Ping):
+                    await conn.send(pong_message())
+                elif isinstance(m, Bye):
+                    break
+        finally:
+            if st.client is conn:
+                st.client = None
+                st.engine.on_change = None
+                st.engine.disconnected()
+
+    # ----- outbound ---------------------------------------------------------
+
+    def _schedule_state(self) -> None:
+        if self._loop:
+            self._loop.create_task(self._send_state())
+
+    async def _send_state(self) -> None:
+        st = self.state
+        conn = st.client
+        if conn is None:
+            return
+        snap = st.engine.snapshot()
+        cfg = st.engine.config
+        msg = state_message(conn=True, power=snap.power, phase=snap.phase.value,
+                            recenter=snap.recenter, idle_hz=cfg.idle_hz,
+                            accessibility=st.accessibility,
+                            ui={"haptics": cfg.ui.haptics, "keep_awake": cfg.ui.keep_awake})
+        try:
+            await conn.send(msg)
+        except Exception:
+            pass
+
+    async def push_layout(self, layout: Layout) -> None:
+        self.state.layout = layout
+        self.state.engine.set_roles(layout.roles())
+        if self.state.client:
+            try:
+                await self.state.client.send(layout_message(layout.to_dict()))
+            except Exception:
+                pass
+
+    async def push_theme_changed(self) -> None:
+        if self.state.client:
+            try:
+                await self.state.client.send(theme_changed_message())
+            except Exception:
+                pass
+
+    # ----- lifecycle --------------------------------------------------------
+
+    def ssl_context(self) -> ssl.SSLContext:
+        cp = CertPaths.under(self.state.paths.certs)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(cp.server_crt, cp.server_key)
+        return ctx
+
+    async def _tick_loop(self) -> None:
+        """Drives time-based engine transitions: pending clicks, recenter, timeouts.
+
+        Without this, a phone that stops sending (finger down, then Wi-Fi drops)
+        would leave a button held forever.
+        """
+        last_recenter = -1.0
+        while True:
+            active = self.state.engine.phase.value in ("on", "hold", "held")
+            await asyncio.sleep(1.0 / (TICK_HZ_ACTIVE if active else TICK_HZ_IDLE))
+            try:
+                self.state.engine.tick()
+            except Exception:
+                log.exception("engine tick failed")
+            if self.state.engine.phase.value == "hold":
+                prog = round(self.state.engine.recenter_progress(), 1)
+                if prog != last_recenter:
+                    last_recenter = prog
+                    await self._send_state()
+            else:
+                last_recenter = -1.0
+
+    async def start(self) -> int:
+        self._loop = asyncio.get_running_loop()
+        self._ticker = asyncio.create_task(self._tick_loop())
+        self._server = await serve(self._handler, self.host, self.port, ssl=self.ssl_context(),
+                                   process_request=self._process_request, compression=None,
+                                   ping_interval=20, ping_timeout=20, max_size=4096)
+        self.port = self._server.sockets[0].getsockname()[1]
+        return self.port
+
+    async def stop(self) -> None:
+        if self._ticker:
+            self._ticker.cancel()
+            self._ticker = None
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+```
+
+- [ ] **Step 2: Write `tests/conftest.py`**
+
+```python
+import ssl
+
+import pytest
+
+from airmouse.certs import CertPaths, ensure_server_cert
+from airmouse.config import PointerConfig, load_layout
+from airmouse.cursor_backend import FakeCursor
+from airmouse.engine import PointerEngine
+from airmouse.pairing import PairingManager
+from airmouse.paths import Paths
+from airmouse.server import AirMouseServer, ServerState
+
+
+@pytest.fixture
+def rig(tmp_path):
+    """A configured server (not yet started) plus its fake cursor and paths."""
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    ensure_server_cert(CertPaths.under(paths.certs), "testmac", ["127.0.0.1"])
+    layout = load_layout(paths.layout_json)
+    cursor = FakeCursor()
+    engine = PointerEngine(PointerConfig(), cursor)
+    engine.set_roles(layout.roles())
+    state = ServerState(paths=paths, pairing=PairingManager(paths.devices_json), engine=engine,
+                        layout=layout, config=PointerConfig())
+    server = AirMouseServer(state, "127.0.0.1", 0, "testmac")
+    return type("Rig", (), {"paths": paths, "cursor": cursor, "engine": engine, "state": state,
+                            "server": server})
+
+
+@pytest.fixture
+def client_ssl(rig):
+    ctx = ssl.create_default_context(cafile=str(CertPaths.under(rig.paths.certs).ca_crt))
+    return ctx
+```
+
+- [ ] **Step 3: Write the test — `tests/test_server.py`**
+
+```python
+import asyncio
+import http.client
+import json
+
+import pytest
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed
+
+pytestmark = pytest.mark.asyncio
+
+
+async def start(rig):
+    port = await rig.server.start()
+    return port
+
+
+async def https_get(port, path, ctx):
+    return await asyncio.to_thread(_https_get, port, path, ctx)
+
+
+def _https_get(port, path, ctx):
+    conn = http.client.HTTPSConnection("localhost", port, context=ctx, timeout=5)
+    try:
+        conn.request("GET", path)
+        r = conn.getresponse()
+        return r.status, r.getheader("Content-Type"), r.read()
+    finally:
+        conn.close()
+
+
+async def open_ws(port, ctx, **kw):
+    return await connect(f"wss://localhost:{port}/ws", ssl=ctx,
+                         additional_headers={"Origin": f"https://localhost:{port}"}, **kw)
+
+
+async def pair(rig, port, ctx):
+    token = rig.state.pairing.mint_pairing_token()
+    ws = await open_ws(port, ctx)
+    await ws.send(json.dumps({"t": "hello", "ver": 1, "pair": token, "name": "iPhone"}))
+    welcome = json.loads(await ws.recv())
+    return ws, welcome["device_token"]
+
+
+async def test_serves_page_and_assets_over_tls(rig, client_ssl):
+    port = await start(rig)
+    try:
+        status, ctype, body = await https_get(port, "/", client_ssl)
+        assert status == 200 and "text/html" in ctype and b"AirMouse" in body
+        assert (await https_get(port, "/app.js", client_ssl))[0] == 200
+        assert (await https_get(port, "/theme.css", client_ssl))[1].startswith("text/css")
+        status, ctype, body = await https_get(port, "/layout.json", client_ssl)
+        assert status == 200 and json.loads(body)["buttons"][0]["role"] == "power"
+        assert (await https_get(port, "/assets/logo.svg", client_ssl))[1] == "image/svg+xml"
+        assert (await https_get(port, "/assets/../devices.json", client_ssl))[0] == 404
+        assert (await https_get(port, "/nope", client_ssl))[0] == 404
+    finally:
+        await rig.server.stop()
+
+
+async def test_unpaired_connection_is_rejected(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws = await open_ws(port, client_ssl)
+        await ws.send(json.dumps({"t": "hello", "ver": 1, "name": "iPhone"}))
+        err = json.loads(await ws.recv())
+        assert err["t"] == "err" and err["code"] == "unpaired"
+        with pytest.raises(ConnectionClosed):
+            await ws.recv()
+    finally:
+        await rig.server.stop()
+
+
+async def test_bad_origin_rejected(rig, client_ssl):
+    port = await start(rig)
+    try:
+        with pytest.raises(Exception):
+            await connect(f"wss://localhost:{port}/ws", ssl=client_ssl,
+                          additional_headers={"Origin": "https://evil.example"})
+    finally:
+        await rig.server.stop()
+
+
+async def test_pairing_then_reconnect_with_device_token(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws, device = await pair(rig, port, client_ssl)
+        msgs = [json.loads(await ws.recv()) for _ in range(2)]
+        assert {m["t"] for m in msgs} == {"layout", "state"}
+        state = next(m for m in msgs if m["t"] == "state")
+        assert state["phase"] == "off" and state["idle_hz"] == 0
+        await ws.close()
+        await asyncio.sleep(0.05)
+
+        ws2 = await open_ws(port, client_ssl)
+        await ws2.send(json.dumps({"t": "hello", "ver": 1, "token": device, "name": "iPhone"}))
+        first = json.loads(await ws2.recv())
+        assert first["t"] == "layout"  # no second welcome
+        await ws2.close()
+    finally:
+        await rig.server.stop()
+
+
+async def test_end_to_end_power_on_and_move(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws, _ = await pair(rig, port, client_ssl)
+        seq = 0
+
+        async def send(alpha=0.0, **b):
+            nonlocal seq
+            seq += 1
+            buttons = {"left": 0, "right": 0, "scroll": 0, "power": 0}
+            buttons.update({k: int(v) for k, v in b.items()})
+            await ws.send(json.dumps({"t": "s", "seq": seq, "ts": seq / 60, "o": [alpha, 0, 0],
+                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": buttons,
+                                      "c": {"left": 0, "right": 0, "scroll": 0, "power": 0}, "sd": 0}))
+
+        await send()
+        await send(power=True)
+        await send(power=False)
+        for _ in range(90):
+            await send(alpha=350)
+        await asyncio.sleep(0.2)
+        assert rig.engine.phase.value == "on"
+        assert rig.cursor.x > 300  # turned right by 10 degrees at 25 px/deg
+        await ws.send(json.dumps({"t": "ping"}))
+        for _ in range(20):  # drain the layout/state messages queued by the handshake
+            if json.loads(await ws.recv())["t"] == "pong":
+                break
+        else:
+            pytest.fail("no pong")
+    finally:
+        await rig.server.stop()
+
+
+async def test_second_phone_replaces_the_first(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws1, device = await pair(rig, port, client_ssl)
+        ws2 = await open_ws(port, client_ssl)
+        await ws2.send(json.dumps({"t": "hello", "ver": 1, "token": device, "name": "iPhone2"}))
+        await asyncio.sleep(0.1)
+        with pytest.raises(ConnectionClosed):
+            while True:
+                await ws1.recv()
+        assert rig.state.client is not None
+        await ws2.close()
+    finally:
+        await rig.server.stop()
+
+
+async def test_disconnect_releases_held_button(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws, _ = await pair(rig, port, client_ssl)
+        seq = 0
+
+        async def send(**b):
+            nonlocal seq
+            seq += 1
+            buttons = {"left": 0, "right": 0, "scroll": 0, "power": 0}
+            buttons.update({k: int(v) for k, v in b.items()})
+            await ws.send(json.dumps({"t": "s", "seq": seq, "ts": seq / 60, "o": [0, 0, 0],
+                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": buttons,
+                                      "c": {"left": 0, "right": 0, "scroll": 0, "power": 0}, "sd": 0}))
+
+        await send()
+        await send(power=True)
+        await send(power=False)
+        await send(left=True)
+        await asyncio.sleep(0.3)
+        assert rig.cursor.held == {"left"}
+        await ws.close()
+        await asyncio.sleep(0.2)
+        assert rig.cursor.held == set()
+        assert rig.engine.phase.value == "disconnected"
+    finally:
+        await rig.server.stop()
+
+
+async def test_malformed_packets_do_not_kill_the_session(rig, client_ssl):
+    port = await start(rig)
+    try:
+        ws, _ = await pair(rig, port, client_ssl)
+        for _ in range(5):
+            await ws.send(json.dumps({"t": "s", "seq": 1, "ts": 1, "o": [999, 0, 0]}))
+        await ws.send(json.dumps({"t": "ping"}))
+        msgs = []
+        for _ in range(4):
+            msgs.append(json.loads(await ws.recv()))
+            if msgs[-1]["t"] == "pong":
+                break
+        assert msgs[-1]["t"] == "pong"
+    finally:
+        await rig.server.stop()
+```
+
+Note `https_get` hands the blocking call to `asyncio.to_thread`. Calling it directly would block the very loop that has to answer it, and the test would time out.
+
+- [ ] **Step 4: Run the server tests**
+
+Run: `uv run pytest tests/test_server.py -q`
+Expected: `8 passed`
+
+- [ ] **Step 5: Run the whole suite so far**
+
+Run: `uv run pytest -q`
+Expected: `115 passed`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: TLS server serving the page and the control socket"
+```
+
+---
+
+### Task 13: Setup server: certificate download and QR pages
+
+**Files:**
+- Create: `src/airmouse/setup_server.py`
+- Test: `tests/test_setup_server.py`
+
+This one server is deliberately **not** TLS, because the phone has to fetch the certificate authority before it can trust anything served over TLS. It exposes exactly one thing to the network, the CA certificate, which is public by nature. The setup page and the debug hook are restricted to loopback, so a pairing QR can only be read by someone already at the Mac.
+
+When the user supplies their own certificate (`cert_mode: external`, for example from Tailscale) the CA card disappears from the setup page and only the pairing QR remains.
+
+- [ ] **Step 1: Write the failing test — `tests/test_setup_server.py`**
+
+```python
+import json
+import urllib.request
+
+import pytest
+
+from airmouse.certs import CertPaths, ca_der, ensure_ca
+from airmouse.setup_server import SetupServer, qr_svg, setup_html
+
+
+@pytest.fixture
+def setup(tmp_path):
+    cp = CertPaths.under(tmp_path)
+    ensure_ca(cp, "testmac")
+    cursor = {"x": 1, "y": 2}
+    s = SetupServer(0, lambda: ca_der(cp), lambda: ("http://testmac.local:8080/ca.crt",
+                                                    "https://testmac.local:8443/?pair=tok", True),
+                    debug_cursor=lambda: cursor)
+    port = s.start()
+    yield port
+    s.stop()
+
+
+def get(port, path):
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as r:
+        return r.status, r.headers.get("Content-Type"), r.read()
+
+
+def test_qr_svg_is_svg():
+    svg = qr_svg("https://example.local/?pair=abc")
+    assert svg.startswith("<svg") and "path" in svg
+
+
+def test_ca_download_is_der_with_filename(setup):
+    status, ctype, body = get(setup, "/ca.crt")
+    assert status == 200 and ctype == "application/x-x509-ca-cert"
+    assert body[:1] == b"\x30"
+
+
+def test_setup_page_has_both_qrs_and_urls(setup):
+    status, ctype, body = get(setup, "/setup")
+    html = body.decode()
+    assert status == 200 and html.count("<svg") == 2
+    assert "ca.crt" in html and "pair=tok" in html
+
+
+def test_setup_page_hides_ca_card_when_external_certs():
+    html = setup_html("http://x/ca.crt", "https://x/?pair=t", show_ca=False)
+    assert html.count("<svg") == 1 and "Certificate Trust Settings" not in html
+
+
+def test_help_page_and_404(setup):
+    assert get(setup, "/help")[0] == 200
+    with pytest.raises(Exception):
+        get(setup, "/nope")
+
+
+def test_debug_cursor(setup):
+    status, _, body = get(setup, "/debug/cursor")
+    assert status == 200 and json.loads(body) == {"x": 1, "y": 2}
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `uv run pytest tests/test_setup_server.py -q`
+Expected: FAIL, `ModuleNotFoundError: No module named 'airmouse.setup_server'`
+
+- [ ] **Step 3: Write `src/airmouse/setup_server.py`**
+
+```python
+"""Plain-HTTP helper server: CA download, setup page with QR codes, debug hooks.
+
+This is deliberately *not* TLS: the iPhone has to fetch the CA certificate
+before it can trust anything we serve over HTTPS.
+"""
+from __future__ import annotations
+
+import io
+import json
+import logging
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Callable
+
+import qrcode
+import qrcode.image.svg as qrsvg
+
+log = logging.getLogger("airmouse.setup")
+
+
+def qr_svg(data: str) -> str:
+    q = qrcode.QRCode(box_size=8, border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    q.add_data(data)
+    q.make(fit=True)
+    buf = io.BytesIO()
+    q.make_image(image_factory=qrsvg.SvgPathImage).save(buf)
+    svg = buf.getvalue().decode("utf-8")
+    return svg[svg.index("<svg"):]
+
+
+SETUP_CSS = """
+body{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:0;padding:28px;background:#0b0f14;color:#e8eef5}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 6px}
+.cols{display:flex;flex-wrap:wrap;gap:28px;margin-top:18px}
+.card{background:#121820;border:1px solid #222c37;border-radius:14px;padding:18px;max-width:330px}
+.card svg{width:230px;height:230px;background:#fff;border-radius:10px;padding:8px}
+code{background:#1a2230;padding:2px 6px;border-radius:5px;font-size:13px;word-break:break-all}
+ol{padding-left:18px;color:#9fb3c8}li{margin:6px 0}
+.muted{color:#6b7a8c;font-size:13px}
+"""
+
+
+def setup_html(ca_url: str, pair_url: str, show_ca: bool) -> str:
+    ca_card = "" if not show_ca else f"""
+    <div class="card">
+      <h2>1 · Trust the certificate (once)</h2>
+      {qr_svg(ca_url)}
+      <ol>
+        <li>Scan with the iPhone camera and open the link.</li>
+        <li>Allow the profile download.</li>
+        <li>Settings &rsaquo; General &rsaquo; VPN &amp; Device Management &rsaquo; install it.</li>
+        <li>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust Settings &rsaquo;
+            turn on full trust for <b>AirMouse Local CA</b>.</li>
+      </ol>
+      <p class="muted"><code>{ca_url}</code></p>
+    </div>"""
+    return f"""<!doctype html><meta charset="utf-8"><title>AirMouse setup</title>
+<style>{SETUP_CSS}</style>
+<h1>AirMouse setup</h1>
+<p class="muted">Keep this page open on the Mac and use the iPhone camera.</p>
+<div class="cols">{ca_card}
+  <div class="card">
+    <h2>{'2' if show_ca else '1'} · Pair the phone</h2>
+    {qr_svg(pair_url)}
+    <ol>
+      <li>Scan and open. Tap <b>Start</b>, allow motion access.</li>
+      <li>Optional: Share &rsaquo; Add to Home Screen, open it from there,
+          then scan this code again from inside it.</li>
+    </ol>
+    <p class="muted">Valid for 10 minutes. Reload this page for a fresh code.<br>
+    <code>{pair_url}</code></p>
+  </div>
+</div>"""
+
+
+class SetupServer:
+    """Threaded HTTP server. Loopback-only routes are enforced per request."""
+
+    def __init__(self, port: int, ca_der: Callable[[], bytes], urls: Callable[[], tuple[str, str, bool]],
+                 debug_cursor: Callable[[], dict] | None = None):
+        self.port = port
+        self._ca_der = ca_der
+        self._urls = urls
+        self._debug_cursor = debug_cursor
+        self._httpd: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
+
+    def _handler_class(self):
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, fmt, *args):  # noqa: A003
+                log.debug("setup %s", fmt % args)
+
+            def _send(self, status: int, body: bytes, ctype: str, extra: dict | None = None):
+                self.send_response(status)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                for k, v in (extra or {}).items():
+                    self.send_header(k, v)
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _is_local(self) -> bool:
+                return self.client_address[0] in ("127.0.0.1", "::1")
+
+            def do_GET(self):  # noqa: N802
+                path = self.path.split("?", 1)[0]
+                if path == "/ca.crt":
+                    self._send(200, outer._ca_der(), "application/x-x509-ca-cert",
+                               {"Content-Disposition": 'attachment; filename="AirMouseCA.crt"'})
+                elif path in ("/", "/setup"):
+                    if not self._is_local():
+                        self._send(403, b"setup page is available on the Mac only", "text/plain")
+                        return
+                    ca_url, pair_url, show_ca = outer._urls()
+                    self._send(200, setup_html(ca_url, pair_url, show_ca).encode(),
+                               "text/html; charset=utf-8")
+                elif path == "/help":
+                    ca_url, _, _ = outer._urls()
+                    body = (f"<!doctype html><meta charset=utf-8><title>AirMouse</title>"
+                            f"<style>{SETUP_CSS}</style><h1>Install the AirMouse certificate</h1>"
+                            f"<ol><li>Tap <a href='{ca_url}'>{ca_url}</a></li>"
+                            f"<li>Allow the download, then install it in Settings.</li>"
+                            f"<li>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust "
+                            f"Settings &rsaquo; enable AirMouse Local CA.</li></ol>")
+                    self._send(200, body.encode(), "text/html; charset=utf-8")
+                elif path == "/debug/cursor" and outer._debug_cursor and self._is_local():
+                    self._send(200, json.dumps(outer._debug_cursor()).encode(), "application/json")
+                else:
+                    self._send(404, b"not found", "text/plain")
+
+        return Handler
+
+    def start(self) -> int:
+        self._httpd = ThreadingHTTPServer(("0.0.0.0", self.port), self._handler_class())
+        self.port = self._httpd.server_address[1]
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True,
+                                        name="airmouse-setup")
+        self._thread.start()
+        return self.port
+
+    def stop(self) -> None:
+        if self._httpd:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+            self._httpd = None
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `uv run pytest tests/test_setup_server.py -q`
+Expected: 6 passed
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: setup page with QR codes and CA download"
+```
+
+---
+
+### Task 14: The phone page
+
+**Files:**
+- Create: `src/airmouse/web/index.html`, `src/airmouse/web/app.js`, `src/airmouse/defaults/theme.css`
+- Test: served by the existing server tests; behaviour verified on a device in Task 21
+
+**The design contract:** `app.js` contains no colour, no size, no font and no label. It renders whatever `layout.json` describes and styles it entirely from `theme.css`. The user changes the look by editing two files the Mac serves and hot-reloads, and never by touching code.
+
+The page exposes its state to CSS rather than deciding anything itself: `<body data-state>` carries the pointer phase, each button carries `data-role`, `data-id` and `data-pressed`, and the recenter countdown is published as the `--recenter-progress` custom property. A theme can render that countdown as a ring, a bar, a colour shift or nothing at all.
+
+Four iOS-specific details matter. Motion access can only be requested from inside a tap handler, hence the Start overlay. `touch-action: none` plus `preventDefault` on every touch event is what stops the page scrolling under the user's thumb. The pad stops short of the bottom edge so a drag never summons the app switcher. And Safari has no vibration API, so haptics go through the native switch control, which is best-effort and verified by hand in Task 21.
+
+Battery behaviour is explicit: when the pointer is off and auto-activate is disabled, the sensor listeners are **removed entirely** and the page falls back to one ping every five seconds, with the background rendered pure black so an OLED panel draws almost nothing.
+
+- [ ] **Step 1: Write `src/airmouse/web/index.html`**
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AirMouse">
+<meta name="color-scheme" content="dark">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/theme.css" id="theme">
+<title>AirMouse</title>
+</head>
+<body data-state="loading">
+  <header id="header">
+    <img id="logo" src="/assets/logo.svg" alt="">
+    <span id="status">Connecting…</span>
+  </header>
+
+  <main id="pad" aria-label="Mouse controls"></main>
+
+  <div class="overlay" id="ov-start">
+    <div class="card">
+      <h1>AirMouse</h1>
+      <p>Tap to allow motion access.</p>
+      <button type="button" id="btn-start" class="cta">Start</button>
+      <button type="button" id="btn-haptic-test" class="ghost">Test haptic</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-denied">
+    <div class="card">
+      <h1>Motion access denied</h1>
+      <p>Settings &rsaquo; Apps &rsaquo; Safari &rsaquo; Motion &amp; Orientation Access, then reload.
+         If you already allowed it, clear this site's data and try again.</p>
+      <button type="button" id="btn-retry" class="cta">Try again</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-landscape">
+    <div class="card"><h1>Rotate to portrait</h1></div>
+  </div>
+
+  <div id="banner">Reconnecting…</div>
+
+  <label id="haptic-label" for="haptic"><input type="checkbox" switch id="haptic"></label>
+
+  <script src="/app.js"></script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Write `src/airmouse/web/app.js`**
+
+```javascript
+/* AirMouse phone client.
+ *
+ * Responsibilities: request sensor access, render the layout the Mac sends,
+ * track multi-touch button state, and stream everything to the Mac. All
+ * pointer behaviour lives on the Mac; this file decides nothing.
+ * No colours, sizes or labels here -- those come from theme.css and layout.json.
+ */
+(() => {
+  "use strict";
+
+  const PROTOCOL_VERSION = 1;
+  const TOKEN_KEY = "airmouse.device_token";
+  const RECONNECT_MIN_MS = 500;
+  const RECONNECT_MAX_MS = 5000;
+  const IDLE_PING_MS = 5000;
+
+  const el = {
+    body: document.body,
+    pad: document.getElementById("pad"),
+    status: document.getElementById("status"),
+    start: document.getElementById("btn-start"),
+    retry: document.getElementById("btn-retry"),
+    hapticTest: document.getElementById("btn-haptic-test"),
+    haptic: document.getElementById("haptic"),
+  };
+
+  const state = {
+    ws: null,
+    seq: 0,
+    backoff: RECONNECT_MIN_MS,
+    phase: "off",
+    idleHz: 0,
+    haptics: true,
+    keepAwake: "always",
+    sensorsOn: false,
+    wakeLock: null,
+    lastSendAt: 0,
+    lastPingAt: 0,
+    buttons: new Map(),   // id -> {role, pressed, count, el, rect}
+    touches: new Map(),   // touch identifier -> {id, lastY}
+    scrollDelta: 0,
+    orientation: null,    // [alpha, beta, gamma]
+    rotationRate: [0, 0, 0],
+    gravity: [0, 0, 0],
+  };
+
+  // ---------- utilities ----------
+
+  function setPageState(s) {
+    el.body.dataset.state = s;
+  }
+
+  function tick() {
+    if (!state.haptics) return;
+    // Safari has no vibration API. Toggling a native switch control produces a
+    // real haptic on iOS 17.4+. Harmless everywhere else.
+    try { el.haptic.click(); } catch (_) { /* ignore */ }
+  }
+
+  function num(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
+
+  // ---------- rendering ----------
+
+  function renderLayout(layout) {
+    state.buttons.clear();
+    state.touches.clear();
+    el.pad.textContent = "";
+    for (const b of layout.buttons || []) {
+      const node = document.createElement("div");
+      node.className = `btn role-${b.role} id-${b.id}${b.class ? " " + b.class : ""}`;
+      node.dataset.id = b.id;
+      node.dataset.role = b.role;
+      node.dataset.pressed = "0";
+      node.style.left = b.x + "%";
+      node.style.top = b.y + "%";
+      node.style.width = b.w + "%";
+      node.style.height = b.h + "%";
+      if (b.icon) {
+        const img = document.createElement("img");
+        img.src = "/assets/" + b.icon;
+        img.alt = "";
+        node.appendChild(img);
+      } else if (b.label) {
+        const span = document.createElement("span");
+        span.className = "label";
+        span.textContent = b.label;
+        node.appendChild(span);
+      }
+      el.pad.appendChild(node);
+      state.buttons.set(b.id, { role: b.role, pressed: false, count: 0, el: node });
+    }
+  }
+
+  function hitTest(x, y) {
+    for (const [id, b] of state.buttons) {
+      const r = b.el.getBoundingClientRect();
+      if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) return id;
+    }
+    return null;
+  }
+
+  function setPressed(id, pressed) {
+    const b = state.buttons.get(id);
+    if (!b || b.pressed === pressed) return;
+    b.pressed = pressed;
+    if (pressed) b.count += 1;
+    b.el.dataset.pressed = pressed ? "1" : "0";
+    if (pressed) tick();
+    sendPacket(true);
+  }
+
+  // ---------- touch ----------
+
+  function onTouchStart(ev) {
+    ev.preventDefault();
+    for (const t of ev.changedTouches) {
+      const id = hitTest(t.clientX, t.clientY);
+      if (!id) continue;
+      state.touches.set(t.identifier, { id, lastY: t.clientY });
+      setPressed(id, true);
+    }
+  }
+
+  function onTouchMove(ev) {
+    ev.preventDefault();
+    for (const t of ev.changedTouches) {
+      const rec = state.touches.get(t.identifier);
+      if (!rec) continue;
+      const b = state.buttons.get(rec.id);
+      if (b && b.role === "scroll") {
+        state.scrollDelta += t.clientY - rec.lastY;
+      }
+      rec.lastY = t.clientY;
+    }
+  }
+
+  function endTouch(ev) {
+    ev.preventDefault();
+    for (const t of ev.changedTouches) {
+      const rec = state.touches.get(t.identifier);
+      if (!rec) continue;
+      state.touches.delete(t.identifier);
+      const stillHeld = [...state.touches.values()].some((r) => r.id === rec.id);
+      if (!stillHeld) setPressed(rec.id, false);
+    }
+  }
+
+  el.pad.addEventListener("touchstart", onTouchStart, { passive: false });
+  el.pad.addEventListener("touchmove", onTouchMove, { passive: false });
+  el.pad.addEventListener("touchend", endTouch, { passive: false });
+  el.pad.addEventListener("touchcancel", endTouch, { passive: false });
+  document.addEventListener("gesturestart", (e) => e.preventDefault());
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // ---------- sensors ----------
+
+  function onOrientation(ev) {
+    if (ev.alpha === null && ev.beta === null) return;
+    state.orientation = [num(ev.alpha), num(ev.beta), num(ev.gamma)];
+  }
+
+  function onMotion(ev) {
+    const rr = ev.rotationRate || {};
+    state.rotationRate = [num(rr.alpha), num(rr.beta), num(rr.gamma)];
+    const g = ev.accelerationIncludingGravity || {};
+    state.gravity = [num(g.x), num(g.y), num(g.z)];
+    sendPacket(false);
+  }
+
+  function startSensors() {
+    if (state.sensorsOn) return;
+    window.addEventListener("deviceorientation", onOrientation);
+    window.addEventListener("devicemotion", onMotion);
+    state.sensorsOn = true;
+  }
+
+  function stopSensors() {
+    if (!state.sensorsOn) return;
+    window.removeEventListener("deviceorientation", onOrientation);
+    window.removeEventListener("devicemotion", onMotion);
+    state.sensorsOn = false;
+  }
+
+  async function requestSensorPermission() {
+    const asks = [];
+    for (const C of [window.DeviceMotionEvent, window.DeviceOrientationEvent]) {
+      if (C && typeof C.requestPermission === "function") asks.push(C.requestPermission());
+    }
+    if (!asks.length) return true;   // non-iOS browsers grant implicitly
+    try {
+      const results = await Promise.all(asks);
+      return results.every((r) => r === "granted");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function acquireWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    const want = state.keepAwake === "always" || state.phase !== "off";
+    if (!want) return;
+    try {
+      state.wakeLock = await navigator.wakeLock.request("screen");
+      state.wakeLock.addEventListener("release", () => { state.wakeLock = null; });
+    } catch (_) { /* denied or not visible */ }
+  }
+
+  // ---------- transport ----------
+
+  function sendPacket(force) {
+    const ws = state.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const now = performance.now();
+    const active = state.phase !== "off";
+    const minGap = active ? 0 : (state.idleHz > 0 ? 1000 / state.idleHz : Infinity);
+    if (!force && now - state.lastSendAt < minGap) return;
+    state.lastSendAt = now;
+    state.seq += 1;
+    const b = {}, c = {};
+    for (const [id, btn] of state.buttons) { b[id] = btn.pressed ? 1 : 0; c[id] = btn.count; }
+    const sd = state.scrollDelta;
+    state.scrollDelta = 0;
+    ws.send(JSON.stringify({
+      t: "s", seq: state.seq, ts: now / 1000,
+      o: state.orientation, rr: state.rotationRate, g: state.gravity,
+      b, c, sd: Math.round(sd * 100) / 100,
+    }));
+  }
+
+  function applyState(msg) {
+    state.phase = msg.phase;
+    state.idleHz = msg.idle_hz | 0;
+    if (msg.ui) { state.haptics = !!msg.ui.haptics; state.keepAwake = msg.ui.keep_awake; }
+    setPageState(msg.phase);
+    el.body.style.setProperty("--recenter-progress", String(msg.recenter || 0));
+    if (msg.phase === "held" && state.lastPhase !== "held") { tick(); setTimeout(tick, 90); }
+    state.lastPhase = msg.phase;
+    el.status.textContent = !msg.accessibility
+      ? "Mac needs Accessibility permission"
+      : (msg.phase === "off" ? "Ready — tap POWER" : "Pointer active");
+    if (state.phase === "off" && state.idleHz === 0) stopSensors(); else startSensors();
+    acquireWakeLock();
+  }
+
+  function connect() {
+    const params = new URLSearchParams(location.search);
+    const pair = params.get("pair");
+    const token = localStorage.getItem(TOKEN_KEY);
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    state.ws = ws;
+
+    ws.onopen = () => {
+      state.backoff = RECONNECT_MIN_MS;
+      const hello = { t: "hello", ver: PROTOCOL_VERSION, name: "iPhone" };
+      if (token) hello.token = token; else if (pair) hello.pair = pair;
+      ws.send(JSON.stringify(hello));
+    };
+
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (_) { return; }
+      if (msg.t === "welcome") {
+        localStorage.setItem(TOKEN_KEY, msg.device_token);
+        history.replaceState(null, "", location.pathname);
+      } else if (msg.t === "layout") {
+        renderLayout(msg);
+      } else if (msg.t === "state") {
+        applyState(msg);
+      } else if (msg.t === "theme_changed") {
+        const link = document.getElementById("theme");
+        link.href = "/theme.css?v=" + Date.now();
+      } else if (msg.t === "err") {
+        el.status.textContent = msg.msg;
+        if (msg.code === "unpaired") localStorage.removeItem(TOKEN_KEY);
+      }
+    };
+
+    ws.onclose = () => {
+      state.ws = null;
+      stopSensors();
+      setPageState("disconnected");
+      setTimeout(connect, state.backoff);
+      state.backoff = Math.min(state.backoff * 2, RECONNECT_MAX_MS);
+    };
+
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
+  }
+
+  // ---------- idle ping ----------
+
+  setInterval(() => {
+    const ws = state.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (state.phase === "off" && state.idleHz === 0) {
+      ws.send(JSON.stringify({ t: "ping" }));
+    }
+  }, IDLE_PING_MS);
+
+  // ---------- lifecycle ----------
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopSensors();
+      const ws = state.ws;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "bye" }));
+    } else {
+      acquireWakeLock();
+      if (!state.ws) connect();
+    }
+  });
+
+  async function start() {
+    const ok = await requestSensorPermission();
+    if (!ok) { setPageState("nopermission"); return; }
+    startSensors();
+    await acquireWakeLock();
+    setPageState("off");
+    connect();
+  }
+
+  el.start.addEventListener("click", start);
+  el.retry.addEventListener("click", start);
+  el.hapticTest.addEventListener("click", (e) => { e.stopPropagation(); tick(); });
+})();
+```
+
+- [ ] **Step 3: Write `src/airmouse/defaults/theme.css`**
+
+```css
+/* AirMouse theme. Everything visual lives here: edit freely, the page reloads it live.
+   app.js never sets a colour, size or font of its own. */
+:root {
+  --bg-off: #000000;
+  --bg-on: #0b0f14;
+  --fg: #e8eef5;
+  --fg-dim: #6b7a8c;
+  --accent: #3ea6ff;
+  --danger: #ff5a5f;
+
+  --btn-bg: #161c24;
+  --btn-bg-pressed: #22303f;
+  --btn-fg: #9fb3c8;
+  --btn-border: 1px solid #232c37;
+  --btn-radius: 22px;
+  --btn-shadow: 0 1px 0 #1f2937 inset;
+
+  --scroll-bg: #10161d;
+  --scroll-thumb: #2b3846;
+
+  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --label-size: 15px;
+  --header-display: flex;
+  --logo-height: 18px;
+  --pad-bottom-margin: 12%;
+  --pad-gap: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-off);
+  color: var(--fg);
+  font-family: var(--font);
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms linear;
+}
+
+body[data-state="on"], body[data-state="held"], body[data-state="hold"] { background: var(--bg-on); }
+
+#header {
+  display: var(--header-display);
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 8px) 14px 4px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#logo { height: var(--logo-height); opacity: 0.8; }
+body[data-state="off"] #header { opacity: 0.35; }
+
+#pad {
+  position: relative;
+  height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top) - 34px);
+  margin: 0 calc(env(safe-area-inset-left) + 8px) 0 calc(env(safe-area-inset-right) + 8px);
+}
+
+.btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: var(--btn-border);
+  border-radius: var(--btn-radius);
+  box-shadow: var(--btn-shadow);
+  font-size: var(--label-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  transition: background 60ms linear, transform 60ms linear;
+}
+.btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
+.btn img { height: 28%; opacity: 0.85; }
+
+.role-scroll { background: var(--scroll-bg); border-radius: 999px; }
+.role-scroll::after {
+  content: "";
+  width: 4px;
+  height: 34%;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+}
+
+.role-power { font-size: 12px; }
+body[data-state="on"] .role-power, body[data-state="held"] .role-power { color: var(--accent); }
+
+/* Recenter hold: the ring fills as --recenter-progress goes 0 -> 1. */
+body[data-state="hold"] .role-left, body[data-state="hold"] .role-right {
+  background:
+    conic-gradient(var(--accent) calc(var(--recenter-progress, 0) * 360deg), transparent 0)
+    border-box;
+  color: var(--fg);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.92);
+  padding: 24px;
+  text-align: center;
+}
+body[data-state="loading"] #ov-start,
+body[data-state="nopermission"] #ov-denied { display: flex; }
+@media (orientation: landscape) { #ov-landscape { display: flex; } }
+
+.card h1 { font-size: 20px; margin: 0 0 8px; }
+.card p { color: var(--fg-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+.cta, .ghost {
+  font: inherit;
+  font-size: 16px;
+  padding: 14px 30px;
+  border-radius: 14px;
+  border: none;
+  margin: 4px;
+}
+.cta { background: var(--accent); color: #04121f; font-weight: 700; }
+.ghost { background: transparent; color: var(--fg-dim); border: var(--btn-border); }
+
+#banner {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 6px);
+  text-align: center;
+  font-size: 12px;
+  color: var(--danger);
+  display: none;
+}
+body[data-state="disconnected"] #banner { display: block; }
+
+#haptic-label { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+```
+
+- [ ] **Step 4: Check the JavaScript parses and every element id it uses exists**
+
+```bash
+node --check src/airmouse/web/app.js
+node -e "
+const fs=require('fs');
+const html=fs.readFileSync('src/airmouse/web/index.html','utf8');
+const ids=[...html.matchAll(/id=\"([a-z-]+)\"/g)].map(m=>m[1]);
+const js=fs.readFileSync('src/airmouse/web/app.js','utf8');
+const want=[...js.matchAll(/getElementById\(\"([a-z-]+)\"\)/g)].map(m=>m[1]);
+const missing=want.filter(w=>!ids.includes(w));
+console.log(missing.length ? 'MISSING: '+missing : 'all ids present');"
+```
+Expected: no syntax errors, then `all ids present`
+
+- [ ] **Step 5: Confirm the server hands the page out**
+
+Run: `uv run pytest tests/test_server.py::test_serves_page_and_assets_over_tls -q`
+Expected: `1 passed`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "feat: phone page with configurable button surface"
+```
+
+---
+
+### Task 15: Runtime: loop, hot reload, status, recording
+
+**Files:**
+- Create: `src/airmouse/runtime.py`
+- Test: exercised live in Task 18
+
+The runtime owns the asyncio loop and both servers, and exposes a thread-safe `Status` the menu bar samples once a second. It runs the loop on a worker thread because AppKit insists on owning the main thread.
+
+Hot reload polls three file modification times once a second. A valid edit applies immediately, to the engine for tuning, as a pushed message for layout, as a reload hint for the theme. An invalid edit is logged, surfaced in the menu, and otherwise ignored.
+
+- [ ] **Step 1: Write `src/airmouse/runtime.py`**
+
+```python
+"""Runtime: owns the asyncio loop, both servers, config watching and the engine.
+
+The menu bar wraps this; `airmouse run --headless` uses it directly.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import logging.handlers
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from .certs import CertPaths, ca_der, ensure_server_cert, local_hostname
+from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
+from .cursor_backend import CursorBackend, FakeCursor
+from .engine import PointerEngine
+from .pairing import PairingManager
+from .paths import Paths
+from .server import AirMouseServer, ServerState
+from .setup_server import SetupServer
+
+log = logging.getLogger("airmouse")
+
+
+def setup_logging(paths: Paths, debug: bool = False) -> None:
+    paths.logs.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(paths.logs / "airmouse.log", maxBytes=1 << 20,
+                                                   backupCount=3)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    root = logging.getLogger()
+    root.handlers = [handler, logging.StreamHandler()]
+    root.setLevel(logging.DEBUG if debug else logging.INFO)
+
+
+@dataclass
+class Status:
+    """Thread-safe snapshot the menu bar reads once a second."""
+
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    connected: bool = False
+    device_name: str = ""
+    phase: str = "disconnected"
+    accessibility: bool = False
+    enabled: bool = True
+    tls_url: str = ""
+    error: str = ""
+
+    def read(self) -> dict:
+        with self.lock:
+            return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
+                        accessibility=self.accessibility, enabled=self.enabled,
+                        tls_url=self.tls_url, error=self.error)
+
+    def update(self, **kw) -> None:
+        with self.lock:
+            for k, v in kw.items():
+                setattr(self, k, v)
+
+
+class Runtime:
+    def __init__(self, paths: Paths, backend: CursorBackend, tls_port: int = 8443,
+                 http_port: int = 8080):
+        self.paths = paths
+        self.backend = backend
+        self.tls_port = tls_port
+        self.http_port = http_port
+        self.status = Status()
+        self.host = local_hostname()
+        self.cert_paths = CertPaths.under(paths.certs)
+
+        self.config = self._load_config_or_default()
+        self.layout = self._load_layout_or_default()
+        self.engine = PointerEngine(self.config, backend)
+        self.engine.set_roles(self.layout.roles())
+        self.pairing = PairingManager(paths.devices_json)
+        self.state = ServerState(paths=paths, pairing=self.pairing, engine=self.engine,
+                                 layout=self.layout, config=self.config)
+        self.server = AirMouseServer(self.state, "0.0.0.0", tls_port, self.host)
+        self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
+                                 debug_cursor=self._debug_cursor)
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._watcher = FileWatcher([paths.pointer_json, paths.layout_json, paths.theme_css])
+
+    # ----- config -----------------------------------------------------------
+
+    def _load_config_or_default(self) -> PointerConfig:
+        try:
+            return load_pointer_config(self.paths.pointer_json)
+        except ConfigError as e:
+            log.error("pointer.json invalid, using defaults: %s", e)
+            return PointerConfig()
+
+    def _load_layout_or_default(self):
+        from .config import parse_layout
+        try:
+            return load_layout(self.paths.layout_json)
+        except ConfigError as e:
+            log.error("layout.json invalid, using defaults: %s", e)
+            return parse_layout({"version": 1, "buttons": [
+                {"id": "power", "role": "power", "x": 32, "y": 3, "w": 36, "h": 9, "label": "POWER"},
+                {"id": "left", "role": "left", "x": 3, "y": 50, "w": 42, "h": 46, "label": "L"},
+                {"id": "scroll", "role": "scroll", "x": 46, "y": 48, "w": 8, "h": 50},
+                {"id": "right", "role": "right", "x": 55, "y": 50, "w": 42, "h": 46, "label": "R"}]})
+
+    async def _watch_config(self) -> None:
+        while True:
+            await asyncio.sleep(1.0)
+            try:
+                changed = await asyncio.to_thread(self._watcher.changed)
+            except Exception:
+                continue
+            for path in changed:
+                if path == self.paths.pointer_json:
+                    await self._apply_pointer(path)
+                elif path == self.paths.layout_json:
+                    await self._apply_layout(path)
+                elif path == self.paths.theme_css:
+                    await self._apply_theme(path)
+
+    async def _apply_pointer(self, path: Path) -> None:
+        try:
+            cfg = load_pointer_config(path)
+        except ConfigError as e:
+            log.error("pointer.json rejected: %s", e)
+            self.status.update(error=str(e))
+            return
+        self.config = cfg
+        self.state.config = cfg
+        self.engine.set_config(cfg)
+        self.status.update(error="")
+        log.info("pointer.json reloaded")
+        await self.server._send_state()
+
+    async def _apply_layout(self, path: Path) -> None:
+        try:
+            layout = load_layout(path)
+        except ConfigError as e:
+            log.error("layout.json rejected: %s", e)
+            self.status.update(error=str(e))
+            return
+        self.layout = layout
+        self.status.update(error="")
+        log.info("layout.json reloaded")
+        await self.server.push_layout(layout)
+
+    async def _apply_theme(self, path: Path) -> None:
+        log.info("theme.css reloaded")
+        await self.server.push_theme_changed()
+
+    # ----- urls -------------------------------------------------------------
+
+    def _urls(self) -> tuple[str, str, bool]:
+        token = self.pairing.mint_pairing_token()
+        ca = f"http://{self.host}.local:{self.setup.port}/ca.crt"
+        pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
+        return ca, pair, self.config.cert_mode == "auto"
+
+    def _debug_cursor(self) -> dict:
+        if isinstance(self.backend, FakeCursor):
+            return self.backend.summary()
+        x, y = self.backend.get_position()
+        return {"x": x, "y": y, "phase": self.engine.phase.value}
+
+    # ----- status -----------------------------------------------------------
+
+    async def _status_loop(self) -> None:
+        while True:
+            self.status.update(connected=self.state.client is not None,
+                               device_name=self.state.client_name,
+                               phase=self.engine.phase.value)
+            await asyncio.sleep(0.5)
+
+    def set_accessibility(self, ok: bool) -> None:
+        if ok != self.state.accessibility:
+            self.state.accessibility = ok
+            self.status.update(accessibility=ok)
+            if self._loop:
+                asyncio.run_coroutine_threadsafe(self.server._send_state(), self._loop)
+
+    def set_enabled(self, enabled: bool) -> None:
+        self.engine.set_enabled(enabled)
+        self.status.update(enabled=enabled)
+
+    def force_reload(self) -> None:
+        """Menu action: re-read every config file regardless of mtime."""
+        self._watcher = FileWatcher([])  # forget mtimes so the next poll reloads everything
+        for path, applier in ((self.paths.pointer_json, self._apply_pointer),
+                              (self.paths.layout_json, self._apply_layout),
+                              (self.paths.theme_css, self._apply_theme)):
+            if self._loop:
+                asyncio.run_coroutine_threadsafe(applier(path), self._loop)
+        self._watcher = FileWatcher([self.paths.pointer_json, self.paths.layout_json,
+                                     self.paths.theme_css])
+
+    def set_recording(self, on: bool) -> Path | None:
+        if not on:
+            rec = self.state.recorder
+            self.state.recorder = None
+            if rec is not None:
+                try:
+                    rec.close()
+                except Exception:
+                    pass
+            return None
+        self.paths.sessions.mkdir(parents=True, exist_ok=True)
+        path = self.paths.sessions / (time.strftime("%Y-%m-%dT%H-%M-%S") + ".jsonl")
+        self.state.recorder = path.open("w", encoding="utf-8", buffering=1)
+        log.info("recording to %s", path)
+        return path
+
+    def revoke_devices(self) -> None:
+        self.pairing.revoke_all()
+        if self._loop and self.state.client:
+            asyncio.run_coroutine_threadsafe(self.state.client.close(4003, "revoked"), self._loop)
+
+    # ----- lifecycle --------------------------------------------------------
+
+    async def _main(self) -> None:
+        if self.config.cert_mode == "auto":
+            if ensure_server_cert(self.cert_paths, self.host):
+                log.info("issued a new server certificate for %s.local", self.host)
+        self.tls_port = await self.server.start()
+        self.http_port = await asyncio.to_thread(self.setup.start)
+        self.status.update(tls_url=f"https://{self.host}.local:{self.tls_port}/")
+        log.info("listening: https://%s.local:%d  setup: http://127.0.0.1:%d/setup",
+                 self.host, self.tls_port, self.http_port)
+        await asyncio.gather(self._watch_config(), self._status_loop())
+
+    def start_background(self) -> None:
+        """Run the loop on a worker thread so AppKit can own the main thread."""
+        def run():
+            loop = asyncio.new_event_loop()
+            self._loop = loop
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._main())
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                log.exception("runtime stopped")
+            finally:
+                loop.close()
+
+        self._thread = threading.Thread(target=run, daemon=True, name="airmouse-loop")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self.engine.disconnected()
+        self.setup.stop()
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(self.server.stop(), self._loop)
+
+    def run_forever(self) -> None:
+        asyncio.run(self._main())
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add -A
+git commit -m "feat: runtime wiring with config hot reload"
+```
+
+---
+
+### Task 16: Menu bar
+
+**Files:**
+- Create: `src/airmouse/menubar.py`
+- Test: launched live in Task 20
+
+The icon is the whole status display: a warning when Accessibility is missing, an outline when no phone is connected, a wheel when connected but off, a filled dot when the pointer is live. All four are user-replaceable PNGs, with a text fallback if they are absent.
+
+Accessibility is re-checked every three seconds rather than once at launch, so granting permission takes effect without restarting anything.
+
+- [ ] **Step 1: Write `src/airmouse/menubar.py`**
+
+```python
+"""Menu bar UI. Owns the main thread; the runtime's asyncio loop runs beside it."""
+from __future__ import annotations
+
+import logging
+import subprocess
+import webbrowser
+from pathlib import Path
+
+import rumps
+
+from .cli import agent_plist_path
+from .paths import Paths
+from .runtime import Runtime
+
+log = logging.getLogger("airmouse.menubar")
+
+ICONS = {"warn": "menubar/warn.png", "disconnected": "menubar/disconnected.png",
+         "off": "menubar/off.png", "on": "menubar/on.png"}
+ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
+                      "?Privacy_Accessibility")
+
+
+def accessibility_trusted(prompt: bool = False) -> bool:
+    try:
+        from ApplicationServices import (AXIsProcessTrustedWithOptions,
+                                         kAXTrustedCheckOptionPrompt)
+        return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: prompt}))
+    except Exception:
+        log.warning("could not query Accessibility trust", exc_info=True)
+        return False
+
+
+class AirMouseApp(rumps.App):
+    def __init__(self, runtime: Runtime):
+        super().__init__("AirMouse", quit_button=None)
+        self.runtime = runtime
+        self.paths: Paths = runtime.paths
+        self._icon_state = ""
+
+        self.item_status = rumps.MenuItem("Starting…")
+        self.item_status.set_callback(None)
+        self.item_enabled = rumps.MenuItem("Pointer enabled", callback=self.toggle_enabled)
+        self.item_enabled.state = True
+        self.item_record = rumps.MenuItem("Record session", callback=self.toggle_record)
+        self.item_login = rumps.MenuItem("Launch at login", callback=self.toggle_login)
+        self.item_login.state = agent_plist_path().exists()
+
+        self.menu = [
+            self.item_status,
+            None,
+            rumps.MenuItem("Show setup page…", callback=self.show_setup),
+            self.item_enabled,
+            rumps.MenuItem("Reload config now", callback=self.reload_config),
+            rumps.MenuItem("Open config folder", callback=self.open_config),
+            self.item_record,
+            None,
+            rumps.MenuItem("Grant Accessibility…", callback=self.grant_accessibility),
+            self.item_login,
+            rumps.MenuItem("Revoke all paired devices", callback=self.revoke),
+            None,
+            rumps.MenuItem("Quit AirMouse", callback=self.quit),
+        ]
+        self._timer = rumps.Timer(self.refresh, 1)
+        self._timer.start()
+        self._ticks = 0
+
+    # ----- menu actions -----------------------------------------------------
+
+    def show_setup(self, _):
+        webbrowser.open(f"http://127.0.0.1:{self.runtime.http_port}/setup")
+
+    def toggle_enabled(self, sender):
+        sender.state = not sender.state
+        self.runtime.set_enabled(bool(sender.state))
+
+    def reload_config(self, _):
+        self.runtime.force_reload()
+
+    def open_config(self, _):
+        subprocess.run(["open", str(self.paths.root)], check=False)
+
+    def toggle_record(self, sender):
+        sender.state = not sender.state
+        path = self.runtime.set_recording(bool(sender.state))
+        if path:
+            rumps.notification("AirMouse", "Recording", str(path))
+
+    def grant_accessibility(self, _):
+        accessibility_trusted(prompt=True)
+        subprocess.run(["open", ACCESSIBILITY_PANE], check=False)
+
+    def toggle_login(self, sender):
+        sender.state = not sender.state
+        if sender.state:
+            from .cli import cmd_install
+            cmd_install(type("A", (), {"config_dir": str(self.paths.root)}))
+        else:
+            agent_plist_path().unlink(missing_ok=True)
+
+    def revoke(self, _):
+        self.runtime.revoke_devices()
+        rumps.notification("AirMouse", "Paired devices revoked", "Scan the pairing QR again.")
+
+    def quit(self, _):
+        self.runtime.stop()
+        rumps.quit_application()
+
+    # ----- periodic refresh -------------------------------------------------
+
+    def _set_icon(self, name: str) -> None:
+        if name == self._icon_state:
+            return
+        self._icon_state = name
+        path = self.paths.assets / ICONS[name]
+        if path.exists():
+            self.icon = str(path)
+            self.template = True
+            self.title = None
+        else:
+            self.icon = None
+            self.title = {"warn": "AM!", "disconnected": "AM", "off": "AM·", "on": "AM●"}[name]
+
+    def refresh(self, _):
+        self._ticks += 1
+        if self._ticks % 3 == 1:
+            self.runtime.set_accessibility(accessibility_trusted())
+        s = self.runtime.status.read()
+        if not s["accessibility"]:
+            self._set_icon("warn")
+            label = "Accessibility permission needed"
+        elif not s["connected"]:
+            self._set_icon("disconnected")
+            label = "No phone connected"
+        elif s["phase"] in ("on", "hold", "held"):
+            self._set_icon("on")
+            label = f"{s['device_name'] or 'Phone'} · pointer ON"
+        else:
+            self._set_icon("off")
+            label = f"{s['device_name'] or 'Phone'} · pointer off"
+        if s["error"]:
+            label = f"Config error: {s['error'][:48]}"
+        self.item_status.title = label
+
+
+def run_menubar(runtime: Runtime) -> int:
+    runtime.start_background()
+    AirMouseApp(runtime).run()
+    return 0
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add -A
+git commit -m "feat: menu bar app with Accessibility monitoring"
+```
+
+---
+
+### Task 17: Command line and launch agent
+
+**Files:**
+- Create: `src/airmouse/cli.py`, `src/airmouse/__main__.py`
+- Test: run live in this task and in Task 20
+
+`install` writes the launch agent **and bootstraps it immediately**, so the menu bar icon appears within a second of installing and no restart or logout is ever required. `KeepAlive` is false, so choosing Quit stays quit until the next login instead of the agent respawning behind the user's back.
+
+- [ ] **Step 1: Write `src/airmouse/cli.py`**
+
+```python
+"""Command line interface."""
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from .certs import CertPaths, ensure_server_cert, local_hostname
+from .cursor_backend import FakeCursor
+from .pairing import PairingManager
+from .paths import Paths, default_config_dir
+
+LABEL = "com.airmouse.agent"
+
+
+def _paths(args) -> Paths:
+    p = Paths(Path(args.config_dir).expanduser() if args.config_dir else default_config_dir())
+    p.ensure()
+    return p
+
+
+def _backend(name: str):
+    if name == "fake":
+        return FakeCursor()
+    from .cursor_backend import QuartzCursor
+    return QuartzCursor()
+
+
+def cmd_run(args) -> int:
+    from .runtime import Runtime, setup_logging
+    paths = _paths(args)
+    setup_logging(paths, debug=bool(os.environ.get("AIRMOUSE_DEBUG")))
+    runtime = Runtime(paths, _backend(args.backend), args.tls_port, args.http_port)
+    if args.headless:
+        try:
+            runtime.run_forever()
+        except KeyboardInterrupt:
+            pass
+        return 0
+    from .menubar import run_menubar
+    return run_menubar(runtime)
+
+
+def cmd_pair_token(args) -> int:
+    paths = _paths(args)
+    token = PairingManager(paths.devices_json).mint_pairing_token()
+    host = local_hostname()
+    print(f"https://{host}.local:{args.tls_port}/?pair={token}")
+    return 0
+
+
+def cmd_setup_url(args) -> int:
+    host = local_hostname()
+    print(f"setup page (on this Mac): http://127.0.0.1:{args.http_port}/setup")
+    print(f"certificate (on the phone): http://{host}.local:{args.http_port}/ca.crt")
+    print(f"phone page:                 https://{host}.local:{args.tls_port}/")
+    return 0
+
+
+def cmd_paths(args) -> int:
+    p = _paths(args)
+    for name in ("root", "pointer_json", "layout_json", "theme_css", "assets", "devices_json",
+                 "certs", "logs", "sessions"):
+        print(f"{name:14s} {getattr(p, name)}")
+    return 0
+
+
+def cmd_reset_ui(args) -> int:
+    for b in _paths(args).reset_ui():
+        print(f"backed up {b}")
+    print("restored layout.json, theme.css and assets/ from defaults")
+    return 0
+
+
+def cmd_certs(args) -> int:
+    paths = _paths(args)
+    host = local_hostname()
+    issued = ensure_server_cert(CertPaths.under(paths.certs), host)
+    print(("issued" if issued else "already current") + f" for {host}.local")
+    return 0
+
+
+def _plist(python: str, config_dir: Path, logs: Path) -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string><string>-m</string><string>airmouse</string><string>run</string>
+    <string>--config-dir</string><string>{config_dir}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>{logs / 'launchd.out.log'}</string>
+  <key>StandardErrorPath</key><string>{logs / 'launchd.err.log'}</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>
+"""
+
+
+def agent_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+def cmd_install(args) -> int:
+    paths = _paths(args)
+    plist = agent_plist_path()
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    plist.write_text(_plist(sys.executable, paths.root, paths.logs))
+    uid = os.getuid()
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)], capture_output=True,
+                       text=True)
+    if r.returncode != 0:
+        print(f"launchctl bootstrap failed: {r.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"installed and started. Menu bar icon should appear now.\nplist: {plist}")
+    return 0
+
+
+def cmd_uninstall(args) -> int:
+    uid = os.getuid()
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    agent_plist_path().unlink(missing_ok=True)
+    print("stopped and removed the launch agent")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="airmouse", description="iPhone air mouse for macOS")
+    ap.add_argument("--config-dir")
+    ap.add_argument("--tls-port", type=int, default=8443)
+    ap.add_argument("--http-port", type=int, default=8080)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    run = sub.add_parser("run", help="run the app")
+    run.add_argument("--backend", choices=["quartz", "fake"], default="quartz")
+    run.add_argument("--headless", action="store_true", help="no menu bar (for tests)")
+    run.set_defaults(func=cmd_run)
+
+    for name, fn, help_text in (
+        ("install", cmd_install, "install and start the login agent"),
+        ("uninstall", cmd_uninstall, "stop and remove the login agent"),
+        ("pair-token", cmd_pair_token, "mint a pairing URL"),
+        ("setup-url", cmd_setup_url, "print setup URLs"),
+        ("paths", cmd_paths, "print config paths"),
+        ("reset-ui", cmd_reset_ui, "restore default layout, theme and assets"),
+        ("certs", cmd_certs, "create or renew the TLS certificate"),
+    ):
+        sp = sub.add_parser(name, help=help_text)
+        sp.set_defaults(func=fn)
+
+    args = ap.parse_args(argv)
+    return args.func(args)
+```
+
+- [ ] **Step 2: Write `src/airmouse/__main__.py`**
+
+```python
+"""Entry point: `python -m airmouse ...`."""
+from .cli import main
+
+raise SystemExit(main())
+```
+
+- [ ] **Step 3: Check the CLI responds**
+
+```bash
+uv run airmouse --config-dir /tmp/am-check paths
+uv run airmouse --config-dir /tmp/am-check certs
+```
+Expected: the paths table, then `issued for <your-mac>.local`
+
+- [ ] **Step 4: Confirm every module imports**
+
+Run: `uv run python -c "import airmouse.menubar, airmouse.runtime, airmouse.cli; print('ok')"`
+Expected: `ok`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: CLI and launch-at-login agent"
+```
+
+---
+
+### Task 18: Fake phone: the agent's hands
+
+**Files:**
+- Create: `tools/fake_phone.py`
+- Test: run live against a real server in this task
+
+This tool is how every remaining behaviour gets verified without a phone. It speaks the real protocol over the real TLS socket to a real server process, then reads back what the cursor actually did and asserts on it.
+
+`check()` counts **events**, not net displacement. A closed path such as the square pattern ends where it began, so net displacement is zero even though the pointer moved correctly the whole way round.
+
+The `roll` pattern settles at its aim *before* powering on, so that any movement it records is caused by roll alone. That is the headline feature under test: a 60-degree roll sweep must produce exactly zero cursor events.
+
+- [ ] **Step 1: Write `tools/fake_phone.py`**
+
+```python
+#!/usr/bin/env python3
+"""Fake phone: drives a running AirMouse server over the real TLS socket.
+
+The agent building this project cannot hold an iPhone, so this is how every
+end-to-end behaviour gets verified.
+
+    python tools/fake_phone.py --pattern sweep --check
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import math
+import ssl
+import sys
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from websockets.asyncio.client import connect  # noqa: E402
+
+from airmouse.certs import CertPaths  # noqa: E402
+from airmouse.pairing import PairingManager  # noqa: E402
+from airmouse.paths import Paths, default_config_dir  # noqa: E402
+
+BUTTONS = ["left", "right", "scroll", "power"]
+
+
+class FakePhone:
+    def __init__(self, ws, hz: float = 60.0):
+        self.ws = ws
+        self.hz = hz
+        self.seq = 0
+        self.t = 0.0
+        self.buttons = {b: False for b in BUTTONS}
+        self.counters = {b: 0 for b in BUTTONS}
+
+    async def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0):
+        self.seq += 1
+        self.t += 1.0 / self.hz
+        await self.ws.send(json.dumps({
+            "t": "s", "seq": self.seq, "ts": self.t, "o": [alpha % 360, beta, gamma],
+            "rr": list(rr), "g": [0.0, 0.0, 9.81],
+            "b": {k: int(v) for k, v in self.buttons.items()}, "c": dict(self.counters),
+            "sd": sd}))
+        await asyncio.sleep(1.0 / self.hz)
+
+    async def press(self, name, alpha=0.0, beta=0.0):
+        self.counters[name] += 1
+        self.buttons[name] = True
+        await self.send(alpha, beta)
+
+    async def release(self, name, alpha=0.0, beta=0.0):
+        self.buttons[name] = False
+        await self.send(alpha, beta)
+
+    async def hold(self, seconds, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0)):
+        for _ in range(max(1, int(seconds * self.hz))):
+            await self.send(alpha, beta, gamma, rr)
+
+    async def power_on(self, alpha=0.0, beta=0.0):
+        """Settle at the aim first, so powering on never itself moves the cursor."""
+        await self.hold(0.3, alpha=alpha, beta=beta)
+        await self.press("power", alpha=alpha, beta=beta)
+        await self.release("power", alpha=alpha, beta=beta)
+        await self.hold(0.3, alpha=alpha, beta=beta)
+
+
+async def pattern_still(p):
+    await p.hold(2.0)
+
+
+async def pattern_sweep(p):
+    await p.power_on()
+    for i in range(int(4 * p.hz)):
+        await p.send(alpha=-20.0 * math.sin(i / p.hz * math.pi), beta=8.0 * math.sin(i / p.hz * 1.7))
+
+
+async def pattern_square(p):
+    await p.power_on()
+    for a, b in ((0, 0), (-10, 0), (-10, 10), (0, 10), (0, 0)):
+        await p.hold(0.7, alpha=a, beta=b)
+
+
+async def pattern_click(p):
+    await p.power_on()
+    await p.press("left")
+    await p.hold(0.08)
+    await p.release("left")
+    await p.hold(0.3)
+
+
+async def pattern_doubleclick(p):
+    await p.power_on()
+    for _ in range(2):
+        await p.press("left")
+        await p.hold(0.05)
+        await p.release("left")
+        await p.hold(0.08)
+    await p.hold(0.4)
+
+
+async def pattern_rightclick(p):
+    await p.power_on()
+    await p.press("right")
+    await p.hold(0.08)
+    await p.release("right")
+    await p.hold(0.3)
+
+
+async def pattern_drag(p):
+    await p.power_on()
+    await p.press("left")
+    await p.hold(0.25)
+    for i in range(int(1.2 * p.hz)):
+        await p.send(alpha=-8.0 * i / (1.2 * p.hz))
+    await p.release("left", alpha=-8.0)
+    await p.hold(0.2)
+
+
+async def pattern_chord(p):
+    await p.power_on()
+    await p.press("left")
+    await p.press("right")
+    await p.hold(1.4)
+    await p.release("left")
+    await p.release("right")
+    await p.hold(0.3)
+
+
+async def pattern_scroll(p):
+    await p.power_on()
+    await p.press("scroll")
+    for _ in range(int(0.8 * p.hz)):
+        await p.send(sd=-6.0)
+    await p.release("scroll")
+    await p.hold(0.2)
+
+
+async def pattern_roll(p):
+    """Roll the phone hard about its long axis: the cursor must not move."""
+    await p.power_on(alpha=15, beta=10)
+    for i in range(int(3 * p.hz)):
+        await p.send(alpha=15, beta=10, gamma=60.0 * math.sin(i / p.hz * 2.2))
+
+
+async def pattern_rest(p):
+    await p.power_on()
+    await p.hold(2.0, alpha=0.0, beta=0.0, rr=(0.2, 0.2, 0.2))
+
+
+PATTERNS = {n[len("pattern_"):]: f for n, f in list(globals().items()) if n.startswith("pattern_")}
+
+
+def debug_cursor(http_port: int) -> dict:
+    with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/debug/cursor", timeout=5) as r:
+        return json.loads(r.read())
+
+
+async def replay(phone: FakePhone, path: Path) -> None:
+    records = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    if not records:
+        return
+    t0 = records[0]["rx"]
+    start = asyncio.get_running_loop().time()
+    for rec in records:
+        target = start + (rec["rx"] - t0)
+        delay = target - asyncio.get_running_loop().time()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await phone.ws.send(rec["raw"])
+
+
+def check(pattern: str, before: dict, after: dict) -> bool:
+    """Count *events*, not net displacement: a closed path ends where it began."""
+    moves = after.get("moves", 0) - before.get("moves", 0)
+    clicks = after.get("clicks", 0) - before.get("clicks", 0)
+    scrolled = abs(after.get("scroll", 0) - before.get("scroll", 0))
+    held = after.get("held") or []
+    centered = (after.get("x"), after.get("y"))
+    if pattern in ("sweep", "square"):
+        return moves > 30 and clicks == 0 and not held
+    if pattern in ("click", "rightclick"):
+        return clicks == 1 and not held
+    if pattern == "doubleclick":
+        return clicks == 2 and not held
+    if pattern == "drag":
+        return clicks == 1 and moves > 10 and not held
+    if pattern == "chord":
+        return clicks == 0 and not held and centered == (720.0, 450.0)
+    if pattern == "scroll":
+        return scrolled > 10 and clicks == 0 and moves == 0
+    if pattern in ("still", "roll"):
+        return moves == 0 and clicks == 0
+    if pattern == "rest":
+        return after.get("phase") in (None, "off")
+    return True
+
+
+async def run(args) -> int:
+    paths = Paths(Path(args.config_dir) if args.config_dir else default_config_dir())
+    pairing = PairingManager(paths.devices_json)
+    token = pairing.mint_pairing_token()
+    ctx = ssl.create_default_context(cafile=str(CertPaths.under(paths.certs).ca_crt))
+    url = f"wss://{args.host}:{args.tls_port}/ws"
+    before = debug_cursor(args.http_port) if args.check else None
+
+    async with connect(url, ssl=ctx,
+                       additional_headers={"Origin": f"https://{args.host}:{args.tls_port}"}) as ws:
+        await ws.send(json.dumps({"t": "hello", "ver": 1, "pair": token, "name": args.name}))
+        phone = FakePhone(ws, args.hz)
+
+        async def drain():
+            try:
+                async for raw in ws:
+                    msg = json.loads(raw)
+                    if msg.get("t") == "err":
+                        print("server error:", msg, file=sys.stderr)
+                    elif args.verbose and msg.get("t") != "state":
+                        print("<-", str(raw)[:140])
+            except Exception:
+                pass
+
+        reader = asyncio.create_task(drain())
+        if args.pattern == "replay":
+            await replay(phone, Path(args.file))
+        else:
+            await PATTERNS[args.pattern](phone)
+        reader.cancel()
+
+    if not args.check:
+        return 0
+    after = debug_cursor(args.http_port)
+    ok = check(args.pattern, before, after)
+    print(json.dumps({"pattern": args.pattern, "before": before, "after": after}, indent=2))
+    print("PASS" if ok else "FAIL", "-", args.pattern)
+    return 0 if ok else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--pattern", default="sweep", choices=sorted(PATTERNS) + ["replay"])
+    ap.add_argument("--file", help="session .jsonl for --pattern replay")
+    ap.add_argument("--host", default="localhost")
+    ap.add_argument("--tls-port", type=int, default=8443)
+    ap.add_argument("--http-port", type=int, default=8080)
+    ap.add_argument("--hz", type=float, default=60.0)
+    ap.add_argument("--name", default="FakePhone")
+    ap.add_argument("--config-dir")
+    ap.add_argument("--check", action="store_true", help="assert the cursor did the right thing")
+    ap.add_argument("--verbose", action="store_true")
+    args = ap.parse_args()
+    return asyncio.run(run(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 2: Start a real server with the fake cursor backend**
+
+```bash
+rm -rf /tmp/am-e2e && mkdir -p /tmp/am-e2e
+uv run airmouse --config-dir /tmp/am-e2e --tls-port 18443 --http-port 18080 \
+  run --backend fake --headless > /tmp/am-e2e/log 2>&1 &
+sleep 3 && tail -2 /tmp/am-e2e/log
+```
+Expected: a line reading `listening: https://<your-mac>.local:18443  setup: http://127.0.0.1:18080/setup`
+
+- [ ] **Step 3: Run every pattern and require all of them to pass**
+
+```bash
+for p in still roll sweep square click doubleclick rightclick drag chord scroll rest; do
+  r=$(uv run python tools/fake_phone.py --pattern $p --check --config-dir /tmp/am-e2e \
+      --tls-port 18443 --http-port 18080 --hz 60 2>&1 | tail -1 | cut -d' ' -f1)
+  printf "%-12s %s\n" "$p" "$r"
+done
+```
+Expected: eleven lines, every one `PASS`. In particular `roll PASS` proves roll invariance end to end and `chord PASS` proves the recenter snap lands on the display centre with no click.
+
+- [ ] **Step 4: Verify hot reload against the running server**
+
+```bash
+python3 -c "
+import json,pathlib
+p=pathlib.Path('/tmp/am-e2e/pointer.json'); d=json.loads(p.read_text())
+d['gain_x_px_per_deg']=60.0; p.write_text(json.dumps(d,indent=2))"
+sleep 2
+python3 -c "
+import pathlib; pathlib.Path('/tmp/am-e2e/pointer.json').write_text('{\"gain_x_px_per_deg\": -5}')"
+sleep 2
+grep -E "reloaded|rejected" /tmp/am-e2e/log
+```
+Expected: `pointer.json reloaded` then `pointer.json rejected: gain_x_px_per_deg: must be between 0.1 and 500.0`. The server must still be running and still responding.
+
+- [ ] **Step 5: Measure the idle cost**
+
+```bash
+PID=$(pgrep -f "airmouse.*18443" | head -1)
+ps -o %cpu=,rss= -p $PID
+```
+Expected: CPU at or below roughly 0.5 % and resident memory under 80 MB. The reference build measured 0.1 % and 43 MB.
+
+- [ ] **Step 6: Stop the server**
+
+```bash
+kill $(pgrep -f "airmouse.*18443" | head -1)
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A
+git commit -m "feat: fake phone tool for end-to-end verification"
+```
+
+---
+
+### Task 19: Replay: the human's tuning loop
+
+**Files:**
+- Create: `tools/replay.py`
+- Test: record and replay a live session in this task
+
+Tuning is the genuinely hard part of this project and it is the one part an agent cannot do. This tool makes it cheap: record a minute of real use once, then compare tuning variants offline as many times as you like without picking the phone up again.
+
+It resets the engine on each recorded session marker, because a recording can span several connections and each one restarts its sequence numbers at 1.
+
+- [ ] **Step 1: Write `tools/replay.py`**
+
+```python
+#!/usr/bin/env python3
+"""Replay a recorded session through the engine offline and print path statistics.
+
+This is the tuning loop: record a minute of real use once, then compare
+pointer.json variants without picking the phone up again.
+
+    python tools/replay.py sessions/2026-09-11T14-02-11.jsonl --set gain_x_px_per_deg=40
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from airmouse.config import PointerConfig  # noqa: E402
+from airmouse.cursor_backend import FakeCursor  # noqa: E402
+from airmouse.engine import PointerEngine  # noqa: E402
+from airmouse.protocol import Hello, ProtocolError, SensorPacket, parse_client_message  # noqa: E402
+
+
+class ScriptedClock:
+    """Replays the recorded arrival times so timing-dependent logic behaves."""
+
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+def coerce(value: str):
+    low = value.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    try:
+        return float(value) if "." in value else int(value)
+    except ValueError:
+        return value
+
+
+def build_config(overrides: list[str], base: Path | None) -> PointerConfig:
+    data = json.loads(base.read_text()) if base else {}
+    for item in overrides:
+        key, _, value = item.partition("=")
+        target, parsed = data, coerce(value)
+        parts = key.split(".")
+        for p in parts[:-1]:
+            target = target.setdefault(p, {})
+        target[parts[-1]] = parsed
+    return PointerConfig.from_dict(data)
+
+
+def analyse(path: Path, config: PointerConfig) -> dict:
+    clock = ScriptedClock()
+    cursor = FakeCursor()
+    engine = PointerEngine(config, cursor, clock)
+    engine.connected()
+    records = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    if not records:
+        return {"packets": 0}
+    t0 = records[0]["rx"]
+    still_jitter, travel = 0.0, 0.0
+    last = (cursor.x, cursor.y)
+    packets, sessions = 0, 0
+    for rec in records:
+        clock.t = rec["rx"] - t0
+        try:
+            msg = parse_client_message(rec["raw"])
+        except ProtocolError:
+            continue
+        if isinstance(msg, Hello):
+            # A recording can span several connections; each one restarts seq at 1.
+            sessions += 1
+            engine.connected()
+            continue
+        if not isinstance(msg, SensorPacket):
+            continue
+        packets += 1
+        engine.handle(msg)
+        now = (cursor.x, cursor.y)
+        step = math.dist(last, now)
+        travel += step
+        if msg.rate_dps < 2.0:
+            still_jitter += step
+        last = now
+    events = cursor.kinds()
+    return {"packets": packets, "sessions": sessions, "seconds": round(clock.t, 1),
+            "travel_px": round(travel), "jitter_while_still_px": round(still_jitter, 1),
+            "moves": events.count("move"), "drags": events.count("drag"),
+            "clicks": events.count("down"), "scrolls": events.count("scroll"),
+            "ended_held": sorted(cursor.held)}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("session", type=Path)
+    ap.add_argument("--config", type=Path, help="pointer.json to start from")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="override a tuning value, e.g. --set one_euro.beta=0.05")
+    ap.add_argument("--compare", action="append", default=[], metavar="KEY=VALUE",
+                    help="second variant to print beside the first")
+    args = ap.parse_args()
+
+    base = analyse(args.session, build_config(args.set, args.config))
+    print(json.dumps({"variant": args.set or "baseline", **base}, indent=2))
+    if args.compare:
+        other = analyse(args.session, build_config(args.compare, args.config))
+        print(json.dumps({"variant": args.compare, **other}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 2: Record a live session**
+
+```bash
+rm -rf /tmp/am-rec && mkdir -p /tmp/am-rec
+uv run python - <<'PY' > /tmp/am-rec/log 2>&1 &
+from pathlib import Path
+from airmouse.cursor_backend import FakeCursor
+from airmouse.paths import Paths
+from airmouse.runtime import Runtime, setup_logging
+paths = Paths(Path("/tmp/am-rec")); paths.ensure()
+setup_logging(paths)
+rt = Runtime(paths, FakeCursor(), 18543, 18580)
+rt.set_recording(True)
+rt.run_forever()
+PY
+sleep 3
+for p in sweep click drag chord scroll; do
+  uv run python tools/fake_phone.py --pattern $p --config-dir /tmp/am-rec \
+    --tls-port 18543 --http-port 18580 --hz 60 >/dev/null 2>&1
+done
+kill %1
+```
+
+- [ ] **Step 3: Confirm the recording is complete and carries no secrets**
+
+```bash
+SESSION=$(ls /tmp/am-rec/sessions/*.jsonl | head -1)
+wc -l "$SESSION"
+grep -c pair "$SESSION" || echo "0 secrets"
+```
+Expected: several hundred frames, and zero occurrences of a pairing token.
+
+- [ ] **Step 4: Replay it and compare two tuning variants**
+
+```bash
+uv run python tools/replay.py "$SESSION" --compare gain_x_px_per_deg=60
+```
+Expected: two JSON blocks. Both report `sessions: 5` and non-zero `clicks`, `drags` and `scrolls`, confirming session boundaries are honoured. The second block's `travel_px` should be roughly half again as large as the first, confirming the override took effect.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: offline session replay for tuning"
+```
+
+---
+
+### Task 20: README and real installation
+
+**Files:**
+- Create: `README.md`
+
+- [ ] **Step 1: Write `README.md`**
+
+Cover, in this order: what it is, the one-time install, the one-time certificate trust on the iPhone, daily use, where the tuning and theming files live, and the fact that the pointer never moves without an explicit power tap. Include the table of tuning values from `pointer.json` with a one-line description each, and the list of button roles from `layout.json`. State plainly that the free Apple Developer tier is not needed because there is no iOS app.
+
+- [ ] **Step 2: Install for real**
+
+```bash
+uv run airmouse install
+```
+Expected: `installed and started. Menu bar icon should appear now.` and an icon in the menu bar within a second, with no restart.
+
+- [ ] **Step 3: Grant Accessibility**
+
+Click the menu bar icon, choose **Grant Accessibility…**, enable the entry that appears, and watch the icon change from the warning glyph within three seconds.
+
+- [ ] **Step 4: Confirm the real Quartz backend moves the real cursor**
+
+```bash
+uv run python tools/fake_phone.py --pattern sweep --hz 60
+```
+Expected: the actual macOS cursor sweeps left and right. If nothing moves, Accessibility is not granted to this interpreter; the menu bar icon will say so.
+
+- [ ] **Step 5: Confirm quit and restart behave**
+
+Quit from the menu, confirm the icon disappears and the cursor stops responding, then `uv run airmouse install` again and confirm it returns.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "docs: README and installation instructions"
+```
+
+---
+
+### Task 21: Human verification (the user runs this, not the agent)
+
+Hand the user this checklist. Several of these can only be judged by a person holding the phone, and two of them may require a one-line code change that the agent should make on request.
+
+- [ ] The setup page shows two QR codes. Scanning the first installs a profile, and Settings shows **AirMouse Local CA** under Certificate Trust Settings once enabled.
+- [ ] Scanning the second opens the page with no certificate warning. Tap **Start**, allow motion access.
+- [ ] Add to Home Screen, open it from there, scan the pairing code again from inside it. The page runs fullscreen with no Safari chrome.
+- [ ] Turning the phone to the right moves the cursor right. Raising the top edge moves the cursor up. **If either is backwards, that is a sign convention, not a bug: set `invert_y` for vertical, or ask the agent to flip the yaw sign in `orientation.py`.**
+- [ ] Rolling the phone about its long axis does not move the cursor at all.
+- [ ] Tapping POWER takes over the cursor exactly where it was. Tapping again freezes it, and setting the phone down does not sweep the cursor.
+- [ ] Holding left and right together for one second snaps the cursor to the centre of the screen, fires no click, and lets you keep moving while still holding.
+- [ ] A tap clicks. A hold plus movement drags. A double tap selects a word in a text field.
+- [ ] The scroll strip scrolls a web page in the expected direction. If it is backwards, flip `scroll_natural`.
+- [ ] There is a haptic tick when pressing a button. **Report whether it works; Safari has no vibration API and this path is best-effort.**
+- [ ] Laying the phone flat for a second turns the pointer off by itself.
+- [ ] Turning Wi-Fi off mid-drag leaves no stuck mouse button on the Mac.
+- [ ] Editing a colour in `theme.css` changes the phone instantly. Editing `layout.json` moves the buttons instantly.
+- [ ] After an hour of the phone sitting on the desk with the pointer off, battery use is negligible.
+
+**Then tune.** Record a session from the menu, use it for a minute, stop recording, and compare variants with `tools/replay.py`. The three values worth trying first are `gain_x_px_per_deg` and `gain_y_px_per_deg` for speed, `one_euro.beta` for the jitter-versus-lag trade-off, and `freeze_ms_on_touch` if clicks land slightly off target.
+
+---
+
+## Definition of done
+
+1. `uv run pytest -q` reports **121 passed**.
+2. `uv run ruff check .` is clean.
+3. All eleven fake-phone patterns pass against a live server, including `roll` and `chord`.
+4. Idle CPU is at or below 0.5 % and resident memory is under 80 MB.
+5. Editing `pointer.json`, `layout.json` or `theme.css` takes effect within two seconds, and an invalid edit is rejected without interrupting service.
+6. `airmouse install` produces a working menu bar app with no restart, and `airmouse uninstall` removes it.
+7. The real macOS cursor responds to `tools/fake_phone.py` once Accessibility is granted.
+8. Task 21 is handed to the user.
+
+## Out of scope for this MVP
+
+Camera glide mode (Phase 2), a native Swift app, momentum scrolling, keyboard input, gesture shortcuts beyond those specified, more than one phone at a time, and WebRTC transport. Each is a separate spec after the feel of this one is right.
