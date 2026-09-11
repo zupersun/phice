@@ -1,5 +1,7 @@
 import datetime as dt
+import subprocess
 
+import pytest
 from cryptography import x509
 
 from phice.certs import (
@@ -110,3 +112,57 @@ def test_pending_token_is_never_stored_in_plaintext(tmp_path):
     tok = m.mint_pairing_token()
     assert tok not in m.pending_path.read_text()
     assert m.pending_path.stat().st_mode & 0o777 == 0o600
+
+
+def _self_signed(name: str) -> bytes:
+    """A certificate carrying `name` in its SAN, standing in for a real tailnet one."""
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    key = ec.generate_private_key(ec.SECP256R1())
+    now = dt.datetime.now(dt.UTC)
+    n = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name)])
+    cert = (x509.CertificateBuilder().subject_name(n).issuer_name(n)
+            .public_key(key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(days=90))
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(name)]), critical=False)
+            .sign(key, hashes.SHA256()))
+    return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def test_tailscale_helpers_are_absent_without_tailscale(monkeypatch, tmp_path):
+    from phice import certs
+    monkeypatch.setattr(certs, "TAILSCALE_BINS", ("/nonexistent/tailscale",))
+    monkeypatch.setattr(certs.shutil, "which", lambda _n: None)
+    assert certs.tailscale_bin() is None
+    assert certs.tailscale_dns_name() is None
+    with pytest.raises(certs.CertError, match="not installed"):
+        certs.ensure_tailscale_cert(CertPaths.under(tmp_path), "x.ts.net")
+
+
+def test_tailscale_cert_is_reused_until_it_nears_expiry(tmp_path, monkeypatch):
+    """A tailnet certificate is a real 90-day Let's Encrypt one. Re-minting on
+    every start would hit the ACME rate limit, so a covering cert is reused."""
+    from phice import certs
+    cp = CertPaths.under(tmp_path)
+    cp.server_crt.parent.mkdir(parents=True, exist_ok=True)
+    name = "mac.tail1234.ts.net"
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        cp.server_crt.write_bytes(_self_signed(name))
+        cp.server_key.write_bytes(b"key")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(certs, "tailscale_bin", lambda: "/usr/bin/true")
+    monkeypatch.setattr(certs.subprocess, "run", fake_run)
+
+    assert certs.ensure_tailscale_cert(cp, name) is True
+    assert len(calls) == 1 and calls[0][1] == "cert" and calls[0][-1] == name
+    assert certs.ensure_tailscale_cert(cp, name) is False  # reused, not re-minted
+    assert len(calls) == 1
+    # A different tailnet name is not covered by it.
+    assert certs.ensure_tailscale_cert(cp, "other.tail1234.ts.net") is True
+    assert len(calls) == 2

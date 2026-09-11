@@ -111,8 +111,8 @@ class PointerConfig:
         if keep_awake not in ("always", "on_only"):
             raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
         cert_mode = d.get("cert_mode", "auto")
-        if cert_mode not in ("auto", "external"):
-            raise ConfigError("cert_mode: expected 'auto' or 'external'")
+        if cert_mode not in ("auto", "external", "tailscale"):
+            raise ConfigError("cert_mode: expected 'auto', 'external' or 'tailscale'")
         mapping = d.get("mapping", "absolute")
         if mapping not in ("absolute", "relative"):
             raise ConfigError("mapping: expected 'absolute' or 'relative'")

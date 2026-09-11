@@ -2,13 +2,23 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from .certs import CertPaths, ensure_server_cert, local_hostname, local_ipv4s
+from .certs import (
+    CertError,
+    CertPaths,
+    ensure_server_cert,
+    ensure_tailscale_cert,
+    local_hostname,
+    local_ipv4s,
+    tailscale_bin,
+    tailscale_dns_name,
+)
 from .cursor_backend import FakeCursor
 from .pairing import PairingManager
 from .paths import Paths, default_config_dir
@@ -55,13 +65,13 @@ def cmd_pair_token(args) -> int:
 def cmd_setup_url(args) -> int:
     host = local_hostname()
     print(f"setup page (on this Mac): http://127.0.0.1:{args.http_port}/setup")
-    print(f"certificate (on the phone): http://{host}.local:{args.http_port}/ca.crt")
+    print(f"certificate (on the phone): http://{host}.local:{args.http_port}/ca.mobileconfig")
     print(f"phone page:                 https://{host}.local:{args.tls_port}/")
     ips = local_ipv4s()
     if ips:
         print("\nif .local does not resolve on your network, use the IP instead:")
         for ip in ips:
-            print(f"certificate (on the phone): http://{ip}:{args.http_port}/ca.crt")
+            print(f"certificate (on the phone): http://{ip}:{args.http_port}/ca.mobileconfig")
             print(f"phone page:                 https://{ip}:{args.tls_port}/")
     return 0
 
@@ -86,6 +96,37 @@ def cmd_certs(args) -> int:
     host = local_hostname()
     issued = ensure_server_cert(CertPaths.under(paths.certs), host)
     print(("issued" if issued else "already current") + f" for {host}.local")
+    return 0
+
+
+def cmd_tailscale(args) -> int:
+    """Switch to a publicly trusted tailnet certificate: nothing to install on the phone."""
+    paths = _paths(args)
+    if not tailscale_bin():
+        print("Tailscale is not installed.\n"
+              "  brew install --cask tailscale\n"
+              "then open Tailscale from Applications and sign in.", file=sys.stderr)
+        return 1
+    name = tailscale_dns_name()
+    if not name:
+        print("Tailscale is installed but not logged in. Run: tailscale up", file=sys.stderr)
+        return 1
+    try:
+        ensure_tailscale_cert(CertPaths.under(paths.certs), name)
+    except CertError as e:
+        print(f"{e}\n\nIf it mentions HTTPS, enable it once for your tailnet:\n"
+              "  https://login.tailscale.com/admin/dns -> HTTPS Certificates -> Enable",
+              file=sys.stderr)
+        return 1
+    pointer = paths.pointer_json
+    data = json.loads(pointer.read_text())
+    data["cert_mode"] = "tailscale"
+    pointer.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"trusted certificate ready for {name}\n"
+          f"cert_mode set to 'tailscale' in {pointer}\n"
+          f"phone page: https://{name}:{args.tls_port}/\n"
+          "Install Tailscale on the iPhone, sign in with the same account, then "
+          "scan the QR on the setup page. No profile to install.")
     return 0
 
 
@@ -172,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         ("paths", cmd_paths, "print config paths"),
         ("reset-ui", cmd_reset_ui, "restore default layout, theme and assets"),
         ("certs", cmd_certs, "create or renew the TLS certificate"),
+        ("tailscale", cmd_tailscale, "use a trusted tailnet certificate"),
     ):
         sp = sub.add_parser(name, help=help_text)
         sp.set_defaults(func=fn)

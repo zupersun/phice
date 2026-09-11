@@ -12,7 +12,17 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .certs import CertPaths, ca_der, ca_mobileconfig, ensure_server_cert, local_hostname, local_ipv4s
+from .certs import (
+    CertError,
+    CertPaths,
+    ca_der,
+    ca_mobileconfig,
+    ensure_server_cert,
+    ensure_tailscale_cert,
+    local_hostname,
+    local_ipv4s,
+    tailscale_dns_name,
+)
 from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
 from .cursor_backend import CursorBackend, FakeCursor
 from .engine import PointerEngine
@@ -82,6 +92,7 @@ class Runtime:
         self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
                                  debug_cursor=self._debug_cursor,
                                  ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths))
+        self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._watcher = FileWatcher([paths.pointer_json, paths.layout_json, paths.theme_css])
@@ -156,18 +167,25 @@ class Runtime:
 
     def _extra_origin_hosts(self) -> list[str]:
         """Names beyond <host>.local that the page may legitimately be loaded from."""
-        return local_ipv4s()
+        hosts = local_ipv4s()
+        if self.tailnet:
+            hosts.append(self.tailnet)
+        return hosts
 
     def _urls(self) -> tuple[str, str, bool, str | None, str | None]:
         """(ca, pair, show_ca, ca_alt, pair_alt) -- primaries first, notes after.
 
-        The IP form is primary because it always works on the local network.
-        The .local form needs mDNS, which large campus and corporate subnets
-        commonly block, so it is demoted to a note. The certificate already
-        carries both in its SANs. One token serves both pair URLs: it is single
-        use and the user follows one of them.
+        On a tailnet the certificate is publicly trusted, so there is nothing to
+        install: one URL, no CA card, and it works from cellular because the
+        phone and Mac are peers on the tailnet rather than the local subnet.
+        Otherwise the IP form is primary, because .local needs mDNS and many
+        networks block it, and .local is demoted to a note.
         """
         token = self.pairing.mint_pairing_token()
+        if self.tailnet:
+            return (f"https://{self.tailnet}:{self.server.port}/",
+                    f"https://{self.tailnet}:{self.server.port}/?pair={token}",
+                    False, None, None)
         local_ca = f"http://{self.host}.local:{self.setup.port}/ca.mobileconfig"
         local_pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
         ip = next(iter(local_ipv4s()), None)
@@ -238,14 +256,26 @@ class Runtime:
     # ----- lifecycle --------------------------------------------------------
 
     async def _main(self) -> None:
-        if self.config.cert_mode == "auto":
+        if self.config.cert_mode == "tailscale":
+            self.tailnet = tailscale_dns_name()
+            if not self.tailnet:
+                raise CertError("cert_mode is 'tailscale' but tailscale is not installed or not "
+                                "logged in; run 'tailscale up' first")
+            if ensure_tailscale_cert(self.cert_paths, self.tailnet):
+                log.info("issued a trusted certificate for %s", self.tailnet)
+            else:
+                log.info("tailscale certificate for %s is current", self.tailnet)
+        elif self.config.cert_mode == "auto":
             if ensure_server_cert(self.cert_paths, self.host):
                 log.info("issued a new server certificate for %s.local", self.host)
+        if self.tailnet:
+            self.server.tls_host = self.tailnet
         self.tls_port = await self.server.start()
         self.http_port = await asyncio.to_thread(self.setup.start)
-        self.status.update(tls_url=f"https://{self.host}.local:{self.tls_port}/")
-        log.info("listening: https://%s.local:%d  setup: http://127.0.0.1:%d/setup",
-                 self.host, self.tls_port, self.http_port)
+        name = self.tailnet or f"{self.host}.local"
+        self.status.update(tls_url=f"https://{name}:{self.tls_port}/")
+        log.info("listening: https://%s:%d  setup: http://127.0.0.1:%d/setup",
+                 name, self.tls_port, self.http_port)
         await asyncio.gather(self._watch_config(), self._status_loop())
 
     def start_background(self) -> None:

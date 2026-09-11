@@ -10,6 +10,8 @@ import base64
 import datetime as dt
 import hashlib
 import ipaddress
+import json
+import shutil
 import socket
 import subprocess
 from dataclasses import dataclass
@@ -19,6 +21,11 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
+
+
+class CertError(RuntimeError):
+    """Raised when a certificate cannot be obtained."""
+
 
 CA_DAYS = 3650
 SERVER_DAYS = 820  # iOS rejects user-trusted leaf certs valid for more than 825 days
@@ -219,3 +226,69 @@ def ca_mobileconfig(paths: CertPaths) -> bytes:
 </dict>
 </plist>
 """.encode()
+
+
+# --- tailscale -------------------------------------------------------------
+
+TAILSCALE_BINS = ("/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+                  "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale", "tailscale")
+
+
+def tailscale_bin() -> str | None:
+    """First usable tailscale CLI: the GUI app bundles one, Homebrew installs one."""
+    for candidate in TAILSCALE_BINS:
+        path = candidate if "/" in candidate else shutil.which(candidate)
+        if path and Path(path).exists():
+            return path
+    return None
+
+
+def tailscale_dns_name() -> str | None:
+    """This Mac's MagicDNS name, e.g. 'mymac.tail1234.ts.net', or None."""
+    binary = tailscale_bin()
+    if not binary:
+        return None
+    try:
+        out = subprocess.run([binary, "status", "--json"], capture_output=True, text=True, timeout=10)
+        if out.returncode != 0:
+            return None
+        name = json.loads(out.stdout).get("Self", {}).get("DNSName", "")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    name = name.rstrip(".")
+    return name or None
+
+
+def ensure_tailscale_cert(paths: CertPaths, name: str) -> bool:
+    """Mint or renew a real Let's Encrypt certificate for the tailnet name.
+
+    Needs HTTPS enabled for the tailnet (admin console > DNS > HTTPS
+    Certificates). Returns True if a certificate was written.
+    """
+    binary = tailscale_bin()
+    if not binary:
+        raise CertError("tailscale is not installed")
+    if _cert_covers(paths.server_crt, name):
+        return False
+    paths.server_crt.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run([binary, "cert", "--cert-file", str(paths.server_crt),
+                        "--key-file", str(paths.server_key), name],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise CertError(f"tailscale cert failed: {(r.stderr or r.stdout).strip()[:300]}")
+    paths.server_key.chmod(0o600)
+    return True
+
+
+def _cert_covers(crt: Path, name: str) -> bool:
+    """True if an existing certificate already names `name` and is not expiring."""
+    if not crt.exists():
+        return False
+    try:
+        cert = x509.load_pem_x509_certificate(crt.read_bytes())
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    except Exception:
+        return False
+    if cert.not_valid_after_utc - dt.datetime.now(dt.UTC) < dt.timedelta(days=RENEW_WITHIN_DAYS):
+        return False
+    return name in set(san.get_values_for_type(x509.DNSName))

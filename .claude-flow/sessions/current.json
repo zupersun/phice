@@ -1,0 +1,12 @@
+{
+  "id": "session-1789107848888",
+  "startedAt": "2026-09-11T06:24:08.888Z",
+  "cwd": "/Users/jasper/phice",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  }
+}
