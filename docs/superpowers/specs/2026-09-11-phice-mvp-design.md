@@ -1,13 +1,13 @@
-# AirMouse MVP — Design Spec
+# Phice MVP — Design Spec
 
 Date: 2026-09-11
 Status: approved by user. A reference build validated the whole design end to end
 (121 unit tests, 11 live patterns over real TLS). Implementation plan:
-`docs/superpowers/plans/2026-09-11-airmouse-mvp.md`
+`docs/superpowers/plans/2026-09-11-phice-mvp.md`
 
 ## 1. Summary
 
-AirMouse turns an iPhone into a Wii-remote-style air pointer for a Mac.
+Phice turns an iPhone into a Wii-remote-style air pointer for a Mac.
 
 - **Phone side** is a web page opened in Safari (or added to the Home Screen). It streams orientation
   sensors and touch state to the Mac. No native app, no App Store, no Apple Developer account.
@@ -53,7 +53,7 @@ shortcuts beyond those listed, multiple simultaneous phones, WebRTC transport.
    one-time: http://mac.local:8080/ca.crt            │ http :8080  /ca.crt, /help,   │
    (install + trust the local CA)                    │             /setup (loopback) │
                                                      └───────────────────────────────┘
- Config dir: ~/Library/Application Support/AirMouse/
+ Config dir: ~/Library/Application Support/Phice/
    pointer.json  layout.json  theme.css  assets/  devices.json  certs/  logs/  sessions/
 ```
 
@@ -61,7 +61,7 @@ shortcuts beyond those listed, multiple simultaneous phones, WebRTC transport.
 
 ### 4.1 Runtime and dependencies
 
-- Python 3.12, managed with `uv`. Package name `airmouse`, source in `src/airmouse/`.
+- Python 3.12, managed with `uv`. Package name `phice`, source in `src/phice/`.
 - Dependencies, kept deliberately small:
   - `websockets` (≥13) — TLS WebSocket server; also serves the static files on the same port via
     `process_request`.
@@ -88,30 +88,30 @@ shortcuts beyond those listed, multiple simultaneous phones, WebRTC transport.
 
 | Path | Purpose |
 |---|---|
-| `~/Library/Application Support/AirMouse/pointer.json` | Tuning. Hot-reloaded. |
+| `~/Library/Application Support/Phice/pointer.json` | Tuning. Hot-reloaded. |
 | `.../layout.json` | Button layout for the phone page. Hot-reloaded, pushed to the page. |
 | `.../theme.css` | All colors, fonts, radii, spacing for the page. Hot-reloaded. |
 | `.../assets/` | `logo.svg`, `icons/*.svg`, `menubar/{warn,disconnected,off,on}.png`. Served as-is. |
 | `.../devices.json` | Paired device tokens. |
 | `.../certs/` | `ca.key`, `ca.crt`, `server.key`, `server.crt` (mode 0600). |
-| `.../logs/airmouse.log` | Rotating log, 1 MB × 3. |
+| `.../logs/phice.log` | Rotating log, 1 MB × 3. |
 | `.../sessions/*.jsonl` | Recorded raw packet streams for replay. |
-| `~/Library/LaunchAgents/com.airmouse.agent.plist` | Launch-at-login agent. |
+| `~/Library/LaunchAgents/com.phice.agent.plist` | Launch-at-login agent. |
 
 On first run, `pointer.json`, `layout.json`, `theme.css`, and `assets/` are copied from the package's
-`defaults/` folder if absent. `airmouse reset-ui` re-copies the UI files after backing up existing ones
+`defaults/` folder if absent. `phice reset-ui` re-copies the UI files after backing up existing ones
 to `*.bak`.
 
 ### 4.4 CLI
 
 ```
-airmouse run [--backend quartz|fake] [--config-dir PATH] [--tls-port 8443] [--http-port 8080]
-airmouse install          # write LaunchAgent plist and bootstrap it (starts now, no reboot)
-airmouse uninstall        # bootout and remove plist
-airmouse pair-token       # mint and print a fresh pairing token (10 min validity)
-airmouse setup-url        # print the setup page URL and the phone URLs
-airmouse reset-ui         # restore default layout/theme/assets
-airmouse paths            # print config paths
+phice run [--backend quartz|fake] [--config-dir PATH] [--tls-port 8443] [--http-port 8080]
+phice install          # write LaunchAgent plist and bootstrap it (starts now, no reboot)
+phice uninstall        # bootout and remove plist
+phice pair-token       # mint and print a fresh pairing token (10 min validity)
+phice setup-url        # print the setup page URL and the phone URLs
+phice reset-ui         # restore default layout/theme/assets
+phice paths            # print config paths
 ```
 
 `--backend fake` swaps the Quartz cursor for an in-memory cursor and exposes its last commanded
@@ -171,7 +171,7 @@ address). Hostname for URLs comes from `scutil --get LocalHostName` + `.local`.
 
 ### 4.7 Certificates
 
-- **CA**: ECDSA P-256, CN `AirMouse Local CA (<LocalHostName>)`, 10-year validity, `basicConstraints
+- **CA**: ECDSA P-256, CN `Phice Local CA (<LocalHostName>)`, 10-year validity, `basicConstraints
   CA:TRUE`, `keyUsage keyCertSign, cRLSign`. Generated once. The private key never leaves the Mac.
 - **Server cert**: ECDSA P-256, 825-day validity (the iOS maximum for user-installed roots),
   `extendedKeyUsage serverAuth`, SAN DNS names: `<LocalHostName>.local`, `<LocalHostName>`,
@@ -186,8 +186,8 @@ address). Hostname for URLs comes from `scutil --get LocalHostName` + `.local`.
 ### 4.8 Pairing and authentication
 
 - A **pairing token** is 16 random bytes (base64url), valid 10 minutes, single use. Minted by the
-  setup page load or `airmouse pair-token`. Only one outstanding at a time (newest replaces). Its
-  SHA-256 hash and expiry are persisted to `pair.json` (mode 0600), because `airmouse pair-token`
+  setup page load or `phice pair-token`. Only one outstanding at a time (newest replaces). Its
+  SHA-256 hash and expiry are persisted to `pair.json` (mode 0600), because `phice pair-token`
   runs in a different process from the menu-bar app and an in-memory token would be invisible to it.
 - The phone URL is `https://<host>.local:8443/?pair=<token>`. The page sends it in `hello`. The Mac
   validates, mints a **device token** (32 random bytes, base64url), stores `{token_hash, name,
@@ -215,11 +215,11 @@ address). Hostname for URLs comes from `scutil --get LocalHostName` + `.local`.
 
 ### 4.10 Launch agent
 
-- Label `com.airmouse.agent`. `ProgramArguments`: `[<venv>/bin/python, -m, airmouse, run]`.
+- Label `com.phice.agent`. `ProgramArguments`: `[<venv>/bin/python, -m, phice, run]`.
   `RunAtLoad: true`, `KeepAlive: false` (Quit stays quit until next login). Stdout/stderr to
   `logs/launchd.out.log` / `launchd.err.log`. `EnvironmentVariables.PATH` includes `/usr/bin:/bin`.
 - `install` writes the plist then `launchctl bootstrap gui/<uid> <plist>` — starts immediately, no
-  restart needed. `uninstall` runs `launchctl bootout gui/<uid>/com.airmouse.agent` then removes it.
+  restart needed. `uninstall` runs `launchctl bootout gui/<uid>/com.phice.agent` then removes it.
 - Menu "Launch at login" toggle only adds/removes the plist file (affects next login).
 
 ### 4.11 Cursor backend
@@ -263,7 +263,7 @@ session boundary it needs: a recording can span several connections and each res
 
 ### 4.13 Logging
 
-`logging` with a rotating file handler (1 MB × 3) at INFO; DEBUG via `AIRMOUSE_DEBUG=1`. Never log
+`logging` with a rotating file handler (1 MB × 3) at INFO; DEBUG via `PHICE_DEBUG=1`. Never log
 tokens.
 
 ## 5. Pointer engine (pure, no I/O)
@@ -629,7 +629,7 @@ Targets, with figures measured on a reference build (M-series MacBook Air, macOS
 ### Tools
 
 - `tools/fake_phone.py`: connects over real TLS (trusting `certs/ca.crt`), pairs with a token from
-  `airmouse pair-token`, and plays patterns: `still`, `sweep` (sine on yaw), `square`, `click`,
+  `phice pair-token`, and plays patterns: `still`, `sweep` (sine on yaw), `square`, `click`,
   `doubleclick`, `drag`, `chord` (recenter), `scroll`, `replay <file>`. With `--assert` it reads
   `/debug/cursor` (fake backend) or Quartz (real backend, if trusted) and checks the expected effect.
 - `tools/replay.py`: runs a recorded session through the engine offline and prints path stats
@@ -643,12 +643,12 @@ UX. §13 is the human checklist.
 
 ## 12. Setup and first-run UX (README)
 
-1. Install `uv` if missing, then `uv sync` and `uv run airmouse install`. The menu bar icon appears
+1. Install `uv` if missing, then `uv sync` and `uv run phice install`. The menu bar icon appears
    immediately; no reboot.
-2. Click the icon → **Grant Accessibility…** and enable AirMouse's interpreter in the list.
+2. Click the icon → **Grant Accessibility…** and enable Phice's interpreter in the list.
 3. Click **Show setup page**. On the iPhone, scan **QR 1** (CA install): Safari asks to allow a
    profile download → Settings → Profile Downloaded → Install → then General → About → Certificate
-   Trust Settings → enable full trust for "AirMouse Local CA". One time only.
+   Trust Settings → enable full trust for "Phice Local CA". One time only.
 4. Scan **QR 2** (pairing URL). Tap **Start**, allow motion access. Optionally use Share → Add to
    Home Screen, open it from there, and scan QR 2 again from inside it (Home Screen apps keep
    separate storage).
