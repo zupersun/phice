@@ -152,18 +152,24 @@ def cmd_grant(args) -> int:
     return 1
 
 
+def _program_arguments(python: str, config_dir: Path) -> list[str]:
+    """A frozen bundle is its own interpreter and takes no -m.
+
+    --config-dir is a top-level argparse option, so it must precede `run`.
+    """
+    head = [python] if getattr(sys, "frozen", False) else [python, "-m", "phice"]
+    return [*head, "--config-dir", str(config_dir), "run"]
+
+
 def _plist(python: str, config_dir: Path, logs: Path) -> str:
+    args = "".join(f"<string>{a}</string>" for a in _program_arguments(python, config_dir))
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key><string>{LABEL}</string>
   <key>ProgramArguments</key>
-  <array>
-    <string>{python}</string><string>-m</string><string>phice</string>
-    <string>--config-dir</string><string>{config_dir}</string>
-    <string>run</string>
-  </array>
+  <array>{args}</array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><false/>
   <key>ProcessType</key><string>Interactive</string>
