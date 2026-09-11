@@ -17,6 +17,9 @@
 
   --scroll-bg: #10161d;
   --scroll-thumb: #2b3846;
+  --scroll-thumb-active: #3ea6ff;
+  --scroll-thumb-w: 4px;
+  --scroll-thumb-h: 34%;
 
   --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
   --label-size: 15px;
@@ -82,13 +85,32 @@ body[data-state="off"] #header { opacity: 0.35; }
 .btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
 .btn img { height: 28%; opacity: 0.85; }
 
-.role-scroll { background: var(--scroll-bg); border-radius: 999px; }
+/* Scroll strip. The thumb sits where --scroll-pos (0..1) puts it while a finger
+   is down, and springs back to the middle on release. app.js only supplies the
+   number; everything about how it looks is here. */
+.role-scroll {
+  background: var(--scroll-bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
 .role-scroll::after {
   content: "";
-  width: 4px;
-  height: 34%;
+  position: absolute;
+  left: 50%;
+  width: var(--scroll-thumb-w);
+  height: var(--scroll-thumb-h);
   border-radius: 999px;
   background: var(--scroll-thumb);
+  /* Centre it on the finger, but never let it leave the strip. */
+  top: clamp(0px, calc(var(--scroll-pos, 0.5) * 100% - var(--scroll-thumb-h) / 2),
+             calc(100% - var(--scroll-thumb-h)));
+  transform: translateX(-50%);
+  transition: top 220ms cubic-bezier(0.22, 1, 0.36, 1), background 120ms linear;
+}
+/* While dragging, follow the finger with no easing, then ease back on release. */
+.role-scroll[data-pressed="1"]::after {
+  background: var(--scroll-thumb-active);
+  transition: top 0s, background 120ms linear;
 }
 
 .role-power { font-size: 12px; }

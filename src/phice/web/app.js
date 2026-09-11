@@ -111,12 +111,24 @@
 
   // ---------- touch ----------
 
+  // Where the finger is on the scroll strip, 0 (top) to 1 (bottom). theme.css
+  // turns this into the thumb's position, so the rendering stays in the theme.
+  function setScrollThumb(b, clientY) {
+    const r = b.el.getBoundingClientRect();
+    if (!r.height) return;
+    const pos = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    b.el.style.setProperty("--scroll-pos", pos.toFixed(4));
+  }
+
+
   function onTouchStart(ev) {
     ev.preventDefault();
     for (const t of ev.changedTouches) {
       const id = hitTest(t.clientX, t.clientY);
       if (!id) continue;
       state.touches.set(t.identifier, { id, lastY: t.clientY });
+      const b = state.buttons.get(id);
+      if (b && b.role === "scroll") setScrollThumb(b, t.clientY);
       setPressed(id, true);
     }
   }
@@ -129,6 +141,7 @@
       const b = state.buttons.get(rec.id);
       if (b && b.role === "scroll") {
         state.scrollDelta += t.clientY - rec.lastY;
+        setScrollThumb(b, t.clientY);
       }
       rec.lastY = t.clientY;
     }
@@ -141,7 +154,11 @@
       if (!rec) continue;
       state.touches.delete(t.identifier);
       const stillHeld = [...state.touches.values()].some((r) => r.id === rec.id);
-      if (!stillHeld) setPressed(rec.id, false);
+      if (!stillHeld) {
+        const b = state.buttons.get(rec.id);
+        if (b && b.role === "scroll") b.el.style.removeProperty("--scroll-pos");
+        setPressed(rec.id, false);
+      }
     }
   }
 
