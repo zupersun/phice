@@ -197,10 +197,19 @@ class Runtime:
         return ca, pair, self.config.cert_mode == "auto", local_ca, local_pair
 
     def _debug_cursor(self) -> dict:
+        """Loopback-only snapshot. The menu bar is the normal way to see this, but
+        it can be invisible (a full menu bar on a notched Mac hides new items), and
+        then there is otherwise no way to tell why the pointer is not moving."""
+        d = dict(self.status.read())
+        d["cert_mode"] = self.config.cert_mode
+        d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):
-            return self.backend.summary()
-        x, y = self.backend.get_position()
-        return {"x": x, "y": y, "phase": self.engine.phase.value}
+            d.update(self.backend.summary())
+        else:
+            x, y = self.backend.get_position()
+            d.update(x=x, y=y)
+        d["phase"] = self.engine.phase.value
+        return d
 
     # ----- status -----------------------------------------------------------
 
