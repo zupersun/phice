@@ -8,3 +8,4 @@ __pycache__/
 
 # agent tooling state, regenerated every session
 .claude-flow/
+.claude/

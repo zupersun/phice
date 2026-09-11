@@ -64,14 +64,6 @@ def _blank() -> list[list[int]]:
     return [[0] * SIZE for _ in range(SIZE)]
 
 
-def _ring(px, cx, cy, r, thickness, alpha=255):
-    for y in range(SIZE):
-        for x in range(SIZE):
-            d = math.hypot(x - cx + 0.5, y - cy + 0.5)
-            if abs(d - r) <= thickness / 2:
-                px[y][x] = max(px[y][x], alpha)
-
-
 def _disc(px, cx, cy, r, alpha=255):
     for y in range(SIZE):
         for x in range(SIZE):

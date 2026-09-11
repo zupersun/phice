@@ -17,6 +17,7 @@ uv run phice uninstall    # remove it
 uv run phice paths        # where config lives
 uv run phice tailscale    # switch to a trusted tailnet certificate
 uv run phice setup-url    # print setup URLs
+uv run phice grant        # ask macOS for Accessibility (from the agent, not the shell)
 ```
 
 Exercise the whole system without a phone, via real TLS against a real server:

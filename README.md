@@ -16,51 +16,73 @@ off after a timeout, and off when you lay the phone flat.
 
 ---
 
-## Install (once)
+## Install on the Mac (once)
 
 ```bash
 git clone https://github.com/zupersun/phice.git
 cd phice
 uv sync
-uv run phice install
+uv run phice install     # login agent, starts immediately
+uv run phice grant       # ask macOS for Accessibility, then switch it on
+uv run phice install     # restart so the permission takes effect
 ```
 
-`install` writes a login agent and starts it immediately — the menu bar icon appears
-within a second, with no restart and no logout.
+`grant` prompts from the running agent, which is what makes macOS list the right
+binary — prompting from a terminal would add your terminal instead. Turn the new
+entry on in **Privacy & Security › Accessibility**.
 
-Then grant Accessibility permission, which is what lets the app move the cursor:
-click the menu bar icon and choose **Grant Accessibility…**, enable the entry that
-appears in System Settings, and the icon changes from the warning glyph within
-three seconds.
+A menu bar icon should appear. If it doesn't, that's cosmetic: macOS adds new status
+items to the left of existing ones, and on a notched Mac with a full menu bar they
+land behind the notch. Everything still works, and
+`curl -s http://127.0.0.1:8080/debug/cursor` shows the full status.
 
-To remove it:
+To remove it: `uv run phice uninstall`.
 
-```bash
-uv run phice uninstall
-```
+## Connect your phone
 
-## Trust the certificate on the iPhone (once)
+Safari exposes motion sensors only to a secure page, and a secure page cannot open an
+insecure WebSocket — so TLS is not optional, and the phone has to trust the
+certificate. There are two ways to arrange that.
 
-Safari only exposes motion sensors to a secure page, and a secure page cannot open an
-insecure WebSocket, so TLS is not optional. Your Mac mints its own certificate
-authority once and you trust it on the phone once. After that everything is offline
-and automatic.
+### Tailscale — recommended
 
-1. On the Mac, open the setup page: `uv run phice setup-url` and visit the printed
-   `http://127.0.0.1:…/setup` address. It shows two QR codes.
-2. Scan the **first** QR code with the iPhone camera. Safari downloads a profile.
-   Install it in **Settings › General › VPN & Device Management**.
-3. Turn it on in **Settings › General › About › Certificate Trust Settings** —
-   enable full trust for **Phice Local CA**.
-4. Scan the **second** QR code. The phone page opens with no certificate warning.
-   Tap **Start** and allow motion access.
+Your Mac gets a real, publicly trusted Let's Encrypt certificate, so there is
+**nothing to install on the phone** and no trust settings to find. It also works when
+the phone is on cellular or on a network that isolates clients from each other —
+university and corporate Wi-Fi usually do both.
 
-Optionally use **Share › Add to Home Screen**, then open it from there and scan the
-pairing code once more from inside it. It runs fullscreen with no Safari chrome.
+1. `brew install --cask tailscale`, open it, sign in.
+2. Enable HTTPS once for your tailnet:
+   [login.tailscale.com/admin/dns](https://login.tailscale.com/admin/dns) ›
+   **HTTPS Certificates** › **Enable**.
+3. Install Tailscale on the iPhone and sign in with the same account.
+4. `uv run phice tailscale`
+5. Open `http://127.0.0.1:8080/setup` on the Mac and scan the QR code.
+
+### Local certificate — same Wi-Fi only
+
+No accounts, but the phone must install a certificate profile, and both devices must
+be on the same network with client-to-client traffic allowed.
+
+1. Open `http://127.0.0.1:8080/setup` on the Mac. It shows two QR codes.
+2. Scan the **first**. Safari offers a configuration profile — allow it, then
+   **Settings › Profile Downloaded › Install**.
+3. **Settings › General › About › Certificate Trust Settings** — turn
+   **Phice Local CA** on. Installing the profile is not enough on its own; this
+   switch is what actually trusts it.
+4. Scan the **second** QR code. The page opens with no warning.
+
+If a QR does nothing, your network is blocking `.local` name lookups; the setup page
+prints an IP address form underneath for that case. If the page loads but stays
+black, open `http://<your-mac-ip>:8080/check` on the phone — it loads over plain HTTP
+and tells you whether the certificate is trusted.
+
+Either way, use **Share › Add to Home Screen** and open it from there to run
+fullscreen with no Safari chrome.
 
 Pairing is required: a pairing token is valid for ten minutes, single use, and
 redeeming it issues a long-lived device token the page keeps. Without it, nobody else
-on the network can move your cursor.
+can move your cursor.
 
 ## Daily use
 
@@ -110,7 +132,6 @@ whatever was there.
 | `gain_x_px_per_deg` | Horizontal pixels of cursor travel per degree of turn. Raise for a faster pointer. |
 | `gain_y_px_per_deg` | Vertical pixels per degree of tilt. |
 | `invert_y` | Flip the vertical direction. Set this if raising the top edge moves the cursor down. |
-| `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter — the Wii-like feel, aim and cursor cannot drift apart. `relative` integrates turn deltas like a trackpad in the air, which allows edge re-gripping but lets aim and cursor diverge. |
 | `one_euro.min_cutoff` | Baseline smoothing. Lower is smoother and laggier. |
 | `one_euro.beta` | How much the filter opens up as you move faster. The jitter-versus-lag knob; tune this first. |
 | `one_euro.d_cutoff` | Smoothing applied to the speed estimate itself. |
@@ -134,7 +155,9 @@ whatever was there.
 | `rest_rate_dps` | How still counts as "resting". |
 | `idle_hz_when_auto_activate` | Packet rate the phone uses while idle and waiting to be picked up. |
 | `timeout_ms` | No packets for this long releases every button and powers off. |
-| `cert_mode` | `auto` for the built-in certificate authority, `external` if you supply your own (Tailscale, say). |
+| `cert_mode` | `tailscale` for a publicly trusted tailnet certificate (recommended), `auto` for the built-in certificate authority, `external` if you supply your own `certs/server.{crt,key}`. |
+| `tailscale_host` | Set by `phice tailscale`. The MagicDNS name to serve on. |
+| `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter. `relative` integrates turn deltas like a trackpad in the air. |
 | `ui.haptics` | Haptic tick on button press. Best-effort; Safari has no vibration API. |
 | `ui.keep_awake` | `always` or `on_only` — when to keep the phone screen awake. |
 
@@ -175,7 +198,7 @@ jitter-versus-lag trade-off, and `freeze_ms_on_touch` if clicks land slightly of
 ## Development
 
 ```bash
-uv run pytest -q        # 121 unit tests
+uv run pytest -q        # unit tests
 uv run ruff check .     # lint
 ```
 
