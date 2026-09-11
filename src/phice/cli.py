@@ -90,8 +90,9 @@ def _plist(python: str, config_dir: Path, logs: Path) -> str:
   <key>Label</key><string>{LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{python}</string><string>-m</string><string>phice</string><string>run</string>
+    <string>{python}</string><string>-m</string><string>phice</string>
     <string>--config-dir</string><string>{config_dir}</string>
+    <string>run</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><false/>
