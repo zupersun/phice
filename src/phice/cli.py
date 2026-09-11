@@ -121,6 +121,7 @@ def cmd_tailscale(args) -> int:
     pointer = paths.pointer_json
     data = json.loads(pointer.read_text())
     data["cert_mode"] = "tailscale"
+    data["tailscale_host"] = name
     pointer.write_text(json.dumps(data, indent=2) + "\n")
     print(f"trusted certificate ready for {name}\n"
           f"cert_mode set to 'tailscale' in {pointer}\n"

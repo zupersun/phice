@@ -130,3 +130,13 @@ def test_ensure_never_overwrites_user_assets(tmp_path):
     paths.ensure()
     assert (paths.assets / "logo.svg").read_text() == "<svg>mine</svg>"
     assert (paths.assets / "menubar" / "on.png").read_bytes() == b"mine"
+
+
+def test_tailscale_host_is_remembered():
+    """The runtime cannot reach the Tailscale GUI's CLI from the launch agent,
+    so the name resolved once in a terminal has to survive in config."""
+    cfg = PointerConfig.from_dict({"cert_mode": "tailscale",
+                                   "tailscale_host": "mac.tail1234.ts.net"})
+    assert cfg.cert_mode == "tailscale" and cfg.tailscale_host == "mac.tail1234.ts.net"
+    with pytest.raises(ConfigError):
+        PointerConfig.from_dict({"tailscale_host": 123})

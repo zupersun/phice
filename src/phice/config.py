@@ -91,6 +91,7 @@ class PointerConfig:
     idle_hz_when_auto_activate: int = 10
     timeout_ms: int = 500
     cert_mode: str = "auto"
+    tailscale_host: str = ""
     ui: UIConfig = field(default_factory=UIConfig)
 
     @property
@@ -113,6 +114,9 @@ class PointerConfig:
         cert_mode = d.get("cert_mode", "auto")
         if cert_mode not in ("auto", "external", "tailscale"):
             raise ConfigError("cert_mode: expected 'auto', 'external' or 'tailscale'")
+        ts_host = d.get("tailscale_host", "")
+        if not isinstance(ts_host, str) or len(ts_host) > 253:
+            raise ConfigError("tailscale_host: expected a hostname")
         mapping = d.get("mapping", "absolute")
         if mapping not in ("absolute", "relative"):
             raise ConfigError("mapping: expected 'absolute' or 'relative'")
@@ -150,6 +154,7 @@ class PointerConfig:
             idle_hz_when_auto_activate=_int(d, "idle_hz_when_auto_activate", 10, 1, 60),
             timeout_ms=_int(d, "timeout_ms", 500, 100, 10000),
             cert_mode=cert_mode,
+            tailscale_host=ts_host,
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
         )
 

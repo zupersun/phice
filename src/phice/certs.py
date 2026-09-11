@@ -252,6 +252,9 @@ def tailscale_dns_name() -> str | None:
         out = subprocess.run([binary, "status", "--json"], capture_output=True, text=True, timeout=10)
         if out.returncode != 0:
             return None
+        # The GUI app's CLI exits 0 but prints a plain-text error when it cannot
+        # reach the app (no GUI bootstrap namespace, e.g. under launchd), so a
+        # zero exit status is not enough to trust the output.
         name = json.loads(out.stdout).get("Self", {}).get("DNSName", "")
     except (OSError, subprocess.SubprocessError, ValueError):
         return None
@@ -268,7 +271,7 @@ def ensure_tailscale_cert(paths: CertPaths, name: str) -> bool:
     binary = tailscale_bin()
     if not binary:
         raise CertError("tailscale is not installed")
-    if _cert_covers(paths.server_crt, name):
+    if cert_covers(paths.server_crt, name):
         return False
     paths.server_crt.parent.mkdir(parents=True, exist_ok=True)
     r = subprocess.run([binary, "cert", "--cert-file", str(paths.server_crt),
@@ -280,7 +283,7 @@ def ensure_tailscale_cert(paths: CertPaths, name: str) -> bool:
     return True
 
 
-def _cert_covers(crt: Path, name: str) -> bool:
+def cert_covers(crt: Path, name: str) -> bool:
     """True if an existing certificate already names `name` and is not expiring."""
     if not crt.exists():
         return False

@@ -17,6 +17,7 @@ from .certs import (
     CertPaths,
     ca_der,
     ca_mobileconfig,
+    cert_covers,
     ensure_server_cert,
     ensure_tailscale_cert,
     local_hostname,
@@ -257,14 +258,25 @@ class Runtime:
 
     async def _main(self) -> None:
         if self.config.cert_mode == "tailscale":
-            self.tailnet = tailscale_dns_name()
+            # Prefer the name recorded by `phice tailscale`. The GUI app's CLI
+            # cannot be reached from the launch agent (no GUI bootstrap
+            # namespace), so resolving it live would fail exactly where the
+            # service actually runs.
+            self.tailnet = self.config.tailscale_host or tailscale_dns_name()
             if not self.tailnet:
-                raise CertError("cert_mode is 'tailscale' but tailscale is not installed or not "
-                                "logged in; run 'tailscale up' first")
-            if ensure_tailscale_cert(self.cert_paths, self.tailnet):
-                log.info("issued a trusted certificate for %s", self.tailnet)
-            else:
-                log.info("tailscale certificate for %s is current", self.tailnet)
+                raise CertError("cert_mode is 'tailscale' but no tailnet name is known; "
+                                "run 'phice tailscale' from a terminal")
+            try:
+                if ensure_tailscale_cert(self.cert_paths, self.tailnet):
+                    log.info("issued a trusted certificate for %s", self.tailnet)
+            except CertError as e:
+                # A tailnet certificate is good for 90 days. If it cannot be
+                # renewed right now, keep serving the valid one rather than
+                # refusing to start.
+                if not cert_covers(self.cert_paths.server_crt, self.tailnet):
+                    raise
+                log.warning("could not refresh the tailnet certificate (%s); "
+                            "serving the existing one", e)
         elif self.config.cert_mode == "auto":
             if ensure_server_cert(self.cert_paths, self.host):
                 log.info("issued a new server certificate for %s.local", self.host)
