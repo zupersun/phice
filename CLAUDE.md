@@ -171,6 +171,8 @@ at all. Only `tailscale` covers every case.
 
 ## Conventions
 
+- Worktrees for plan execution live in `.worktrees/<branch>` (gitignored).
+
 - Follow the user's global CLAUDE.md: no `Co-Authored-By` trailer unless
   `.claude/settings.json` sets `attribution.commit`.
 - Files under 500 lines; line length 104.
