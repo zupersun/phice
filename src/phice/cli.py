@@ -131,6 +131,27 @@ def cmd_tailscale(args) -> int:
     return 0
 
 
+def cmd_grant(args) -> int:
+    """Ask macOS for Accessibility from the running agent, so the right binary is listed."""
+    import urllib.error
+    import urllib.request
+    url = f"http://127.0.0.1:{args.http_port}/debug/grant"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            ok = json.load(r)["accessibility"]
+    except (urllib.error.URLError, OSError, ValueError):
+        print("Could not reach the running app. Is it started? Try: phice install",
+              file=sys.stderr)
+        return 1
+    if ok:
+        print("Accessibility is granted. The pointer can move the cursor.")
+        return 0
+    print("macOS should now be showing a permission dialog, or has added an entry to\n"
+          "System Settings > Privacy & Security > Accessibility.\n"
+          "Turn that entry ON, then run this again to confirm.")
+    return 1
+
+
 def _plist(python: str, config_dir: Path, logs: Path) -> str:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -215,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         ("reset-ui", cmd_reset_ui, "restore default layout, theme and assets"),
         ("certs", cmd_certs, "create or renew the TLS certificate"),
         ("tailscale", cmd_tailscale, "use a trusted tailnet certificate"),
+        ("grant", cmd_grant, "ask macOS for Accessibility permission"),
     ):
         sp = sub.add_parser(name, help=help_text)
         sp.set_defaults(func=fn)

@@ -230,3 +230,17 @@ def test_menu_bar_calls_after_the_loop_dies_are_discarded():
     for loop in (closed, None):
         rt._loop = loop
         assert Runtime._dispatch(rt, coro()) is False  # discarded, not raised
+
+
+def test_accessibility_status_is_reported_even_when_it_never_changes():
+    """ServerState defaults accessibility True and Status defaults it False, so
+    gating the status update on a change left it stuck at False forever while
+    the permission was in fact granted."""
+    from phice.runtime import Runtime, Status
+    rt = Runtime.__new__(Runtime)
+    rt._loop = None
+    rt.status = Status()
+    rt.state = type("S", (), {"accessibility": True})()
+    assert rt.status.read()["accessibility"] is False
+    Runtime.set_accessibility(rt, True)  # same value as state: must still report
+    assert rt.status.read()["accessibility"] is True

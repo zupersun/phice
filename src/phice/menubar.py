@@ -8,6 +8,7 @@ import webbrowser
 import rumps
 
 from .cli import agent_plist_path
+from .cursor_backend import accessibility_trusted as _trusted
 from .paths import Paths
 from .runtime import Runtime
 
@@ -20,12 +21,10 @@ ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
 
 
 def accessibility_trusted(prompt: bool = False) -> bool:
-    try:
-        from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
-        return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: prompt}))
-    except Exception:
-        log.warning("could not query Accessibility trust", exc_info=True)
-        return False
+    ok = _trusted(prompt)
+    if not ok and prompt:
+        log.info("prompted for Accessibility")
+    return ok
 
 
 class PhiceApp(rumps.App):

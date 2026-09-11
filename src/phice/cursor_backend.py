@@ -180,3 +180,20 @@ class QuartzCursor:
             self._displays_cache = rects or [Rect(0, 0, 1440, 900)]
             self._displays_ts = now
         return list(self._displays_cache)
+
+
+def accessibility_trusted(prompt: bool = False) -> bool:
+    """Whether this process may post cursor events.
+
+    Lives here, not in the menu bar, because the runtime needs it too: the menu
+    bar is optional and can fail to appear, and a status field only it updates
+    is a status field that is wrong whenever it does.
+    """
+    try:
+        from ApplicationServices import (  # type: ignore[import-not-found]
+            AXIsProcessTrustedWithOptions,
+            kAXTrustedCheckOptionPrompt,
+        )
+        return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: prompt}))
+    except Exception:
+        return False

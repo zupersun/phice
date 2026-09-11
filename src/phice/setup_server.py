@@ -149,10 +149,12 @@ class SetupServer:
     def __init__(self, port: int, ca_der: Callable[[], bytes],
                  urls: Callable[[], tuple[str, str, bool, str | None, str | None]],
                  debug_cursor: Callable[[], dict] | None = None,
-                 ca_mobileconfig: Callable[[], bytes] | None = None):
+                 ca_mobileconfig: Callable[[], bytes] | None = None,
+                 grant_accessibility: Callable[[], bool] | None = None):
         self.port = port
         self._ca_der = ca_der
         self._ca_mobileconfig = ca_mobileconfig
+        self._grant_accessibility = grant_accessibility
         self._urls = urls
         self._debug_cursor = debug_cursor
         self._httpd: ThreadingHTTPServer | None = None
@@ -212,6 +214,12 @@ class SetupServer:
                             f"<li>Settings &rsaquo; General &rsaquo; About &rsaquo; Certificate Trust "
                             f"Settings &rsaquo; enable Phice Local CA.</li></ol>")
                     self._send(200, body.encode(), "text/html; charset=utf-8")
+                elif path == "/debug/grant" and outer._grant_accessibility and self._is_local():
+                    # Prompting from this process is what makes macOS add *this*
+                    # binary to the Accessibility list; asking from a terminal
+                    # would add the terminal instead.
+                    ok = outer._grant_accessibility()
+                    self._send(200, json.dumps({"accessibility": ok}).encode(), "application/json")
                 elif path == "/debug/cursor" and outer._debug_cursor and self._is_local():
                     self._send(200, json.dumps(outer._debug_cursor()).encode(), "application/json")
                 else:

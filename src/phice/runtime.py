@@ -25,7 +25,7 @@ from .certs import (
     tailscale_dns_name,
 )
 from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
-from .cursor_backend import CursorBackend, FakeCursor
+from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .pairing import PairingManager
 from .paths import Paths
@@ -92,7 +92,8 @@ class Runtime:
                                   extra_origin_hosts=self._extra_origin_hosts)
         self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
                                  debug_cursor=self._debug_cursor,
-                                 ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths))
+                                 ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths),
+                                 grant_accessibility=lambda: accessibility_trusted(prompt=True))
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -218,6 +219,9 @@ class Runtime:
             self.status.update(connected=self.state.client is not None,
                                device_name=self.state.client_name,
                                phase=self.engine.phase.value)
+            # Poll here rather than relying on the menu bar, which may never appear.
+            if not isinstance(self.backend, FakeCursor):
+                self.set_accessibility(accessibility_trusted())
             await asyncio.sleep(0.5)
 
     def _dispatch(self, coro) -> bool:
@@ -234,9 +238,13 @@ class Runtime:
         return True
 
     def set_accessibility(self, ok: bool) -> None:
-        if ok != self.state.accessibility:
-            self.state.accessibility = ok
-            self.status.update(accessibility=ok)
+        # Keep the reported status in step unconditionally: ServerState defaults to
+        # True and Status to False, so gating the whole update on a change left the
+        # status stuck at False even while the permission was granted.
+        changed = ok != self.state.accessibility
+        self.state.accessibility = ok
+        self.status.update(accessibility=ok)
+        if changed:
             self._dispatch(self.server._send_state())
 
     def set_enabled(self, enabled: bool) -> None:

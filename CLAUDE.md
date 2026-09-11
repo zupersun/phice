@@ -54,6 +54,11 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `phase: "on", accessibility: false` | Everything works except the macOS permission. |
 | `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
 
+`phice grant` asks macOS for Accessibility **from the running agent**, which is what
+makes it list the right binary. Prompting from a terminal would add the terminal
+instead. A granted permission only takes effect after the agent restarts
+(`phice install`).
+
 A blank page on the phone has three unrelated causes that look identical: an
 untrusted certificate, a WebSocket origin 403, and the phone being unable to route
 to the Mac at all. Do not guess between them — `http://<mac>:8080/check` loads over
@@ -64,6 +69,9 @@ plain HTTP and probes the TLS port, which separates the first from the others.
 Two rough edges, both caused by the same thing: the app has no macOS identity. It
 runs as a bare `python3.13` out of a uv-managed venv, not an app bundle.
 
+- **`accessibility` gates nothing** — it is only reported to the phone, so the cursor can
+  move while the status says otherwise. The runtime polls it in `_status_loop`; do not
+  move that back to the menu bar, which may never appear.
 - **Accessibility** must be granted to the real interpreter,
   `~/.local/share/uv/python/cpython-*/bin/python3.13`, not to `phice`. It is in a
   hidden directory, so `open` that folder in Finder and drag the binary into
