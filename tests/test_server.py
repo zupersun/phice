@@ -212,3 +212,21 @@ async def test_websocket_accepts_origins_for_every_name_in_the_cert(rig, client_
                           additional_headers={"Origin": "https://10.0.0.9"})
     finally:
         await rig.server.stop()
+
+
+def test_menu_bar_calls_after_the_loop_dies_are_discarded():
+    """The menu bar outlives the runtime thread, so it can still call in after
+    the loop has closed. That used to raise on every tick and leave the
+    coroutine un-awaited."""
+    from phice.runtime import Runtime
+
+    rt = Runtime.__new__(Runtime)
+
+    async def coro():
+        return None
+
+    closed = asyncio.new_event_loop()
+    closed.close()
+    for loop in (closed, None):
+        rt._loop = loop
+        assert Runtime._dispatch(rt, coro()) is False  # discarded, not raised

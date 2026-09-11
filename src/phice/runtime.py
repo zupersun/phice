@@ -211,12 +211,24 @@ class Runtime:
                                phase=self.engine.phase.value)
             await asyncio.sleep(0.5)
 
+    def _dispatch(self, coro) -> bool:
+        """Hand a coroutine to the loop thread, or discard it if that loop is gone.
+
+        The menu bar outlives the runtime thread, so it can still call in after
+        the loop has closed. Without this the call raises on every tick and
+        leaves the coroutine un-awaited.
+        """
+        if self._loop is None or self._loop.is_closed():
+            coro.close()
+            return False
+        asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return True
+
     def set_accessibility(self, ok: bool) -> None:
         if ok != self.state.accessibility:
             self.state.accessibility = ok
             self.status.update(accessibility=ok)
-            if self._loop:
-                asyncio.run_coroutine_threadsafe(self.server._send_state(), self._loop)
+            self._dispatch(self.server._send_state())
 
     def set_enabled(self, enabled: bool) -> None:
         self.engine.set_enabled(enabled)
@@ -251,8 +263,8 @@ class Runtime:
 
     def revoke_devices(self) -> None:
         self.pairing.revoke_all()
-        if self._loop and self.state.client:
-            asyncio.run_coroutine_threadsafe(self.state.client.close(4003, "revoked"), self._loop)
+        if self.state.client:
+            self._dispatch(self.state.client.close(4003, "revoked"))
 
     # ----- lifecycle --------------------------------------------------------
 
@@ -300,8 +312,9 @@ class Runtime:
                 loop.run_until_complete(self._main())
             except asyncio.CancelledError:
                 pass
-            except Exception:
+            except Exception as e:
                 log.exception("runtime stopped")
+                self.status.update(error=f"{type(e).__name__}: {e}")
             finally:
                 loop.close()
 
@@ -311,8 +324,7 @@ class Runtime:
     def stop(self) -> None:
         self.engine.disconnected()
         self.setup.stop()
-        if self._loop:
-            asyncio.run_coroutine_threadsafe(self.server.stop(), self._loop)
+        self._dispatch(self.server.stop())
 
     def run_forever(self) -> None:
         asyncio.run(self._main())
