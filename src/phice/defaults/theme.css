@@ -1,0 +1,143 @@
+/* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
+   app.js never sets a colour, size or font of its own. */
+:root {
+  --bg-off: #000000;
+  --bg-on: #0b0f14;
+  --fg: #e8eef5;
+  --fg-dim: #6b7a8c;
+  --accent: #3ea6ff;
+  --danger: #ff5a5f;
+
+  --btn-bg: #161c24;
+  --btn-bg-pressed: #22303f;
+  --btn-fg: #9fb3c8;
+  --btn-border: 1px solid #232c37;
+  --btn-radius: 22px;
+  --btn-shadow: 0 1px 0 #1f2937 inset;
+
+  --scroll-bg: #10161d;
+  --scroll-thumb: #2b3846;
+
+  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --label-size: 15px;
+  --header-display: flex;
+  --logo-height: 18px;
+  --pad-bottom-margin: 12%;
+  --pad-gap: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-off);
+  color: var(--fg);
+  font-family: var(--font);
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms linear;
+}
+
+body[data-state="on"], body[data-state="held"], body[data-state="hold"] { background: var(--bg-on); }
+
+#header {
+  display: var(--header-display);
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 8px) 14px 4px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+#logo { height: var(--logo-height); opacity: 0.8; }
+body[data-state="off"] #header { opacity: 0.35; }
+
+#pad {
+  position: relative;
+  height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top) - 34px);
+  margin: 0 calc(env(safe-area-inset-left) + 8px) 0 calc(env(safe-area-inset-right) + 8px);
+}
+
+.btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: var(--btn-border);
+  border-radius: var(--btn-radius);
+  box-shadow: var(--btn-shadow);
+  font-size: var(--label-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  transition: background 60ms linear, transform 60ms linear;
+}
+.btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
+.btn img { height: 28%; opacity: 0.85; }
+
+.role-scroll { background: var(--scroll-bg); border-radius: 999px; }
+.role-scroll::after {
+  content: "";
+  width: 4px;
+  height: 34%;
+  border-radius: 999px;
+  background: var(--scroll-thumb);
+}
+
+.role-power { font-size: 12px; }
+body[data-state="on"] .role-power, body[data-state="held"] .role-power { color: var(--accent); }
+
+/* Recenter hold: the ring fills as --recenter-progress goes 0 -> 1. */
+body[data-state="hold"] .role-left, body[data-state="hold"] .role-right {
+  background:
+    conic-gradient(var(--accent) calc(var(--recenter-progress, 0) * 360deg), transparent 0)
+    border-box;
+  color: var(--fg);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.92);
+  padding: 24px;
+  text-align: center;
+}
+body[data-state="loading"] #ov-start,
+body[data-state="nopermission"] #ov-denied { display: flex; }
+@media (orientation: landscape) { #ov-landscape { display: flex; } }
+
+.card h1 { font-size: 20px; margin: 0 0 8px; }
+.card p { color: var(--fg-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+.cta, .ghost {
+  font: inherit;
+  font-size: 16px;
+  padding: 14px 30px;
+  border-radius: 14px;
+  border: none;
+  margin: 4px;
+}
+.cta { background: var(--accent); color: #04121f; font-weight: 700; }
+.ghost { background: transparent; color: var(--fg-dim); border: var(--btn-border); }
+
+#banner {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 6px);
+  text-align: center;
+  font-size: 12px;
+  color: var(--danger);
+  display: none;
+}
+body[data-state="disconnected"] #banner { display: block; }
+
+#haptic-label { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
