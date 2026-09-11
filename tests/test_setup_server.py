@@ -14,7 +14,9 @@ def setup(tmp_path):
     ensure_ca(cp, "testmac")
     cursor = {"x": 1, "y": 2}
     s = SetupServer(0, lambda: ca_der(cp), lambda: ("http://testmac.local:8080/ca.crt",
-                                                    "https://testmac.local:8443/?pair=tok", True),
+                                                    "https://testmac.local:8443/?pair=tok", True,
+                                                    "http://10.0.0.5:8080/ca.crt",
+                                                    "https://10.0.0.5:8443/?pair=tok"),
                     debug_cursor=lambda: cursor)
     port = s.start()
     yield port
@@ -40,13 +42,19 @@ def test_ca_download_is_der_with_filename(setup):
 def test_setup_page_has_both_qrs_and_urls(setup):
     status, ctype, body = get(setup, "/setup")
     html = body.decode()
-    assert status == 200 and html.count("<svg") == 2
+    assert status == 200 and html.count("<svg") == 4  # 2 primary + 2 IP fallbacks
     assert "ca.crt" in html and "pair=tok" in html
+    assert "10.0.0.5" in html
 
 
 def test_setup_page_hides_ca_card_when_external_certs():
     html = setup_html("http://x/ca.crt", "https://x/?pair=t", show_ca=False)
     assert html.count("<svg") == 1 and "Certificate Trust Settings" not in html
+
+
+def test_setup_page_omits_ip_fallback_when_no_address():
+    html = setup_html("http://x/ca.crt", "https://x/?pair=t", show_ca=True)
+    assert html.count("<svg") == 2 and "QR above does nothing" not in html
 
 
 def test_help_page_and_404(setup):

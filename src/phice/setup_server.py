@@ -38,10 +38,28 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 6px}
 code{background:#1a2230;padding:2px 6px;border-radius:5px;font-size:13px;word-break:break-all}
 ol{padding-left:18px;color:#9fb3c8}li{margin:6px 0}
 .muted{color:#6b7a8c;font-size:13px}
+.alt{margin-top:14px;padding-top:12px;border-top:1px solid #222c37}
+.alt svg{width:132px;height:132px}
+.alt b{color:#9fb3c8}
 """
 
 
-def setup_html(ca_url: str, pair_url: str, show_ca: bool) -> str:
+def _alt_block(url: str | None, what: str) -> str:
+    """Fallback QR using the IP address, for networks where mDNS is blocked."""
+    if not url:
+        return ""
+    return f"""
+      <div class="alt">
+        <p class="muted"><b>QR above does nothing?</b> Your network is blocking
+           <code>.local</code> lookups. Scan this instead &mdash; same {what},
+           by IP address.</p>
+        {qr_svg(url)}
+        <p class="muted"><code>{url}</code></p>
+      </div>"""
+
+
+def setup_html(ca_url: str, pair_url: str, show_ca: bool,
+               alt_ca_url: str | None = None, alt_pair_url: str | None = None) -> str:
     ca_card = "" if not show_ca else f"""
     <div class="card">
       <h2>1 · Trust the certificate (once)</h2>
@@ -54,6 +72,7 @@ def setup_html(ca_url: str, pair_url: str, show_ca: bool) -> str:
             turn on full trust for <b>Phice Local CA</b>.</li>
       </ol>
       <p class="muted"><code>{ca_url}</code></p>
+      {_alt_block(alt_ca_url, "certificate")}
     </div>"""
     return f"""<!doctype html><meta charset="utf-8"><title>Phice setup</title>
 <style>{SETUP_CSS}</style>
@@ -70,6 +89,7 @@ def setup_html(ca_url: str, pair_url: str, show_ca: bool) -> str:
     </ol>
     <p class="muted">Valid for 10 minutes. Reload this page for a fresh code.<br>
     <code>{pair_url}</code></p>
+    {_alt_block(alt_pair_url, "pairing link")}
   </div>
 </div>"""
 
@@ -78,7 +98,7 @@ class SetupServer:
     """Threaded HTTP server. Loopback-only routes are enforced per request."""
 
     def __init__(self, port: int, ca_der: Callable[[], bytes],
-                 urls: Callable[[], tuple[str, str, bool]],
+                 urls: Callable[[], tuple[str, str, bool, str | None, str | None]],
                  debug_cursor: Callable[[], dict] | None = None):
         self.port = port
         self._ca_der = ca_der
@@ -118,11 +138,12 @@ class SetupServer:
                     if not self._is_local():
                         self._send(403, b"setup page is available on the Mac only", "text/plain")
                         return
-                    ca_url, pair_url, show_ca = outer._urls()
-                    self._send(200, setup_html(ca_url, pair_url, show_ca).encode(),
+                    ca_url, pair_url, show_ca, alt_ca, alt_pair = outer._urls()
+                    self._send(200,
+                               setup_html(ca_url, pair_url, show_ca, alt_ca, alt_pair).encode(),
                                "text/html; charset=utf-8")
                 elif path == "/help":
-                    ca_url, _, _ = outer._urls()
+                    ca_url = outer._urls()[0]
                     body = (f"<!doctype html><meta charset=utf-8><title>Phice</title>"
                             f"<style>{SETUP_CSS}</style><h1>Install the Phice certificate</h1>"
                             f"<ol><li>Tap <a href='{ca_url}'>{ca_url}</a></li>"

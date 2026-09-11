@@ -5,9 +5,10 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from .certs import CertPaths, ensure_server_cert, local_hostname
+from .certs import CertPaths, ensure_server_cert, local_hostname, local_ipv4s
 from .cursor_backend import FakeCursor
 from .pairing import PairingManager
 from .paths import Paths, default_config_dir
@@ -56,6 +57,12 @@ def cmd_setup_url(args) -> int:
     print(f"setup page (on this Mac): http://127.0.0.1:{args.http_port}/setup")
     print(f"certificate (on the phone): http://{host}.local:{args.http_port}/ca.crt")
     print(f"phone page:                 https://{host}.local:{args.tls_port}/")
+    ips = local_ipv4s()
+    if ips:
+        print("\nif .local does not resolve on your network, use the IP instead:")
+        for ip in ips:
+            print(f"certificate (on the phone): http://{ip}:{args.http_port}/ca.crt")
+            print(f"phone page:                 https://{ip}:{args.tls_port}/")
     return 0
 
 
@@ -110,17 +117,28 @@ def agent_plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 
 
+def _bootout(uid: int) -> None:
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+
+
 def cmd_install(args) -> int:
     paths = _paths(args)
     plist = agent_plist_path()
     plist.parent.mkdir(parents=True, exist_ok=True)
     plist.write_text(_plist(sys.executable, paths.root, paths.logs))
     uid = os.getuid()
-    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    _bootout(uid)
+    # launchd tears the service down after bootout returns, so bootstrapping
+    # immediately races it and fails. Wait for the label to disappear first.
+    for _ in range(30):
+        if subprocess.run(["launchctl", "print", f"gui/{uid}/{LABEL}"],
+                          capture_output=True).returncode != 0:
+            break
+        time.sleep(0.1)
     r = subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(plist)], capture_output=True,
                        text=True)
     if r.returncode != 0:
-        print(f"launchctl bootstrap failed: {r.stderr.strip()}", file=sys.stderr)
+        print(f"launchctl bootstrap failed: {r.stderr.strip() or r.returncode}", file=sys.stderr)
         return 1
     print(f"installed and started. Menu bar icon should appear now.\nplist: {plist}")
     return 0
@@ -128,7 +146,7 @@ def cmd_install(args) -> int:
 
 def cmd_uninstall(args) -> int:
     uid = os.getuid()
-    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    _bootout(uid)
     agent_plist_path().unlink(missing_ok=True)
     print("stopped and removed the launch agent")
     return 0

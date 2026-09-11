@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .certs import CertPaths, ca_der, ensure_server_cert, local_hostname
+from .certs import CertPaths, ca_der, ensure_server_cert, local_hostname, local_ipv4s
 from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
 from .cursor_backend import CursorBackend, FakeCursor
 from .engine import PointerEngine
@@ -152,11 +152,22 @@ class Runtime:
 
     # ----- urls -------------------------------------------------------------
 
-    def _urls(self) -> tuple[str, str, bool]:
+    def _urls(self) -> tuple[str, str, bool, str | None, str | None]:
+        """(.local ca, .local pair, show_ca, ip ca, ip pair).
+
+        The .local names are stable across DHCP renewals, so they stay primary.
+        But mDNS is blocked on plenty of networks (large campus and corporate
+        subnets especially), and the certificate already carries the IPs in its
+        SANs, so an IP-based alternate always works there. One token serves both
+        URLs: it is single use, and the user scans one or the other.
+        """
         token = self.pairing.mint_pairing_token()
         ca = f"http://{self.host}.local:{self.setup.port}/ca.crt"
         pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
-        return ca, pair, self.config.cert_mode == "auto"
+        ip = next(iter(local_ipv4s()), None)
+        alt_ca = f"http://{ip}:{self.setup.port}/ca.crt" if ip else None
+        alt_pair = f"https://{ip}:{self.server.port}/?pair={token}" if ip else None
+        return ca, pair, self.config.cert_mode == "auto", alt_ca, alt_pair
 
     def _debug_cursor(self) -> dict:
         if isinstance(self.backend, FakeCursor):
