@@ -1,0 +1,186 @@
+"""Wire protocol: JSON text frames between the phone page and the Mac.
+
+Every inbound message is validated here (system boundary). Outbound messages
+are built by the `*_message` helpers so the schema lives in one place.
+"""
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass
+from typing import Any
+
+MAX_FRAME_BYTES = 2048
+MAX_BUTTONS = 16
+BUTTON_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+PROTOCOL_VERSION = 1
+
+Vec3 = tuple[float, float, float]
+
+
+class ProtocolError(ValueError):
+    """Raised for any malformed or out-of-range client message."""
+
+
+@dataclass(frozen=True)
+class Hello:
+    ver: int
+    pair: str | None
+    token: str | None
+    name: str
+
+
+@dataclass(frozen=True)
+class Ping:
+    pass
+
+
+@dataclass(frozen=True)
+class Bye:
+    pass
+
+
+@dataclass(frozen=True)
+class SensorPacket:
+    seq: int
+    ts: float
+    alpha: float | None
+    beta: float | None
+    gamma: float | None
+    rr: Vec3
+    g: Vec3
+    buttons: dict[str, bool]
+    counters: dict[str, int]
+    scroll_delta: float
+
+    @property
+    def rate_dps(self) -> float:
+        return math.sqrt(sum(v * v for v in self.rr))
+
+    @property
+    def has_orientation(self) -> bool:
+        return self.alpha is not None and self.beta is not None
+
+
+def _num(v: Any, lo: float, hi: float, name: str, allow_none: bool = False) -> float | None:
+    if v is None and allow_none:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ProtocolError(f"{name}: not a number")
+    f = float(v)
+    if math.isnan(f) or f < lo or f > hi:
+        raise ProtocolError(f"{name}: out of range")
+    return f
+
+
+def _vec3(v: Any, lim: float, name: str) -> Vec3:
+    if not isinstance(v, list) or len(v) != 3:
+        raise ProtocolError(f"{name}: expected 3 numbers")
+    return tuple(_num(x if x is not None else 0.0, -lim, lim, name) for x in v)  # type: ignore[return-value]
+
+
+def _token(v: Any, name: str) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, str) or not (8 <= len(v) <= 128) or not re.fullmatch(r"[A-Za-z0-9_-]+", v):
+        raise ProtocolError(f"{name}: malformed")
+    return v
+
+
+def _button_map(v: Any, name: str, as_bool: bool) -> dict:
+    if not isinstance(v, dict) or len(v) > MAX_BUTTONS:
+        raise ProtocolError(f"{name}: expected object with <= {MAX_BUTTONS} keys")
+    out = {}
+    for k, val in v.items():
+        if not isinstance(k, str) or not BUTTON_ID_RE.match(k):
+            raise ProtocolError(f"{name}: bad button id")
+        if as_bool:
+            if val not in (0, 1, True, False):
+                raise ProtocolError(f"{name}.{k}: expected 0/1")
+            out[k] = bool(val)
+        else:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 10**9:
+                raise ProtocolError(f"{name}.{k}: expected non-negative int")
+            out[k] = val
+    return out
+
+
+def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
+    if len(text.encode("utf-8", "replace")) > MAX_FRAME_BYTES:
+        raise ProtocolError("frame too large")
+    try:
+        d = json.loads(text)
+    except ValueError as e:
+        raise ProtocolError(f"bad json: {e}") from e
+    if not isinstance(d, dict):
+        raise ProtocolError("expected object")
+    t = d.get("t")
+    if t == "s":
+        o = d.get("o")
+        if o is None:
+            alpha = beta = gamma = None
+        else:
+            if not isinstance(o, list) or len(o) != 3:
+                raise ProtocolError("o: expected 3 values")
+            alpha = _num(o[0], 0.0, 360.0, "alpha", allow_none=True)
+            beta = _num(o[1], -180.0, 180.0, "beta", allow_none=True)
+            gamma = _num(o[2], -90.0, 90.0, "gamma", allow_none=True)
+        seq = d.get("seq")
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq <= 0:
+            raise ProtocolError("seq: expected positive int")
+        return SensorPacket(
+            seq=seq,
+            ts=_num(d.get("ts"), 0.0, 1e9, "ts"),  # type: ignore[arg-type]
+            alpha=alpha,
+            beta=beta,
+            gamma=gamma,
+            rr=_vec3(d.get("rr", [0, 0, 0]), 5000.0, "rr"),
+            g=_vec3(d.get("g", [0, 0, 0]), 50.0, "g"),
+            buttons=_button_map(d.get("b", {}), "b", as_bool=True),
+            counters=_button_map(d.get("c", {}), "c", as_bool=False),
+            scroll_delta=_num(d.get("sd", 0.0), -10000.0, 10000.0, "sd"),  # type: ignore[arg-type]
+        )
+    if t == "hello":
+        ver = d.get("ver")
+        if ver != PROTOCOL_VERSION:
+            raise ProtocolError("unsupported protocol version")
+        name = d.get("name", "phone")
+        if not isinstance(name, str):
+            raise ProtocolError("name: expected string")
+        return Hello(ver=ver, pair=_token(d.get("pair"), "pair"), token=_token(d.get("token"), "token"),
+                     name=name[:64])
+    if t == "ping":
+        return Ping()
+    if t == "bye":
+        return Bye()
+    raise ProtocolError("unknown message type")
+
+
+# --- server -> phone -------------------------------------------------------
+
+def welcome_message(device_token: str) -> str:
+    return json.dumps({"t": "welcome", "device_token": device_token})
+
+
+def state_message(*, conn: bool, power: bool, phase: str, recenter: float, idle_hz: int,
+                  accessibility: bool, ui: dict) -> str:
+    return json.dumps({"t": "state", "conn": conn, "power": power, "phase": phase,
+                       "recenter": round(recenter, 3), "idle_hz": idle_hz,
+                       "accessibility": accessibility, "ui": ui})
+
+
+def layout_message(layout_dict: dict) -> str:
+    return json.dumps({"t": "layout", **layout_dict})
+
+
+def theme_changed_message() -> str:
+    return json.dumps({"t": "theme_changed"})
+
+
+def err_message(code: str, msg: str) -> str:
+    return json.dumps({"t": "err", "code": code, "msg": msg})
+
+
+def pong_message() -> str:
+    return json.dumps({"t": "pong"})
