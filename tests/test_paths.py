@@ -20,8 +20,17 @@ def test_resource_dir_uses_meipass_when_frozen(monkeypatch, tmp_path):
 
 
 def test_packaged_resources_all_exist():
-    """Guards against shipping a bundle whose defaults were never collected."""
+    """Checks the packaged resources exist in the source tree. This runs unfrozen
+    and never sees a real bundle; the bundle equivalent is enforced by
+    `packaging/build.sh`, which runs the built binary and checks its output."""
     d = paths.resource_dir()
     for rel in ("defaults/pointer.json", "defaults/layout.json", "defaults/theme.css",
                 "web/index.html", "web/app.js"):
         assert (d / rel).is_file(), rel
+
+
+def test_resource_dir_falls_back_when_frozen_without_meipass(monkeypatch):
+    """Defensive: `frozen` without `_MEIPASS` should not crash."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    assert (paths.resource_dir() / "defaults" / "pointer.json").exists()

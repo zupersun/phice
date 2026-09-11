@@ -9,7 +9,12 @@ import sys
 
 from phice.cli import main
 
+
+def default_argv(argv: list[str]) -> list[str]:
+    """Double-clicking passes no arguments and must start the menu bar."""
+    return argv[1:] or ["run"]
+
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    argv = sys.argv[1:] or ["run"]
-    sys.exit(main(argv))
+    sys.exit(main(default_argv(sys.argv)))
