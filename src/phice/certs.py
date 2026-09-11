@@ -146,6 +146,13 @@ def ensure_server_cert(paths: CertPaths, host: str, ips: list[str] | None = None
             .add_extension(x509.SubjectAlternativeName(alt), critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(x509.ExtendedKeyUsage([x509.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+            # RFC 5280 requires an AKI on issued certificates; OpenSSL 3.x strict
+            # verification rejects the chain without it.
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(
+                    ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value),
+                critical=False)
             .sign(ca_key, hashes.SHA256()))
     _write_private(paths.server_key, key)
     _write_cert(paths.server_crt, cert)
