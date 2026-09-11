@@ -77,7 +77,8 @@ class Runtime:
         self.pairing = PairingManager(paths.devices_json)
         self.state = ServerState(paths=paths, pairing=self.pairing, engine=self.engine,
                                  layout=self.layout, config=self.config)
-        self.server = PhiceServer(self.state, "0.0.0.0", tls_port, self.host)
+        self.server = PhiceServer(self.state, "0.0.0.0", tls_port, self.host,
+                                  extra_origin_hosts=self._extra_origin_hosts)
         self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
                                  debug_cursor=self._debug_cursor,
                                  ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths))
@@ -152,6 +153,10 @@ class Runtime:
         await self.server.push_theme_changed()
 
     # ----- urls -------------------------------------------------------------
+
+    def _extra_origin_hosts(self) -> list[str]:
+        """Names beyond <host>.local that the page may legitimately be loaded from."""
+        return local_ipv4s()
 
     def _urls(self) -> tuple[str, str, bool, str | None, str | None]:
         """(ca, pair, show_ca, ca_alt, pair_alt) -- primaries first, notes after.

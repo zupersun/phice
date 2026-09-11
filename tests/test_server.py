@@ -193,3 +193,22 @@ async def test_malformed_packets_do_not_kill_the_session(rig, client_ssl):
         assert msgs[-1]["t"] == "pong"
     finally:
         await rig.server.stop()
+
+
+async def test_websocket_accepts_origins_for_every_name_in_the_cert(rig, client_ssl):
+    """The page is reached by IP as often as by <host>.local, and the Origin it
+    reports back must be accepted for both. A rejected origin 403s the socket,
+    which the phone shows as a blank page."""
+    rig.server._extra_origin_hosts = lambda: ["10.0.0.5"]
+    port = await start(rig)
+    try:
+        for origin in (f"https://localhost:{port}", "https://10.0.0.5", f"https://10.0.0.5:{port}"):
+            # A completed handshake is the assertion: a bad origin raises here.
+            ws = await connect(f"wss://localhost:{port}/ws", ssl=client_ssl,
+                               additional_headers={"Origin": origin})
+            await ws.close()
+        with pytest.raises(InvalidHandshake):
+            await connect(f"wss://localhost:{port}/ws", ssl=client_ssl,
+                          additional_headers={"Origin": "https://10.0.0.9"})
+    finally:
+        await rig.server.stop()

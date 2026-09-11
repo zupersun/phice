@@ -6,6 +6,7 @@ import json
 import logging
 import ssl
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
@@ -87,11 +88,17 @@ class ServerState:
 
 
 class PhiceServer:
-    def __init__(self, state: ServerState, host: str, port: int, tls_host: str):
+    def __init__(self, state: ServerState, host: str, port: int, tls_host: str,
+                 extra_origin_hosts: Callable[[], list[str]] | None = None):
         self.state = state
         self.host = host
         self.port = port
         self.tls_host = tls_host
+        # The page may be reached by any name in the certificate's SANs -- an IP
+        # address or a tailnet FQDN, not just <host>.local -- and the Origin it
+        # sends back must be accepted. Evaluated per request because addresses
+        # change with DHCP.
+        self._extra_origin_hosts = extra_origin_hosts or (lambda: [])
         self._server = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ticker: asyncio.Task | None = None
@@ -102,8 +109,9 @@ class PhiceServer:
         path = request.path.split("?", 1)[0]
         if path == "/ws":
             origin = request.headers.get("Origin")
-            allowed = {f"https://{n}:{self.port}" for n in san_names(self.tls_host)}
-            allowed |= {f"https://{n}" for n in san_names(self.tls_host)}
+            hosts = [*san_names(self.tls_host), *self._extra_origin_hosts()]
+            allowed = {f"https://{n}:{self.port}" for n in hosts}
+            allowed |= {f"https://{n}" for n in hosts}
             if origin is not None and origin not in allowed:
                 log.warning("rejecting websocket with origin %s", origin)
                 return _resp(HTTPStatus.FORBIDDEN, b"bad origin", "text/plain")
