@@ -1,0 +1,34 @@
+[project]
+name = "phice"
+version = "0.1.0"
+description = "Use an iPhone as a Wii-remote-style air mouse for macOS"
+requires-python = ">=3.12"
+dependencies = [
+    "websockets>=13",
+    "cryptography>=42",
+    "rumps>=0.4.0",
+    "qrcode>=7.4",
+    "pyobjc-framework-Quartz>=10",
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-ApplicationServices>=10",
+]
+
+[project.scripts]
+phice = "phice.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/phice"]
+
+[tool.ruff]
+line-length = 104
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

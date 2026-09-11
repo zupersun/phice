@@ -1,0 +1,12 @@
+{
+  "id": "session-1789104381901",
+  "startedAt": "2026-09-11T05:26:21.901Z",
+  "cwd": "/Users/jasper/airmouse",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  }
+}
