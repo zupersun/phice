@@ -5,6 +5,7 @@ import urllib.request
 import pytest
 
 from phice.certs import CertPaths, ca_der, ca_mobileconfig, ensure_ca
+from phice.paths import DEFAULTS_DIR
 from phice.setup_server import SetupServer, check_html, qr_svg, setup_html
 
 
@@ -130,3 +131,26 @@ def test_new_code_button_reaches_the_runtime(setup):
     req = urllib.request.Request(f"http://127.0.0.1:{setup}/debug/newcode", method="POST")
     with urllib.request.urlopen(req, timeout=5) as r:
         assert r.status == 200
+
+
+def test_panel_theme_control_touches_only_the_data_theme_attribute(setup):
+    """Appearance is a data-theme attribute on <html>, set from JS exactly like the
+    dot classes are for status -- no colour, size, or inline style may live here."""
+    html = get(setup, "/panel")[2].decode()
+    assert "style=" not in html
+    assert 'localStorage.getItem("phice-theme")' in html
+    assert 'setAttribute("data-theme"' in html
+    assert 'removeAttribute("data-theme")' in html
+    # "light" and "dark" are written; "system" means the attribute is simply absent.
+    assert '"light"' in html and '"dark"' in html and '"system"' in html
+
+
+def test_panel_css_has_a_light_base_and_dark_overrides():
+    """panel.css must own the palette for every appearance state: a light default,
+    dark under prefers-color-scheme, and both explicit data-theme overrides."""
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "color-scheme: light" in css
+    assert "color-scheme: dark" in css
+    assert "@media (prefers-color-scheme: dark)" in css
+    assert ':root[data-theme="dark"]' in css
+    assert ':root[data-theme="light"]' in css

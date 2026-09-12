@@ -26,7 +26,7 @@ def test_partial_config_uses_defaults(tmp_path):
     p.write_text(json.dumps({"gain_x_px_per_deg": 40, "auto_activate": True}))
     cfg = load_pointer_config(p)
     assert cfg.gain_x_px_per_deg == 40.0
-    assert cfg.gain_y_px_per_deg == 25.0
+    assert cfg.gain_y_px_per_deg == 18.0
     assert cfg.idle_hz == 10
 
 

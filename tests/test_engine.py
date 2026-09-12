@@ -3,12 +3,30 @@ import json
 
 import pytest
 
-from phice.config import PointerConfig
+from phice.config import OneEuroConfig, PointerConfig
 from phice.cursor_backend import FakeCursor, Rect
 from phice.engine import Phase, PointerEngine
 from phice.protocol import parse_client_message
 
 DT = 1 / 60
+
+
+#: These tests measure mechanics -- how far a given turn moves the cursor, where
+#: a deadzone bites, how a scroll delta converts. They pin the settings they were
+#: written against so that retuning how the product *feels* cannot silently
+#: rewrite what they assert. The shipped defaults are covered by test_config.
+MECHANICS = {
+    "gain_x_px_per_deg": 25.0,
+    "gain_y_px_per_deg": 25.0,
+    "deadzone_dps": 0.5,
+    "scroll_gain": 1.5,
+    "one_euro": OneEuroConfig(min_cutoff=1.0, beta=0.02),
+}
+
+
+def tuned(**kw) -> PointerConfig:
+    """A PointerConfig on the pinned mechanics; keyword arguments still win."""
+    return PointerConfig(**{**MECHANICS, **kw})
 
 
 class Clock:
@@ -25,7 +43,7 @@ class Rig:
     def __init__(self, cfg=None, cursor=None, roles=None):
         self.clock = Clock(10.0)
         self.cursor = cursor or FakeCursor()
-        self.engine = PointerEngine(cfg or PointerConfig(), self.cursor, self.clock)
+        self.engine = PointerEngine(cfg or tuned(), self.cursor, self.clock)
         if roles:
             self.engine.set_roles(roles)
         self.engine.connected()
@@ -35,7 +53,8 @@ class Rig:
         self.buttons = {b: False for b in ids}
         self.counters = {b: 0 for b in ids}
 
-    def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0, advance=DT, **presses):
+    def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0, advance=DT,
+             sp=None, **presses):
         """Send one packet. presses: left=True/False etc. changes button state (counts presses)."""
         for bid, pressed in presses.items():
             if pressed and not self.buttons.get(bid, False):
@@ -46,7 +65,8 @@ class Rig:
         text = json.dumps({"t": "s", "seq": self.seq, "ts": self.clock.t, "o": [alpha, beta, gamma],
                            "rr": list(rr), "g": [0, 0, 9.8],
                            "b": {k: int(v) for k, v in self.buttons.items()},
-                           "c": dict(self.counters), "sd": sd})
+                           "c": dict(self.counters), "sd": sd,
+                           **({} if sp is None else {"sp": sp})})
         self.engine.handle(parse_client_message(text))
 
     def stream(self, n, **kw):
@@ -63,14 +83,14 @@ class Rig:
 
 
 def test_off_ignores_motion():
-    r = Rig()
+    r = Rig(tuned())
     assert r.engine.phase == Phase.OFF
     r.stream(30, alpha=350)
     assert r.cursor.events == []
 
 
 def test_power_on_keeps_cursor_where_it_is():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     assert r.engine.phase == Phase.ON
     assert r.cursor.events == []
@@ -79,7 +99,7 @@ def test_power_on_keeps_cursor_where_it_is():
 
 def test_turning_right_moves_right_by_gain():
     # expo off: this measures the linear gain, not the feel curve.
-    r = Rig(PointerConfig(expo=0.0))
+    r = Rig(tuned(expo=0.0))
     r.power()
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)  # 10 degrees to the right, filter settles within ~1 s
@@ -89,7 +109,7 @@ def test_turning_right_moves_right_by_gain():
 
 
 def test_raising_top_edge_moves_up():
-    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r = Rig(tuned(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(5, beta=0)
     r.stream(90, beta=10)
@@ -98,7 +118,7 @@ def test_raising_top_edge_moves_up():
 
 
 def test_invert_y_flips_vertical():
-    r = Rig(PointerConfig(invert_y=True, expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r = Rig(tuned(invert_y=True, expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(5, beta=0)
     r.stream(90, beta=10)
@@ -116,7 +136,7 @@ def test_roll_never_moves_cursor():
 
 
 def test_yaw_wraps_across_zero():
-    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r = Rig(tuned(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(90, alpha=5)  # 5 degrees left of the power-on aim
     assert r.cursor.x == pytest.approx(700 - 125, abs=3)
@@ -125,7 +145,7 @@ def test_yaw_wraps_across_zero():
 
 
 def test_deadzone_discards_slow_creep():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.stream(5, alpha=0)
     r.stream(60, alpha=359, rr=(0.1, 0, 0))
@@ -133,7 +153,7 @@ def test_deadzone_discards_slow_creep():
 
 
 def test_touch_freezes_then_pending_becomes_down():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.stream(5, alpha=0)
     r.send(alpha=0, left=True)  # press at t0
@@ -153,7 +173,7 @@ def test_touch_freezes_then_pending_becomes_down():
 
 
 def test_short_tap_is_a_click_at_the_touch_position():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.send(left=False)
@@ -162,7 +182,7 @@ def test_short_tap_is_a_click_at_the_touch_position():
 
 
 def test_missed_tap_is_recovered_from_counter():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.counters["left"] += 1  # page counted a press, but the packet with b.left=1 was lost
     r.send()
@@ -170,7 +190,7 @@ def test_missed_tap_is_recovered_from_counter():
 
 
 def test_reconnect_does_not_replay_stale_counters():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.engine.connected()  # e.g. the phone's socket dropped and came back
     r.counters.update({"left": 7, "right": 3})  # counters kept climbing in the page
@@ -181,7 +201,7 @@ def test_reconnect_does_not_replay_stale_counters():
 
 
 def test_right_button_clicks():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(right=True)
     r.tick(0.1)
@@ -190,7 +210,7 @@ def test_right_button_clicks():
 
 
 def test_double_click_count():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.send(left=False)
@@ -204,7 +224,7 @@ def test_double_click_count():
 
 
 def test_chord_produces_no_click_and_cancels_on_early_release():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.send(right=True)  # 16 ms later: chord
@@ -219,7 +239,7 @@ def test_chord_produces_no_click_and_cancels_on_early_release():
 
 
 def test_chord_hold_snaps_to_center_and_suppresses_clicks():
-    r = Rig(PointerConfig(expo=0.0))
+    r = Rig(tuned(expo=0.0))
     r.power()
     r.send(left=True)
     r.send(right=True)
@@ -244,7 +264,7 @@ def test_chord_hold_snaps_to_center_and_suppresses_clicks():
 
 
 def test_two_buttons_outside_chord_window_both_click():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.tick(0.1)
@@ -255,18 +275,18 @@ def test_two_buttons_outside_chord_window_both_click():
 
 
 def test_scroll_natural_and_inverted():
-    r = Rig(PointerConfig(scroll_natural=True))
+    r = Rig(tuned(scroll_natural=True))
     r.power()
     r.send(scroll=True, sd=-10)
     assert [(e.kind, e.dy) for e in r.cursor.events] == [("scroll", -15)]
-    r2 = Rig(PointerConfig(scroll_natural=False))
+    r2 = Rig(tuned(scroll_natural=False))
     r2.power()
     r2.send(scroll=True, sd=-10)
     assert r2.cursor.events[0].dy == 15
 
 
 def test_scroll_carries_fractions():
-    r = Rig(PointerConfig(scroll_gain=0.5, scroll_natural=True))
+    r = Rig(tuned(scroll_gain=0.5, scroll_natural=True))
     r.power()
     r.send(scroll=True, sd=1)
     r.send(scroll=True, sd=1)
@@ -274,7 +294,7 @@ def test_scroll_carries_fractions():
 
 
 def test_scroll_touch_freezes_cursor():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.stream(5, alpha=0)
     r.send(alpha=0, scroll=True)
@@ -312,7 +332,7 @@ def test_recenter_button_role_snaps_immediately():
 def test_edge_clamp_and_edge_drag():
     """Relative mapping: overshoot past an edge is discarded, so turning back
     moves immediately. That is the 're-grip' property absolute mapping gives up."""
-    r = Rig(PointerConfig(mapping="relative"), cursor=FakeCursor(x=1435, y=100))
+    r = Rig(tuned(mapping="relative"), cursor=FakeCursor(x=1435, y=100))
     r.power()
     r.stream(5, alpha=0)
     r.stream(60, alpha=350)  # far past the right edge
@@ -335,7 +355,7 @@ def test_multi_display_crossing_and_clamp():
 
 
 def test_timeout_releases_buttons_and_turns_off():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.tick(0.1)
@@ -346,7 +366,7 @@ def test_timeout_releases_buttons_and_turns_off():
 
 
 def test_disconnect_releases_buttons():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.send(left=True)
     r.tick(0.1)
@@ -358,7 +378,7 @@ def test_disconnect_releases_buttons():
 
 
 def test_kill_switch():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.engine.set_enabled(False)
     assert r.engine.phase == Phase.OFF
@@ -370,7 +390,7 @@ def test_kill_switch():
 
 
 def test_sequence_regression_is_dropped():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.seq = 50
     r.send(left=True)
@@ -381,21 +401,21 @@ def test_sequence_regression_is_dropped():
 
 
 def test_auto_deactivate_at_rest():
-    r = Rig(PointerConfig(rest_seconds=1.0))
+    r = Rig(tuned(rest_seconds=1.0))
     r.power()
     r.stream(70, beta=0, gamma=0, rr=(0.5, 0.5, 0.5))
     assert r.engine.phase == Phase.OFF
 
 
 def test_auto_deactivate_can_be_disabled():
-    r = Rig(PointerConfig(auto_deactivate=False))
+    r = Rig(tuned(auto_deactivate=False))
     r.power()
     r.stream(120, beta=0, gamma=0, rr=(0.5, 0.5, 0.5))
     assert r.engine.phase == Phase.ON
 
 
 def test_auto_activate_after_pickup_but_not_after_manual_off():
-    r = Rig(PointerConfig(auto_activate=True))
+    r = Rig(tuned(auto_activate=True))
     r.stream(5, beta=0)  # resting: arms pickup
     r.stream(25, beta=40)  # lifted for > 300 ms
     assert r.engine.phase == Phase.ON
@@ -410,7 +430,7 @@ def test_auto_activate_after_pickup_but_not_after_manual_off():
 
 
 def test_gap_in_packets_resets_filter_without_jump():
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     r.stream(5, alpha=0)
     r.send(alpha=350, advance=0.5)  # half-second gap: filters reset, no delta applied
@@ -420,7 +440,7 @@ def test_gap_in_packets_resets_filter_without_jump():
 
 
 def test_set_config_applies_new_gain():
-    r = Rig(PointerConfig(expo=0.0))
+    r = Rig(tuned(expo=0.0))
     r.power()
     r.stream(5, alpha=0)
     r.engine.set_config(PointerConfig(gain_x_px_per_deg=50.0, expo=0.0))
@@ -432,7 +452,7 @@ def test_set_config_applies_new_gain():
 def test_change_callback_fires_on_phase_change():
     """A power tap now passes through RECENTER_HOLD: the press starts the hold and
     the release decides it was a tap."""
-    r = Rig()
+    r = Rig(tuned())
     seen = []
     r.engine.on_change = lambda: seen.append(r.engine.phase)
     r.power()
@@ -444,7 +464,7 @@ def test_absolute_edge_clamp_parks_then_returns():
     """Parks at the edge while you aim past it, and comes back when you aim back.
     Overshoot beyond edge_slack_px is absorbed, so the return is prompt rather
     than requiring you to un-aim the whole excursion."""
-    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=1435, y=100))
+    r = Rig(tuned(expo=0.0), cursor=FakeCursor(x=1435, y=100))
     r.power()
     r.stream(5, alpha=0)
     r.stream(60, alpha=350)  # +10 deg -> 1685, clamped to the edge
@@ -485,7 +505,7 @@ def test_recenter_hold_does_not_trigger_auto_deactivate():
     """Holding both buttons still for a second IS the recenter gesture, and it is
     also exactly what rest detection looks for: flat, still, for rest_seconds.
     Recentering used to snap to centre and then immediately power off."""
-    r = Rig(PointerConfig(recenter_hold_ms=1000, rest_seconds=1.0, auto_deactivate=True))
+    r = Rig(tuned(recenter_hold_ms=1000, rest_seconds=1.0, auto_deactivate=True))
     r.power()
     r.send(left=True)
     r.send(right=True)
@@ -501,7 +521,7 @@ def test_holding_any_button_prevents_auto_deactivate():
     """A held button means the user is demonstrably holding the device. Aiming at
     a screen keeps the phone near-flat, which is geometrically the same as lying
     on a desk, so button state is the discriminator."""
-    r = Rig(PointerConfig(rest_seconds=0.5, auto_deactivate=True))
+    r = Rig(tuned(rest_seconds=0.5, auto_deactivate=True))
     r.power()
     r.send(left=True)
     r.stream(120, beta=0, gamma=0, rr=(0.1, 0.1, 0.1))
@@ -514,9 +534,9 @@ def test_holding_any_button_prevents_auto_deactivate():
 def test_expo_amplifies_large_sweeps_but_not_small_ones():
     """Spanning the screen should not demand a huge arm movement, while small
     corrections stay one-to-one for precision."""
-    linear = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=720, y=450,
+    linear = Rig(tuned(expo=0.0), cursor=FakeCursor(x=720, y=450,
                   display_list=[Rect(0, 0, 4000, 2000)]))
-    curved = Rig(PointerConfig(expo=1.0), cursor=FakeCursor(x=720, y=450,
+    curved = Rig(tuned(expo=1.0), cursor=FakeCursor(x=720, y=450,
                   display_list=[Rect(0, 0, 4000, 2000)]))
     for r in (linear, curved):
         r.power()
@@ -536,7 +556,7 @@ def test_expo_amplifies_large_sweeps_but_not_small_ones():
 
 
 def test_expo_zero_is_exactly_linear():
-    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r = Rig(tuned(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)
@@ -587,14 +607,14 @@ def test_waking_anchors_at_the_current_cursor_position():
 
 
 def test_wake_on_any_button_can_be_disabled():
-    r = Rig(PointerConfig(wake_on_any_button=False), roles=_no_power_roles())
+    r = Rig(tuned(wake_on_any_button=False), roles=_no_power_roles())
     r.send(left=True)
     assert r.engine.phase == Phase.OFF
 
 
 def test_power_button_still_works_when_present():
     """Existing layouts that keep a power button must behave as before."""
-    r = Rig()
+    r = Rig(tuned())
     r.power()
     assert r.engine.phase == Phase.ON
     r.power()
@@ -603,7 +623,7 @@ def test_power_button_still_works_when_present():
 
 def test_power_tap_turns_it_off():
     """A quick tap is the off switch; a hold is recenter. They must not collide."""
-    r = Rig()
+    r = Rig(tuned())
     r.send(left=True)
     r.send(left=False)      # wake
     assert r.engine.phase == Phase.ON
@@ -626,7 +646,7 @@ def test_power_hold_recenters_without_turning_off():
 
 
 def test_power_hold_reports_progress_for_the_animation():
-    r = Rig()
+    r = Rig(tuned())
     r.send(left=True)
     r.send(left=False)
     assert r.engine.recenter_progress() == 0.0
@@ -639,7 +659,7 @@ def test_power_hold_reports_progress_for_the_animation():
 
 
 def test_power_while_off_turns_it_on():
-    r = Rig()
+    r = Rig(tuned())
     assert r.engine.phase == Phase.OFF
     r.send(power=True)
     assert r.engine.phase == Phase.ON
@@ -665,7 +685,7 @@ def test_edge_overshoot_is_bounded_so_the_cursor_peels_off_quickly():
 
 def test_a_little_edge_stick_remains():
     """Some stick is wanted: a hair of overshoot should not instantly unstick."""
-    r = Rig(PointerConfig(edge_slack_px=24.0), cursor=FakeCursor(x=1435, y=400))
+    r = Rig(tuned(edge_slack_px=24.0), cursor=FakeCursor(x=1435, y=400))
     r.send(left=True)
     r.send(left=False)
     r.stream(30, alpha=0)
@@ -678,9 +698,62 @@ def test_a_little_edge_stick_remains():
 
 def test_edge_slack_does_not_affect_the_interior():
     """Nothing about the slack may perturb normal aiming away from an edge."""
-    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r = Rig(tuned(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.send(left=True)
     r.send(left=False)
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)
     assert r.cursor.x == pytest.approx(700 + 250, abs=3)
+
+
+def _scrolled(rig):
+    return sum(e.dy for e in rig.cursor.events if e.kind == "scroll")
+
+
+def test_holding_the_scroll_strip_away_from_centre_scrolls_continuously():
+    """The strip is a rate control: a finger held still off-centre keeps
+    scrolling, which a touch delta can never express."""
+    r = Rig(tuned(scroll_natural=True))
+    r.power()
+    r.stream(30, scroll=True, sp=1.0, sd=0)
+    assert _scrolled(r) > 0, "a finger held off centre must keep scrolling"
+
+
+def test_scroll_speed_rises_with_distance_from_the_centre():
+    """Near the middle it should barely move; at the end it should fly."""
+    rates = []
+    for pos in (0.62, 0.78, 1.0):
+        r = Rig(tuned(scroll_natural=True))
+        r.power()
+        r.stream(30, scroll=True, sp=pos, sd=0)
+        rates.append(_scrolled(r))
+    assert rates[0] < rates[1] < rates[2], f"speed must grow with distance: {rates}"
+    assert rates[0] > 0, "just off centre must still scroll, gently"
+
+
+def test_the_centre_of_the_strip_never_scrolls():
+    """A dead band, so resting a finger in the middle does not creep."""
+    r = Rig(tuned(scroll_natural=True))
+    r.power()
+    r.stream(60, scroll=True, sp=0.5, sd=0)
+    assert _scrolled(r) == 0
+
+
+def test_scroll_stops_when_the_finger_lifts():
+    r = Rig(tuned(scroll_natural=True))
+    r.power()
+    r.stream(20, scroll=True, sp=1.0, sd=0)
+    r.send(scroll=False, sp=None, sd=0)
+    before = _scrolled(r)
+    r.stream(40, scroll=False, sp=None, sd=0)
+    assert _scrolled(r) == before, "releasing must stop it dead"
+
+
+def test_the_two_halves_scroll_opposite_ways():
+    top = Rig(tuned(scroll_natural=True))
+    top.power()
+    top.stream(30, scroll=True, sp=0.0, sd=0)
+    bottom = Rig(tuned(scroll_natural=True))
+    bottom.power()
+    bottom.stream(30, scroll=True, sp=1.0, sd=0)
+    assert _scrolled(top) * _scrolled(bottom) < 0

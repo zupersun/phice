@@ -1,19 +1,69 @@
 /* Phice control panel. Edit freely: the window reloads it live, exactly like the
-   phone's theme.css. Nothing here is compiled into the app. */
+   phone's theme.css. Nothing here is compiled into the app.
+
+   Appearance: the page sets data-theme="light" or "dark" on <html> for an explicit
+   choice, or leaves it unset to follow the system via prefers-color-scheme. This
+   file is the only place that decides what those states look like. */
 :root {
+  --bg: #eef2f6;
+  --fg: #161d25;
+  --dim: #5c6b7a;
+  --accent: #007aff;
+  --accent-ink: #ffffff;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --bad: #ff3b30;
+  --card: #ffffff;
+  --line: #dde3ea;
+  --btn-bg: #e3e8ee;
+  --code-size: 46px;
+  --radius: 14px;
+  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b0f14;
+    --fg: #e8eef5;
+    --dim: #7b8a9c;
+    --accent: #3ea6ff;
+    --accent-ink: #04121f;
+    --ok: #30d158;
+    --warn: #ffb340;
+    --bad: #ff453a;
+    --card: #121820;
+    --line: #1f2833;
+    --btn-bg: #1b242f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
   --bg: #0b0f14;
   --fg: #e8eef5;
   --dim: #7b8a9c;
   --accent: #3ea6ff;
+  --accent-ink: #04121f;
   --ok: #30d158;
   --warn: #ffb340;
   --bad: #ff453a;
   --card: #121820;
   --line: #1f2833;
-  --code-size: 46px;
-  --radius: 14px;
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --btn-bg: #1b242f;
   color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #eef2f6;
+  --fg: #161d25;
+  --dim: #5c6b7a;
+  --accent: #007aff;
+  --accent-ink: #ffffff;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --bad: #ff3b30;
+  --card: #ffffff;
+  --line: #dde3ea;
+  --btn-bg: #e3e8ee;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
 body {
@@ -22,6 +72,7 @@ body {
   font: 14px/1.55 var(--font);
   -webkit-user-select: none; user-select: none;
 }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
 .sub { color: var(--dim); margin: 0 0 18px; font-size: 13px; }
 
@@ -46,14 +97,16 @@ h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
 
 button {
   font: inherit; font-size: 13px; font-weight: 600;
-  background: #1b242f; color: var(--fg);
+  background: var(--btn-bg); color: var(--fg);
   border: 1px solid var(--line); border-radius: 10px;
   padding: 9px 14px; margin: 4px 6px 0 0;
 }
-button.primary { background: var(--accent); color: #04121f; border-color: transparent; }
+button.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
 button:hover { border-color: var(--dim); }
 button:active { transform: translateY(1px); }
 button[hidden] { display: none; }
+
+#theme { font-size: 12px; padding: 6px 10px; margin: 0; }
 
 .note { color: var(--dim); font-size: 12px; margin: 12px 0 0; }
 

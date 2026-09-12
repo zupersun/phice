@@ -9,6 +9,7 @@
 
   const el = {
     body: document.body,
+    haptic: document.getElementById("haptic"),
     pad: document.getElementById("pad"),
     code: document.getElementById("code"),
     theme: document.getElementById("theme"),
@@ -24,6 +25,7 @@
     pressed: new Map(),          // id -> bool
     counters: new Map(),         // id -> press count
     scrollDelta: 0,
+    scrollPos: null,   // where the finger is along the strip, 0..1
     orientation: null,
     rate: [0, 0, 0],
     gravity: [0, 0, 9.8],
@@ -195,7 +197,7 @@
     if (!b) return;
     if (pressed && !state.pressed.get(id)) {
       state.counters.set(id, (state.counters.get(id) || 0) + 1);
-      if (navigator.vibrate) navigator.vibrate(8);
+      haptic();
     }
     state.pressed.set(id, pressed);
     b.el.dataset.pressed = pressed ? "1" : "0";
@@ -205,7 +207,10 @@
   function setScrollThumb(b, clientY) {
     const r = b.el.getBoundingClientRect();
     if (!r.height) return;
+    // Clamped, so dragging past either end pins it there -- which is what makes
+    // holding at the end mean "keep scrolling" rather than "stop".
     const pos = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    state.scrollPos = pos;
     b.el.style.setProperty("--scroll-pos", pos.toFixed(4));
   }
 
@@ -244,7 +249,10 @@
       const stillHeld = [...state.touches.values()].some((r) => r.id === rec.id);
       if (!stillHeld) {
         const b = state.buttons.get(rec.id);
-        if (b && b.role === "scroll") b.el.style.removeProperty("--scroll-pos");
+        if (b && b.role === "scroll") {
+          b.el.style.removeProperty("--scroll-pos");   // springs back, per the theme
+          state.scrollPos = null;                      // and stops any edge scrolling
+        }
         setPressed(rec.id, false);
       }
     }
@@ -324,6 +332,19 @@
     state.hz = state.motionTimes.length;
   }
 
+  // iOS has no Vibration API. Flipping a switch-style checkbox taps the Taptic
+  // Engine, and WebKit only fires it for a click that arrives via the label --
+  // clicking the input from script does nothing. Apple restricted this in
+  // iOS 26.5, so on newer phones it is expected to do nothing at all; there is
+  // no way to detect that from the page, and nothing else is available.
+  function haptic() {
+    if (!state.haptics) return;
+    try {
+      if (el.haptic && el.haptic.firstElementChild) el.haptic.click();
+      else if (navigator.vibrate) navigator.vibrate(8);
+    } catch (_) { /* never let feedback break input */ }
+  }
+
   function hapticCaps() {
     const c = [];
     if (typeof navigator.vibrate === "function") c.push("vibrate");
@@ -351,6 +372,7 @@
       rr: state.rate.map((v) => Math.round(v * 100) / 100),
       g: state.gravity.map((v) => Math.round(v * 100) / 100),
       b, c, sd: Math.round(sd * 100) / 100,
+      sp: state.scrollPos,
       hz: state.hz,
     }));
   }

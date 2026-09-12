@@ -150,7 +150,7 @@ class PointerEngine:
         if self._phase in ACTIVE_PHASES:
             self._apply_motion(p, now)
         if self._phase in MOTION_PHASES and "scroll" not in self._woke_on:
-            self._apply_scroll(p)
+            self._apply_scroll(p, now)
         self._update_rest(p, now)
         self.tick(now)
 
@@ -356,6 +356,7 @@ class PointerEngine:
         self._last_ts: float | None = None
         self._carry = [0.0, 0.0]
         self._scroll_carry = 0.0
+        self._scroll_at: float | None = None   # last packet with a finger down
         self._anchor: tuple[float, float] | None = None
         self._anchor_pos: tuple[float, float] = (0.0, 0.0)
 
@@ -471,15 +472,40 @@ class PointerEngine:
         self._backend.move_to(cx, cy)
         self._reset_motion()
 
-    def _apply_scroll(self, p: SensorPacket) -> None:
-        if p.scroll_delta == 0:
-            return
+    def _apply_scroll(self, p: SensorPacket, now: float) -> None:
         direction = 1.0 if self._cfg.scroll_natural else -1.0
-        self._scroll_carry += p.scroll_delta * self._cfg.scroll_gain * direction
+        moved = p.scroll_delta * self._cfg.scroll_gain * direction
+        moved += self._rate_scroll(p, now) * direction
+        if moved == 0.0:
+            return
+        self._scroll_carry += moved
         step = int(self._scroll_carry)
         if step:
             self._scroll_carry -= step
             self._backend.scroll(step)
+
+    def _rate_scroll(self, p: SensorPacket, now: float) -> float:
+        """The strip is a rate control, not a displacement one.
+
+        Speed comes from how far the finger sits from the centre: barely moving
+        near the middle, fastest at either end, and holding still keeps scrolling
+        at whatever rate that position asks for. A touch delta cannot express
+        that -- a finger parked away from the centre is not moving.
+        """
+        cfg = self._cfg
+        last, self._scroll_at = self._scroll_at, now
+        if p.scroll_pos is None or cfg.scroll_rate_px_per_s <= 0.0:
+            return 0.0
+        offset = p.scroll_pos - 0.5           # -0.5 (top) .. +0.5 (bottom)
+        span = 0.5 - cfg.scroll_deadzone
+        depth = (abs(offset) - cfg.scroll_deadzone) / span if span > 0 else 0.0
+        if depth <= 0.0:
+            return 0.0
+        sign = 1.0 if offset > 0 else -1.0
+        # A first sighting has no interval to integrate over, and a long gap
+        # (a stalled connection) must not dump a burst of scrolling at once.
+        dt = 0.0 if last is None else min(now - last, 0.1)
+        return sign * min(depth, 1.0) ** cfg.scroll_rate_expo * cfg.scroll_rate_px_per_s * dt
 
     # ----- rest / pickup ----------------------------------------------------
 

@@ -57,7 +57,16 @@ PANEL_HTML = """<!doctype html>
 <meta charset="utf-8">
 <title>Phice</title>
 <link rel="stylesheet" href="/panel.css">
-<h1>Phice</h1>
+<script>
+try {
+  var t = localStorage.getItem("phice-theme");
+  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+} catch (e) { /* private browsing, etc.: falls back to system appearance */ }
+</script>
+<div class="topbar">
+  <h1>Phice</h1>
+  <button id="theme">Theme</button>
+</div>
 <p class="sub" id="sub">Checking\u2026</p>
 
 <div class="card" id="pair-card">
@@ -121,6 +130,29 @@ document.getElementById("newcode").onclick = async () => {
 document.getElementById("grant").onclick = async () => {
   await fetch("/debug/grant"); refresh();
 };
+
+function themeMode() {
+  try {
+    const t = localStorage.getItem("phice-theme");
+    return (t === "light" || t === "dark") ? t : "system";
+  } catch (e) { return "system"; }
+}
+function applyTheme(mode) {
+  if (mode === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", mode);
+  try {
+    if (mode === "system") localStorage.removeItem("phice-theme");
+    else localStorage.setItem("phice-theme", mode);
+  } catch (e) { /* private browsing, etc.: the choice just won't stick */ }
+  document.getElementById("theme").textContent =
+    "Theme: " + mode.charAt(0).toUpperCase() + mode.slice(1);
+}
+document.getElementById("theme").onclick = () => {
+  const order = ["system", "light", "dark"];
+  applyTheme(order[(order.indexOf(themeMode()) + 1) % order.length]);
+};
+applyTheme(themeMode());
+
 refresh();
 setInterval(refresh, 1000);
 </script>

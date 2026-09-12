@@ -40,6 +40,7 @@
     buttons: new Map(),   // id -> {role, pressed, count, el, rect}
     touches: new Map(),   // touch identifier -> {id, lastY}
     scrollDelta: 0,
+    scrollPos: null,   // where the finger is along the strip, 0..1
     motionTimes: [],
     hz: 0,
     orientation: null,    // [alpha, beta, gamma]
@@ -137,7 +138,10 @@
   function setScrollThumb(b, clientY) {
     const r = b.el.getBoundingClientRect();
     if (!r.height) return;
+    // Clamped, so dragging past either end pins it there -- which is what makes
+    // holding at the end mean "keep scrolling" rather than "stop".
     const pos = Math.min(1, Math.max(0, (clientY - r.top) / r.height));
+    state.scrollPos = pos;
     b.el.style.setProperty("--scroll-pos", pos.toFixed(4));
   }
 
@@ -177,7 +181,10 @@
       const stillHeld = [...state.touches.values()].some((r) => r.id === rec.id);
       if (!stillHeld) {
         const b = state.buttons.get(rec.id);
-        if (b && b.role === "scroll") b.el.style.removeProperty("--scroll-pos");
+        if (b && b.role === "scroll") {
+          b.el.style.removeProperty("--scroll-pos");   // springs back, per the theme
+          state.scrollPos = null;                      // and stops any edge scrolling
+        }
         setPressed(rec.id, false);
       }
     }
@@ -274,6 +281,7 @@
       t: "s", seq: state.seq, ts: now / 1000,
       o: state.orientation, rr: state.rotationRate, g: state.gravity,
       b, c, sd: Math.round(sd * 100) / 100,
+      sp: state.scrollPos,
       hz: state.hz,
     }));
   }

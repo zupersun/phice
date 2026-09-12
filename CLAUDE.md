@@ -187,7 +187,17 @@ These were each discovered the hard way. Changing them re-breaks the product.
 14. **Every transport must push engine state back.** The phone draws its LED, its recenter
     bar and every reaction from `state` messages. The WebRTC transport shipped without
     wiring `engine.on_change`, so each button worked and looked dead.
-15. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
+16. **`RTCTransport.close()` must be safe to interrupt.** aiortc's `close()` creates its
+    internal "closed" future first and resolves it last, so a cancellation landing
+    mid-close leaves that future pending forever and every later `close()` on the same
+    peer connection deadlocks. `asyncio.shield` keeps the cleanup running while the
+    cancellation still reaches the caller. Symptom: the test suite hangs at random, in
+    whichever test happens to cancel `start_webrtc` at the wrong moment.
+17. **The scroll strip is a rate control, not a displacement one.** Speed comes from the
+    finger's distance from the centre, so holding still off-centre keeps scrolling. Running
+    displacement scrolling alongside it doubles the input and feels choppy, which is why
+    `scroll_gain` ships at 0.
+18. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
     be *started* inside the user gesture -- awaiting the first puts the second outside it.
     Check the returned value, and then check that events actually arrive: a listener that
     is attached but never fires is indistinguishable from a working one.

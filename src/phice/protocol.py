@@ -54,6 +54,10 @@ class SensorPacket:
     buttons: dict[str, bool]
     counters: dict[str, int]
     scroll_delta: float
+    #: Where the finger sits along the scroll strip, 0 (top) to 1 (bottom),
+    #: or None when nothing is touching it. A delta cannot express a finger
+    #: that is held still at the end of the track.
+    scroll_pos: float | None = None
     hz: float = 0.0
 
     @property
@@ -142,6 +146,7 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
             buttons=_button_map(d.get("b", {}), "b", as_bool=True),
             counters=_button_map(d.get("c", {}), "c", as_bool=False),
             scroll_delta=_num(d.get("sd", 0.0), -10000.0, 10000.0, "sd"),  # type: ignore[arg-type]
+            scroll_pos=_num(d.get("sp"), 0.0, 1.0, "sp", allow_none=True),
             hz=_num(d.get("hz", 0.0), 0.0, 1000.0, "hz"),  # type: ignore[arg-type]
         )
     if t == "hello":

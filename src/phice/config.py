@@ -46,8 +46,12 @@ def _sub(d: dict, key: str) -> dict:
 
 @dataclass(frozen=True)
 class OneEuroConfig:
-    min_cutoff: float = 1.0
-    beta: float = 0.02
+    #: Tuned the standard way: min_cutoff low enough that a held-still hand
+    #: does not shake the cursor, beta high enough that deliberate movement
+    #: is not laggy. The previous 1.0/0.02 was both at once -- jitter passed
+    #: through at rest and real movement was over-smoothed.
+    min_cutoff: float = 0.4
+    beta: float = 0.12
     d_cutoff: float = 1.0
 
 
@@ -68,8 +72,8 @@ class UIConfig:
 @dataclass(frozen=True)
 class PointerConfig:
     version: int = 1
-    gain_x_px_per_deg: float = 25.0
-    gain_y_px_per_deg: float = 25.0
+    gain_x_px_per_deg: float = 18.0
+    gain_y_px_per_deg: float = 18.0
     invert_y: bool = False
     mapping: str = "absolute"
     expo: float = 1.2
@@ -77,15 +81,24 @@ class PointerConfig:
     expo_max: float = 4.0
     edge_slack_px: float = 24.0
     one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
-    deadzone_dps: float = 0.5
+    deadzone_dps: float = 0.0
     accel: AccelConfig = field(default_factory=AccelConfig)
     freeze_ms_on_touch: int = 120
     freeze_ms_on_release: int = 60
     chord_window_ms: int = 50
     recenter_hold_ms: int = 650
     double_click_s: float = 0.5
-    scroll_gain: float = 1.5
+    #: Displacement scrolling from the raw touch delta. Off by default: the strip
+    #: is a rate control, and adding displacement on top of it reads as doubled.
+    scroll_gain: float = 0.0
     scroll_natural: bool = False
+    #: The strip scrolls at a rate set by how far the finger is from its centre:
+    #: a dead band in the middle so resting a finger does nothing, then speed
+    #: rising to scroll_rate_px_per_s at the ends. Raise the exponent for a
+    #: gentler middle, lower it for a more linear feel.
+    scroll_deadzone: float = 0.06
+    scroll_rate_px_per_s: float = 620.0
+    scroll_rate_expo: float = 2.4
     auto_activate: bool = False
     wake_on_any_button: bool = True
     auto_deactivate: bool = True
@@ -152,8 +165,8 @@ class PointerConfig:
             raise ConfigError("signaling_url: expected an https:// URL")
         return cls(
             version=_int(d, "version", 1, 1, 1),
-            gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 25.0, 0.1, 500.0),
-            gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 25.0, 0.1, 500.0),
+            gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 18.0, 0.1, 500.0),
+            gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 18.0, 0.1, 500.0),
             invert_y=_bool(d, "invert_y", False),
             mapping=mapping,
             expo=_num(d, "expo", 1.2, 0.0, 10.0),
@@ -161,11 +174,11 @@ class PointerConfig:
             expo_max=_num(d, "expo_max", 4.0, 1.0, 20.0),
             edge_slack_px=_num(d, "edge_slack_px", 24.0, 0.0, 2000.0),
             one_euro=OneEuroConfig(
-                min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
-                beta=_num(oe, "beta", 0.02, 0.0, 10.0),
+                min_cutoff=_num(oe, "min_cutoff", 0.4, 0.01, 100.0),
+                beta=_num(oe, "beta", 0.12, 0.0, 10.0),
                 d_cutoff=_num(oe, "d_cutoff", 1.0, 0.01, 100.0),
             ),
-            deadzone_dps=_num(d, "deadzone_dps", 0.5, 0.0, 90.0),
+            deadzone_dps=_num(d, "deadzone_dps", 0.0, 0.0, 90.0),
             accel=AccelConfig(
                 enabled=_bool(ac, "enabled", False),
                 threshold_dps=_num(ac, "threshold_dps", 40.0, 0.0, 1000.0),
@@ -177,8 +190,11 @@ class PointerConfig:
             chord_window_ms=_int(d, "chord_window_ms", 50, 0, 500),
             recenter_hold_ms=_int(d, "recenter_hold_ms", 650, 100, 10000),
             double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
-            scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
+            scroll_gain=_num(d, "scroll_gain", 0.0, 0.0, 50.0),
             scroll_natural=_bool(d, "scroll_natural", False),
+            scroll_deadzone=_num(d, "scroll_deadzone", 0.06, 0.0, 0.49),
+            scroll_rate_px_per_s=_num(d, "scroll_rate_px_per_s", 620.0, 0.0, 20000.0),
+            scroll_rate_expo=_num(d, "scroll_rate_expo", 2.4, 1.0, 6.0),
             auto_activate=_bool(d, "auto_activate", False),
             wake_on_any_button=_bool(d, "wake_on_any_button", True),
             auto_deactivate=_bool(d, "auto_deactivate", True),

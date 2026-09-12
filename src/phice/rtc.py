@@ -243,4 +243,13 @@ class RTCTransport:
             self._tick.cancel()
         self.engine.on_change = None
         self.engine.disconnected()
-        await self.pc.close()
+        # Shielded: aiortc's close() sets its internal "closed" future as its
+        # very first step and only resolves it at the very end. If whoever
+        # called us gets cancelled while this await is in flight, an
+        # unshielded pc.close() would abandon that future half-set -- and
+        # every later close() on the same pc (there is always at least one
+        # more, from the caller that is tearing this transport down) would
+        # then await a future nobody will ever resolve, forever. Shielding
+        # lets the cancellation still propagate to our caller while this
+        # cleanup finishes in the background.
+        await asyncio.shield(self.pc.close())

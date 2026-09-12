@@ -14,11 +14,38 @@
   --accent: #3ea6ff;
   --danger: #ff5a5f;
 
+  /* Corner radii are concentric: an inner shape's radius is its container's
+     radius minus the gap between them, so every curve shares a centre. Change
+     --screen-radius to match your device and the rest follows. */
+  --screen-radius: 55px;
+  --pad-margin: 8px;
+  --pad-radius: calc(var(--screen-radius) - var(--pad-margin));
+  --btn-inset: 12px;
+
+  /* Scroll thumb snap-back. A real damped spring (mass 1, stiffness 520,
+     damping 32 -> 4.4% overshoot, 312ms), sampled into linear() because CSS has
+     no spring of its own. Raise damping for a calmer return, stiffness for a
+     faster one. */
+  --scroll-spring: linear(
+    0.0000 0.0%, 0.0121 2.3%, 0.0450 4.5%, 0.0935 6.8%,
+    0.1533 9.1%, 0.2208 11.4%, 0.2929 13.6%, 0.3668 15.9%,
+    0.4405 18.2%, 0.5124 20.5%, 0.5810 22.7%, 0.6455 25.0%,
+    0.7052 27.3%, 0.7597 29.5%, 0.8087 31.8%, 0.8522 34.1%,
+    0.8904 36.4%, 0.9233 38.6%, 0.9514 40.9%, 0.9748 43.2%,
+    0.9941 45.5%, 1.0097 47.7%, 1.0218 50.0%, 1.0309 52.3%,
+    1.0375 54.5%, 1.0419 56.8%, 1.0444 59.1%, 1.0453 61.4%,
+    1.0450 63.6%, 1.0437 65.9%, 1.0416 68.2%, 1.0390 70.5%,
+    1.0360 72.7%, 1.0328 75.0%, 1.0295 77.3%, 1.0261 79.5%,
+    1.0228 81.8%, 1.0197 84.1%, 1.0167 86.4%, 1.0140 88.6%,
+    1.0114 90.9%, 1.0091 93.2%, 1.0071 95.5%, 1.0053 97.7%,
+    1.0038 100.0%);
+  --scroll-spring-ms: 312ms;
+
   --btn-bg: #1c2530;
   --btn-bg-pressed: #2c3d4f;
   --btn-fg: #9fb3c8;
   --btn-border: 1px solid #38485a;
-  --btn-radius: 22px;
+  --btn-radius: calc(var(--pad-radius) - var(--btn-inset));
   --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #2a3644 inset;
 
   --scroll-bg: #141c25;
@@ -26,6 +53,8 @@
   --scroll-thumb-active: #3ea6ff;
   --scroll-thumb-w: 4px;
   --scroll-thumb-h: 34%;
+  /* Leeway at both ends: the thumb must stop short of the track's edge. */
+  --scroll-inset: 7px;
 
   /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
   --led-off: #ff453a;
@@ -103,7 +132,15 @@ body[data-state="off"] #header { opacity: 0.35; }
   /* No header: the pad takes the full height below the safe area. */
   height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top));
   padding-top: env(safe-area-inset-top);
-  margin: 0 calc(env(safe-area-inset-left) + 8px) 0 calc(env(safe-area-inset-right) + 8px);
+  margin: 0 calc(env(safe-area-inset-left) + var(--pad-margin))
+          0 calc(env(safe-area-inset-right) + var(--pad-margin));
+  border-radius: var(--pad-radius);
+}
+
+/* Apple's corners are continuous curvature, not circular arcs. Browsers that
+   have corner-shape get the real thing; the rest keep plain rounding. */
+@supports (corner-shape: squircle) {
+  #pad, .btn { corner-shape: squircle; }
 }
 
 .btn {
@@ -140,11 +177,13 @@ body[data-state="off"] #header { opacity: 0.35; }
   height: var(--scroll-thumb-h);
   border-radius: 999px;
   background: var(--scroll-thumb);
-  /* Centre it on the finger, but never let it leave the strip. */
-  top: clamp(0px, calc(var(--scroll-pos, 0.5) * 100% - var(--scroll-thumb-h) / 2),
-             calc(100% - var(--scroll-thumb-h)));
+  /* Centre it on the finger, but stop short of both ends rather than letting it
+     touch: a thumb flush against the edge reads as broken. */
+  top: clamp(var(--scroll-inset),
+             calc(var(--scroll-pos, 0.5) * 100% - var(--scroll-thumb-h) / 2),
+             calc(100% - var(--scroll-thumb-h) - var(--scroll-inset)));
   transform: translateX(-50%);
-  transition: top 220ms cubic-bezier(0.22, 1, 0.36, 1), background 120ms linear;
+  transition: top var(--scroll-spring-ms) var(--scroll-spring), background 120ms linear;
 }
 /* While dragging, follow the finger with no easing, then ease back on release. */
 .role-scroll[data-pressed="1"]::after {
