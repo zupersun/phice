@@ -505,7 +505,9 @@ class PointerEngine:
         # A first sighting has no interval to integrate over, and a long gap
         # (a stalled connection) must not dump a burst of scrolling at once.
         dt = 0.0 if last is None else min(now - last, 0.1)
-        return sign * min(depth, 1.0) ** cfg.scroll_rate_expo * cfg.scroll_rate_px_per_s * dt
+        span_px = max(0.0, cfg.scroll_rate_px_per_s - cfg.scroll_min_px_per_s)
+        rate = cfg.scroll_min_px_per_s + span_px * min(depth, 1.0) ** cfg.scroll_rate_expo
+        return sign * rate * dt
 
     # ----- rest / pickup ----------------------------------------------------
 

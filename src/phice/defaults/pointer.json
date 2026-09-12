@@ -42,7 +42,8 @@
     "haptics": true,
     "keep_awake": "always"
   },
-  "scroll_deadzone": 0.06,
-  "scroll_rate_px_per_s": 620.0,
-  "scroll_rate_expo": 2.4
+  "scroll_deadzone": 0.035,
+  "scroll_rate_px_per_s": 2400.0,
+  "scroll_rate_expo": 1.7,
+  "scroll_min_px_per_s": 90.0
 }

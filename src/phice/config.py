@@ -96,9 +96,12 @@ class PointerConfig:
     #: a dead band in the middle so resting a finger does nothing, then speed
     #: rising to scroll_rate_px_per_s at the ends. Raise the exponent for a
     #: gentler middle, lower it for a more linear feel.
-    scroll_deadzone: float = 0.06
-    scroll_rate_px_per_s: float = 620.0
-    scroll_rate_expo: float = 2.4
+    scroll_deadzone: float = 0.035
+    #: Any deflection past the dead band scrolls at least this fast, so nudging
+    #: the thumb off centre does something visible instead of nothing.
+    scroll_min_px_per_s: float = 90.0
+    scroll_rate_px_per_s: float = 2400.0
+    scroll_rate_expo: float = 1.7
     auto_activate: bool = False
     wake_on_any_button: bool = True
     auto_deactivate: bool = True
@@ -192,9 +195,10 @@ class PointerConfig:
             double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
             scroll_gain=_num(d, "scroll_gain", 0.0, 0.0, 50.0),
             scroll_natural=_bool(d, "scroll_natural", False),
-            scroll_deadzone=_num(d, "scroll_deadzone", 0.06, 0.0, 0.49),
-            scroll_rate_px_per_s=_num(d, "scroll_rate_px_per_s", 620.0, 0.0, 20000.0),
-            scroll_rate_expo=_num(d, "scroll_rate_expo", 2.4, 1.0, 6.0),
+            scroll_deadzone=_num(d, "scroll_deadzone", 0.035, 0.0, 0.49),
+            scroll_min_px_per_s=_num(d, "scroll_min_px_per_s", 90.0, 0.0, 5000.0),
+            scroll_rate_px_per_s=_num(d, "scroll_rate_px_per_s", 2400.0, 0.0, 20000.0),
+            scroll_rate_expo=_num(d, "scroll_rate_expo", 1.7, 0.2, 6.0),
             auto_activate=_bool(d, "auto_activate", False),
             wake_on_any_button=_bool(d, "wake_on_any_button", True),
             auto_deactivate=_bool(d, "auto_deactivate", True),

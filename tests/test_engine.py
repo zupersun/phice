@@ -731,6 +731,15 @@ def test_scroll_speed_rises_with_distance_from_the_centre():
     assert rates[0] > 0, "just off centre must still scroll, gently"
 
 
+def test_a_small_shift_off_centre_scrolls_straight_away():
+    """Nudging the thumb must do something visible. A pure exponent curve gives
+    almost nothing near the middle, so there is a floor under it."""
+    r = Rig(tuned(scroll_natural=True))
+    r.power()
+    r.stream(30, scroll=True, sp=0.58, sd=0)   # a little below the middle
+    assert _scrolled(r) > 0, "a small shift must scroll, gently"
+
+
 def test_the_centre_of_the_strip_never_scrolls():
     """A dead band, so resting a finger in the middle does not creep."""
     r = Rig(tuned(scroll_natural=True))
