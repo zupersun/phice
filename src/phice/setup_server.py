@@ -150,11 +150,15 @@ class SetupServer:
                  urls: Callable[[], tuple[str, str, bool, str | None, str | None]],
                  debug_cursor: Callable[[], dict] | None = None,
                  ca_mobileconfig: Callable[[], bytes] | None = None,
-                 grant_accessibility: Callable[[], bool] | None = None):
+                 grant_accessibility: Callable[[], bool] | None = None,
+                 pair_code: Callable[[], str] | None = None,
+                 signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
         self._ca_mobileconfig = ca_mobileconfig
         self._grant_accessibility = grant_accessibility
+        self._pair_code = pair_code
+        self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
         self._httpd: ThreadingHTTPServer | None = None
@@ -201,6 +205,21 @@ class SetupServer:
                     self._send(200,
                                setup_html(ca_url, pair_url, show_ca, alt_ca, alt_pair).encode(),
                                "text/html; charset=utf-8")
+                elif path == "/pair" and self._is_local():
+                    code = outer._pair_code() if outer._pair_code else ""
+                    url = outer._signaling_url() if outer._signaling_url else ""
+                    body = (f"<!doctype html><meta charset=utf-8><title>Phice pairing</title>"
+                            f"<style>{SETUP_CSS}"
+                            f".code{{font-size:64px;letter-spacing:16px;text-align:center;"
+                            f"margin:26px 0 18px;color:#3ea6ff;font-weight:700}}</style>"
+                            f"<div class='card' style='max-width:460px;margin:0 auto'>"
+                            f"<h1>Pair your phone</h1>"
+                            f"<p class='muted'>Open <b>{url}/app</b> on your iPhone and "
+                            f"enter this code. Nothing is installed on the phone.</p>"
+                            f"<div class='code'>{code or '······'}</div>"
+                            f"<p class='muted'>Single use, and it expires after five "
+                            f"minutes. Reload for the current one.</p></div>")
+                    self._send(200, body.encode(), "text/html; charset=utf-8")
                 elif path == "/check":
                     ca_url, pair_url, *_ = outer._urls()  # one call: each mints a token
                     self._send(200, check_html(ca_url, pair_url).encode(),

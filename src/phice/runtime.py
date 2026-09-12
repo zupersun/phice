@@ -29,8 +29,10 @@ from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .pairing import PairingManager
 from .paths import Paths
+from .rtc import RTCTransport
 from .server import PhiceServer, ServerState
 from .setup_server import SetupServer
+from .signaling import SignalingClient, SignalingError, new_pairing_code
 
 log = logging.getLogger("phice")
 
@@ -54,6 +56,7 @@ class Status:
     device_name: str = ""
     phase: str = "disconnected"
     accessibility: bool = False
+    pair_code: str = ""
     enabled: bool = True
     tls_url: str = ""
     error: str = ""
@@ -62,6 +65,7 @@ class Status:
         with self.lock:
             return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
                         accessibility=self.accessibility, enabled=self.enabled,
+                        pair_code=self.pair_code,
                         tls_url=self.tls_url, error=self.error)
 
     def update(self, **kw) -> None:
@@ -93,8 +97,12 @@ class Runtime:
         self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
                                  debug_cursor=self._debug_cursor,
                                  ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths),
-                                 grant_accessibility=lambda: accessibility_trusted(prompt=True))
+                                 grant_accessibility=lambda: accessibility_trusted(prompt=True),
+                                 pair_code=lambda: self.status.read()["pair_code"],
+                                 signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
+        self.rtc: RTCTransport | None = None
+        self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._watcher = FileWatcher([paths.pointer_json, paths.layout_json, paths.theme_css])
@@ -160,10 +168,14 @@ class Runtime:
         self.status.update(error="")
         log.info("layout.json reloaded")
         await self.server.push_layout(layout)
+        if self.rtc:
+            await self.rtc.push_layout(path.read_text())
 
     async def _apply_theme(self, path: Path) -> None:
         log.info("theme.css reloaded")
         await self.server.push_theme_changed()
+        if self.rtc:
+            await self.rtc.push_theme(path.read_text())
 
     # ----- urls -------------------------------------------------------------
 
@@ -287,7 +299,50 @@ class Runtime:
 
     # ----- lifecycle --------------------------------------------------------
 
+    async def start_webrtc(self) -> None:
+        """Publish an offer under a short code and wait for a phone to answer.
+
+        Loops: a pairing code is single use, so once a phone connects the next one
+        needs a fresh offer. No certificate is involved at any point -- WebRTC
+        verifies the peers by DTLS fingerprint, which is the whole reason this
+        transport exists.
+        """
+        client = SignalingClient(self.config.signaling_url)
+        while True:
+            self.rtc = RTCTransport(engine=self.engine,
+                                    layout_json=self.paths.layout_json.read_text(),
+                                    theme_css=self.paths.theme_css.read_text(),
+                                    ice_servers=self.rtc_ice_servers)
+            offer = await self.rtc.create_offer()
+            code = new_pairing_code()
+            try:
+                await client.publish_offer(code, offer)
+            except SignalingError as e:
+                log.error("could not reach the pairing service: %s", e)
+                self.status.update(error=str(e))
+                await self.rtc.close()
+                await asyncio.sleep(10)
+                continue
+            self.status.update(pair_code=code, error="")
+            log.info("pairing code %s -- enter it at %s/app", code, self.config.signaling_url)
+            try:
+                answer = await client.wait_for_answer(code)
+            except SignalingError:
+                await self.rtc.close()
+                continue  # the code expired unused; mint another
+            await self.rtc.accept_answer(answer)
+            self.status.update(pair_code="")
+            while self.rtc.pc.connectionState not in ("failed", "closed", "disconnected"):
+                await asyncio.sleep(1.0)
+            await self.rtc.close()
+
     async def _main(self) -> None:
+        if self.config.transport == "webrtc":
+            self.http_port = await asyncio.to_thread(self.setup.start)
+            log.info("webrtc transport; pairing code at http://127.0.0.1:%d/pair",
+                     self.http_port)
+            await asyncio.gather(self.start_webrtc(), self._watch_config(), self._status_loop())
+            return
         if self.config.cert_mode == "tailscale":
             # Prefer the name recorded by `phice tailscale`. The GUI app's CLI
             # cannot be reached from the launch agent (no GUI bootstrap

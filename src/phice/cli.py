@@ -162,6 +162,21 @@ def _program_arguments(python: str, config_dir: Path) -> list[str]:
     return [*head, "--config-dir", str(config_dir), "run"]
 
 
+def cmd_webrtc(args) -> int:
+    """Switch to the hosted page and the WebRTC transport."""
+    paths = _paths(args)
+    data = json.loads(paths.pointer_json.read_text())
+    data["transport"] = "webrtc"
+    if args.signaling_url:
+        data["signaling_url"] = args.signaling_url.rstrip("/")
+    paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"transport set to 'webrtc' in {paths.pointer_json}\n"
+          f"phone page:   {data['signaling_url']}/app\n"
+          f"pairing code: http://127.0.0.1:{args.http_port}/pair\n"
+          "Restart for this to take effect: phice install")
+    return 0
+
+
 def _plist(python: str, config_dir: Path, logs: Path) -> str:
     """Built with plistlib rather than string interpolation: paths can contain
     characters that are not XML-safe."""
@@ -223,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tls-port", type=int, default=8443)
     ap.add_argument("--http-port", type=int, default=8080)
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    wrtc = sub.add_parser("webrtc", help="use the hosted page and WebRTC transport")
+    wrtc.add_argument("--signaling-url", default=None)
+    wrtc.set_defaults(func=cmd_webrtc)
 
     run = sub.add_parser("run", help="run the app")
     run.add_argument("--backend", choices=["quartz", "fake"], default="quartz")

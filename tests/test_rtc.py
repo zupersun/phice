@@ -137,3 +137,50 @@ async def test_disconnect_releases_held_buttons(transport):
     await asyncio.sleep(0.5)
     assert transport.cursor.held == set()
     await transport.close()
+
+
+async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
+    """In webrtc transport the runtime must publish an offer and expose the code
+    without minting any certificate: the whole point is that none is needed."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["transport"] = "webrtc"
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    published: dict = {}
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def publish_offer(self, code, offer):
+            published["code"] = code
+            published["offer"] = offer
+
+        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+            await asyncio.sleep(3600)  # never answers, in this test
+
+    monkeypatch.setattr("phice.runtime.SignalingClient", FakeSignaling)
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt.rtc_ice_servers = ()  # loopback: no STUN round trip
+    task = asyncio.ensure_future(rt.start_webrtc())
+    try:
+        for _ in range(60):
+            if "code" in published:
+                break
+            await asyncio.sleep(0.1)
+        assert len(published.get("code", "")) == 6, "a six character pairing code"
+        assert published["offer"]["type"] == "offer"
+        assert "a=candidate" in published["offer"]["sdp"], "non-trickle: candidates included"
+        assert rt.status.read()["pair_code"] == published["code"]
+    finally:
+        task.cancel()
+        if rt.rtc:
+            await rt.rtc.close()
