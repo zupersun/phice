@@ -102,6 +102,7 @@ class Runtime:
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
+        self._pair_code: str = ""
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -338,7 +339,12 @@ class Runtime:
                                                  if self.rtc_ice_servers is not None
                                                  else ice))
             offer = await self.rtc.create_offer()
-            code = new_pairing_code()
+            # Keep the same code for the life of the process and republish a fresh
+            # offer under it. Minting a new one after every disconnect meant the
+            # user had to walk back to the Mac each time -- and the page's
+            # remembered code was always the dead one.
+            code = self._pair_code or new_pairing_code()
+            self._pair_code = code
             try:
                 await client.publish_offer(code, offer)
             except SignalingError as e:
@@ -355,7 +361,6 @@ class Runtime:
                 await self.rtc.close()
                 continue  # the code expired unused; mint another
             await self.rtc.accept_answer(answer)
-            self.status.update(pair_code="")
             while self.rtc.pc.connectionState not in ("failed", "closed", "disconnected"):
                 await asyncio.sleep(1.0)
             await self.rtc.close()

@@ -187,3 +187,53 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
         task.cancel()
         if rt.rtc:
             await rt.rtc.close()
+
+
+async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
+    """Minting a new code after every disconnect sent the user back to the Mac
+    each time, and made the page's remembered code always the dead one."""
+    import json as _json
+
+    from phice.cursor_backend import FakeCursor
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["transport"] = "webrtc"
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    codes: list[str] = []
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            codes.append(code)
+
+        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+            # Fail immediately so the loop mints the next offer straight away.
+            from phice.signaling import SignalingError
+            raise SignalingError("timed out")
+
+    monkeypatch.setattr("phice.runtime.SignalingClient", FakeSignaling)
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt.rtc_ice_servers = ()
+    task = asyncio.ensure_future(rt.start_webrtc())
+    try:
+        for _ in range(80):
+            if len(codes) >= 2:
+                break
+            await asyncio.sleep(0.1)
+        assert len(codes) >= 2, "expected the loop to publish more than one offer"
+        assert len(set(codes)) == 1, f"the code must not change between offers: {codes}"
+    finally:
+        task.cancel()
+        if rt.rtc:
+            await rt.rtc.close()
