@@ -69,10 +69,51 @@
   --logo-height: 18px;
   --pad-bottom-margin: 12%;
   --pad-gap: 10px;
-  /* Longer than a tap: below this, pressing power reads as "off", not
-     "recentre", and must show none of the recentre animation. */
-  --recenter-delay: 170ms;
+  --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
+  --flash: #ffffff;
+}
+
+/* Light appearance. Chosen on the Mac and pushed down as data-appearance on the
+   root element; with no explicit choice the phone's own setting decides. Only
+   the palette changes -- every rule below is written against these names. */
+:root[data-appearance="light"],
+:root:not([data-appearance="dark"]):not([data-appearance="light"]) {
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-appearance="dark"]) {
+    --bg-off: #eef1f5;
+    --bg-on: #f7f9fb;
+    --fg: #141a21;
+    --fg-dim: #6b7a8c;
+    --btn-bg: #ffffff;
+    --btn-bg-pressed: #e3e9f0;
+    --btn-fg: #55647a;
+    --btn-border: 1px solid #d6dde5;
+    --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
+    --scroll-bg: #e6ebf1;
+    --scroll-thumb: #9aa8b8;
+    --power-bg: #ffffff;
+    --power-border: 1px solid #dde3ea;
+    --flash: #1a2330;
+  }
+}
+:root[data-appearance="light"] {
+  --bg-off: #eef1f5;
+  --bg-on: #f7f9fb;
+  --fg: #141a21;
+  --fg-dim: #6b7a8c;
+  --btn-bg: #ffffff;
+  --btn-bg-pressed: #e3e9f0;
+  --btn-fg: #55647a;
+  --btn-border: 1px solid #d6dde5;
+  --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
+  --scroll-bg: #e6ebf1;
+  --scroll-thumb: #9aa8b8;
+  --power-bg: #ffffff;
+  --power-border: 1px solid #dde3ea;
+  --flash: #1a2330;
 }
 
 * { box-sizing: border-box; }
@@ -99,21 +140,35 @@ body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
    --recenter-progress itself for the full duration, so it is smooth at 60fps and
    independent of how often the Mac sends state. Fingers cover the buttons and the
    LED while holding, so the whole surface has to carry the feedback. */
-body { --recenter-progress: 0; }
+body {
+  --recenter-progress: 0;
+  /* A share of the hold, not a fixed time: a deliberate tap to switch off can
+     easily last 250ms, and anything shorter than the full hold must show none
+     of the recentre animation. At the default 650ms hold this is ~290ms.
+     Declared here, not on :root, because the page sets --recenter-ms on body --
+     a var() resolves against the element the declaration sits on. */
+  --recenter-delay: calc(var(--recenter-ms, 650ms) * 0.45);
+  /* Releasing before the hold completes fades the brightening away instead of
+     cutting it. Background stays in this list: a second `transition` on body
+     would replace this declaration, not extend it. */
+  transition: background var(--dim-back-ms) ease-out,
+              --recenter-progress var(--recenter-drop-ms) ease-out;
+}
 body[data-state="hold"] {
   --recenter-progress: 1;
   /* Held back by --recenter-delay. Tapping power to switch off passes through
      this state for as long as the tap lasts, so without the delay every power
      off began the brightening and then cut it short -- a flicker, not a
      transition. The ramp still finishes at the same moment the Mac recentres. */
-  transition: --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
-              linear var(--recenter-delay);
+  transition: background var(--dim-back-ms) ease-out,
+              --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
+              ease-in var(--recenter-delay);
 }
 body[data-state="hold"] {
-  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
 }
 body[data-state="hold"] .btn {
-  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
   /* The base .btn rule transitions background over 60ms. Against a value that is
      already being interpolated every frame that only adds lag, so drop it here
      and let the property animation drive the colour directly. */

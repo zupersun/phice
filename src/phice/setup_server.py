@@ -11,6 +11,7 @@ import logging
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 import qrcode
 import qrcode.image.svg as qrsvg
@@ -65,7 +66,17 @@ try {
 </script>
 <div class="topbar">
   <h1>Phice</h1>
-  <button id="theme">Theme</button>
+  <div class="appearance">
+    <div class="seg" id="seg" role="radiogroup" aria-label="Appearance" tabindex="0">
+      <span class="knob" aria-hidden="true"></span>
+      <span class="stop" role="radio" data-v="system" aria-label="System"></span>
+      <span class="stop" role="radio" data-v="dark" aria-label="Dark"></span>
+      <span class="stop" role="radio" data-v="light" aria-label="Light"></span>
+    </div>
+    <div class="seg-labels" aria-hidden="true">
+      <span>System</span><span>Dark</span><span>Light</span>
+    </div>
+  </div>
 </div>
 <p class="sub" id="sub">Checking\u2026</p>
 
@@ -118,6 +129,8 @@ async function refresh() {
     document.getElementById("v-conn").textContent = d.connected ? "yes" : "no";
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
+    // Never yank the knob out from under a finger that is dragging it.
+    if (!dragging && d.appearance && d.appearance !== seg.dataset.v) applyTheme(d.appearance);
     dot(document.getElementById("d-ptr"),
         d.phase === "on" ? "ok" : d.phase === "off" ? "warn" : "");
   } catch (e) { /* the app is restarting; the next tick will catch up */ }
@@ -131,27 +144,70 @@ document.getElementById("grant").onclick = async () => {
   await fetch("/debug/grant"); refresh();
 };
 
-function themeMode() {
-  try {
-    const t = localStorage.getItem("phice-theme");
-    return (t === "light" || t === "dark") ? t : "system";
-  } catch (e) { return "system"; }
-}
+// Appearance: a three stop slider. The Mac owns the value -- the phone follows
+// it too -- so this reads from /debug/cursor and writes to /debug/appearance.
+// localStorage is only a cache, to place the knob before the first poll lands.
+const MODES = ["system", "dark", "light"];
+const seg = document.getElementById("seg");
+let dragging = false;
+
 function applyTheme(mode) {
-  if (mode === "system") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", mode);
+  const root = document.documentElement;
+  if (mode === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", mode);
+  seg.dataset.v = mode;
+  for (const s of seg.querySelectorAll(".stop")) {
+    s.setAttribute("aria-checked", String(s.dataset.v === mode));
+  }
   try {
     if (mode === "system") localStorage.removeItem("phice-theme");
     else localStorage.setItem("phice-theme", mode);
-  } catch (e) { /* private browsing, etc.: the choice just won't stick */ }
-  document.getElementById("theme").textContent =
-    "Theme: " + mode.charAt(0).toUpperCase() + mode.slice(1);
+  } catch (e) { /* private browsing: the cache just will not stick */ }
 }
-document.getElementById("theme").onclick = () => {
-  const order = ["system", "light", "dark"];
-  applyTheme(order[(order.indexOf(themeMode()) + 1) % order.length]);
+
+async function chooseTheme(mode) {
+  applyTheme(mode);
+  try { await fetch("/debug/appearance?v=" + mode); } catch (e) { /* retried by poll */ }
+}
+
+// Where the pointer sits along the track, 0..2. Only a number reaches the CSS;
+// what it means is the stylesheet's business.
+function indexAt(clientX) {
+  const r = seg.getBoundingClientRect();
+  if (!r.width) return 0;
+  return Math.min(2, Math.max(0, ((clientX - r.left) / r.width) * 3 - 0.5));
+}
+
+seg.addEventListener("pointerdown", (ev) => {
+  dragging = true;
+  seg.dataset.dragging = "1";
+  seg.setPointerCapture(ev.pointerId);
+  seg.style.setProperty("--knob-drag", indexAt(ev.clientX).toFixed(3));
+});
+seg.addEventListener("pointermove", (ev) => {
+  if (dragging) seg.style.setProperty("--knob-drag", indexAt(ev.clientX).toFixed(3));
+});
+const endDrag = (ev) => {
+  if (!dragging) return;
+  dragging = false;
+  delete seg.dataset.dragging;
+  seg.style.removeProperty("--knob-drag");
+  chooseTheme(MODES[Math.round(indexAt(ev.clientX))]);
 };
-applyTheme(themeMode());
+seg.addEventListener("pointerup", endDrag);
+seg.addEventListener("pointercancel", endDrag);
+seg.addEventListener("keydown", (ev) => {
+  const i = MODES.indexOf(seg.dataset.v || "system");
+  if (ev.key === "ArrowLeft" && i > 0) chooseTheme(MODES[i - 1]);
+  else if (ev.key === "ArrowRight" && i < 2) chooseTheme(MODES[i + 1]);
+  else return;
+  ev.preventDefault();
+});
+
+try {
+  const cached = localStorage.getItem("phice-theme");
+  applyTheme(cached === "light" || cached === "dark" ? cached : "system");
+} catch (e) { applyTheme("system"); }
 
 refresh();
 setInterval(refresh, 1000);
@@ -259,6 +315,7 @@ class SetupServer:
                  pair_code: Callable[[], str] | None = None,
                  panel_css: Callable[[], bytes] | None = None,
                  new_code: Callable[[], None] | None = None,
+                 set_appearance: Callable[[str], bool] | None = None,
                  signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
@@ -267,6 +324,7 @@ class SetupServer:
         self._pair_code = pair_code
         self._panel_css = panel_css
         self._new_code = new_code
+        self._set_appearance = set_appearance
         self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
@@ -339,6 +397,13 @@ class SetupServer:
                     # exactly like the phone's theme.
                     css = outer._panel_css() if outer._panel_css else b""
                     self._send(200, css, "text/css; charset=utf-8")
+                elif (path.startswith("/debug/appearance") and outer._set_appearance
+                      and self._is_local()):
+                    value = parse_qs(urlparse(self.path).query).get("v", [""])[0]
+                    ok = outer._set_appearance(value)
+                    self._send(200 if ok else 400,
+                               json.dumps({"ok": ok, "appearance": value}).encode(),
+                               "application/json")
                 elif path == "/debug/newcode" and outer._new_code and self._is_local():
                     outer._new_code()
                     self._send(200, b'{"ok":true}', "application/json")

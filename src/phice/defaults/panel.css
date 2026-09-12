@@ -14,6 +14,19 @@
   --warn: #ff9500;
   --bad: #ff3b30;
   --card: #ffffff;
+  --seg-track: #e3e9f0;
+  --seg-knob: #ffffff;
+  --seg-spring-ms: 312ms;
+  --seg-spring: linear(
+    0.0000 0.0%, 0.0223 3.1%, 0.0801 6.2%, 0.1614 9.4%,
+    0.2565 12.5%, 0.3575 15.6%, 0.4587 18.8%, 0.5557 21.9%,
+    0.6455 25.0%, 0.7263 28.1%, 0.7970 31.2%, 0.8573 34.4%,
+    0.9075 37.5%, 0.9481 40.6%, 0.9800 43.8%, 1.0043 46.9%,
+    1.0218 50.0%, 1.0337 53.1%, 1.0410 56.2%, 1.0446 59.4%,
+    1.0453 62.5%, 1.0439 65.6%, 1.0410 68.8%, 1.0372 71.9%,
+    1.0328 75.0%, 1.0282 78.1%, 1.0236 81.2%, 1.0193 84.4%,
+    1.0153 87.5%, 1.0117 90.6%, 1.0086 93.8%, 1.0060 96.9%,
+    1.0038 100.0%);
   --line: #dde3ea;
   --btn-bg: #e3e8ee;
   --code-size: 46px;
@@ -32,6 +45,8 @@
     --warn: #ffb340;
     --bad: #ff453a;
     --card: #121820;
+  --seg-track: #0d1319;
+  --seg-knob: #2d3a49;
     --line: #1f2833;
     --btn-bg: #1b242f;
     color-scheme: dark;
@@ -47,6 +62,8 @@
   --warn: #ffb340;
   --bad: #ff453a;
   --card: #121820;
+  --seg-track: #0d1319;
+  --seg-knob: #2d3a49;
   --line: #1f2833;
   --btn-bg: #1b242f;
   color-scheme: dark;
@@ -61,6 +78,8 @@
   --warn: #ff9500;
   --bad: #ff3b30;
   --card: #ffffff;
+  --seg-track: #e3e9f0;
+  --seg-knob: #ffffff;
   --line: #dde3ea;
   --btn-bg: #e3e8ee;
   color-scheme: light;
@@ -113,3 +132,60 @@ button[hidden] { display: none; }
 ol { margin: 8px 0 0; padding-left: 20px; color: var(--dim); font-size: 13px; }
 li { margin: 5px 0; }
 b { color: var(--fg); font-weight: 600; }
+
+/* Appearance: three stops on one track, draggable. The script publishes only a
+   number (--knob-drag, 0..2, while a finger is down); everything about how that
+   looks is decided here. With no drag in progress the knob's position comes
+   from data-theme on the root, so it also follows a change made elsewhere. */
+.appearance { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+
+.seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 132px;
+  height: 26px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--seg-track);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  touch-action: none;          /* the drag is ours, not the scroller's */
+}
+.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg .stop { position: relative; z-index: 1; border-radius: 999px; }
+
+.knob {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: calc((100% - 6px) / 3);
+  left: calc(3px + var(--knob-drag, var(--knob-i, 0)) * (100% - 6px) / 3);
+  border-radius: 999px;
+  background: var(--seg-knob);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  transition: left var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out);
+}
+/* Following a finger, so no easing: the knob must be under it, not chasing. */
+.seg[data-dragging] .knob { transition: none; }
+
+:root:not([data-theme]) .knob { --knob-i: 0; }
+:root[data-theme="dark"] .knob { --knob-i: 1; }
+:root[data-theme="light"] .knob { --knob-i: 2; }
+
+.seg-labels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 132px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--dim);
+  text-align: center;
+}
+.seg-labels span { padding-top: 1px; }
+:root:not([data-theme]) .seg-labels span:nth-child(1),
+:root[data-theme="dark"] .seg-labels span:nth-child(2),
+:root[data-theme="light"] .seg-labels span:nth-child(3) {
+  color: var(--fg);
+  font-weight: 600;
+}

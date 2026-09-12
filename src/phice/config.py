@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+APPEARANCES = ("system", "dark", "light")
 ROLES = frozenset({"left", "right", "scroll", "power", "clutch", "recenter"})
 SINGLETON_ROLES = frozenset({"left", "right", "scroll", "power"})
 BUTTON_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -67,6 +68,9 @@ class AccelConfig:
 class UIConfig:
     haptics: bool = True
     keep_awake: str = "always"
+    #: "system" | "dark" | "light". Chosen on the Mac and pushed to the phone, so
+    #: both surfaces match without the phone needing a setting of its own.
+    appearance: str = "system"
 
 
 @dataclass(frozen=True)
@@ -135,6 +139,9 @@ class PointerConfig:
         keep_awake = ui.get("keep_awake", "always")
         if keep_awake not in ("always", "on_only"):
             raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
+        appearance = ui.get("appearance", "system")
+        if appearance not in APPEARANCES:
+            raise ConfigError(f"ui.appearance: expected one of {', '.join(APPEARANCES)}")
         cert_mode = d.get("cert_mode", "auto")
         if cert_mode not in ("auto", "external", "tailscale"):
             raise ConfigError("cert_mode: expected 'auto', 'external' or 'tailscale'")
@@ -213,7 +220,8 @@ class PointerConfig:
             transport=transport,
             signaling_url=signaling_url,
             ice_servers=tuple(ice),
-            ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
+            ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake,
+                        appearance=appearance),
         )
 
 

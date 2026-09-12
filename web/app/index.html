@@ -14,23 +14,38 @@
      access could not be granted and the phone sent no orientation at all.
      It comes after #theme so it wins any tie. -->
 <style id="shell">
-  html,body{height:100%;margin:0;background:#000;color:#e8eef5;
+  /* The pairing chrome follows the appearance chosen on the Mac. Before a
+     connection exists there is nothing to ask, so it falls back to the phone's
+     own setting; once the Mac tells us, data-appearance overrides it. */
+  :root{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;--sh-field:#111a24;
+       --sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+  @media (prefers-color-scheme: light){
+    :root:not([data-appearance="dark"]){--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
+      --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
+  }
+  :root[data-appearance="light"]{--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
+    --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
+  :root[data-appearance="dark"]{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;
+    --sh-field:#111a24;--sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+  html,body{height:100%;margin:0;background:var(--sh-bg);color:var(--sh-fg);
             font:16px -apple-system,system-ui,sans-serif;
-            touch-action:none;-webkit-user-select:none;user-select:none}
+            touch-action:none;-webkit-user-select:none;user-select:none;
+            transition:background 200ms ease-out,color 200ms ease-out}
   .screen{position:fixed;inset:0;z-index:10;display:none;
           align-items:center;justify-content:center;
-          padding:24px;text-align:center;background:#000}
+          padding:24px;text-align:center;background:var(--sh-bg);
+          transition:background 200ms ease-out}
   body[data-screen="pair"] #screen-pair,
   body[data-screen="connecting"] #screen-connecting,
   body[data-screen="failed"] #screen-failed,
   body[data-screen="start"] #screen-start{display:flex}
   #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
-        background:#111a24;color:#e8eef5;border:1px solid #233;border-radius:12px;
-        padding:14px;text-transform:uppercase}
+        background:var(--sh-field);color:var(--sh-fg);border:1px solid var(--sh-line);
+        border-radius:12px;padding:14px;text-transform:uppercase}
   .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;
-                 border-radius:13px;background:#3ea6ff;color:#04121f;
+                 border-radius:13px;background:var(--sh-accent);color:var(--sh-ink);
                  font-weight:700;margin-top:16px}
-  .screen p{color:#6b7a8c;line-height:1.5}
+  .screen p{color:var(--sh-dim);line-height:1.5}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
   #link-note{position:fixed;left:0;right:0;bottom:8px;z-index:11;text-align:center;

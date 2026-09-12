@@ -142,10 +142,10 @@ class RTCTransport:
             # animation, no reaction to a press. The TLS transport has always
             # done it; leaving it out here made every button look dead even
             # though the engine was reacting.
-            self.engine.on_change = self._send_state
+            self.engine.on_change = self.notify_state
             channel.send(layout_message(json.loads(self.layout_json)))
             channel.send(theme_message(self.theme_css))
-            self._send_state()
+            self.notify_state()
             self._tick = asyncio.ensure_future(self._tick_loop())
 
         @channel.on("message")
@@ -182,7 +182,7 @@ class RTCTransport:
             self.engine.on_change = None
             self.engine.disconnected()
 
-    def _send_state(self) -> None:
+    def notify_state(self) -> None:
         """Tell the phone what the engine is doing.
 
         Called on every engine change, so it must be cheap and must never raise:
@@ -199,6 +199,7 @@ class RTCTransport:
                                   accessibility=self._accessibility(),
                                   ui={"haptics": cfg.ui.haptics,
                                       "keep_awake": cfg.ui.keep_awake,
+                                      "appearance": cfg.ui.appearance,
                                       "recenter_ms": cfg.recenter_hold_ms}))
         except Exception:  # a closing channel must not break an engine transition
             log.debug("state push failed", exc_info=True)
@@ -216,7 +217,7 @@ class RTCTransport:
                     prog = round(self.engine.recenter_progress(), 2)
                     if prog != last_recenter:
                         last_recenter = prog
-                        self._send_state()
+                        self.notify_state()
                 else:
                     last_recenter = -1.0
                 await asyncio.sleep(1 / (TICK_HZ_ACTIVE if active else TICK_HZ_IDLE))

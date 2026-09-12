@@ -5,6 +5,7 @@ The menu bar wraps this; `phice run --headless` uses it directly.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import logging.handlers
 import threading
@@ -24,7 +25,14 @@ from .certs import (
     local_ipv4s,
     tailscale_dns_name,
 )
-from .config import ConfigError, FileWatcher, PointerConfig, load_layout, load_pointer_config
+from .config import (
+    APPEARANCES,
+    ConfigError,
+    FileWatcher,
+    PointerConfig,
+    load_layout,
+    load_pointer_config,
+)
 from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .pairing import PairingManager
@@ -101,6 +109,7 @@ class Runtime:
                                  pair_code=lambda: self.status.read()["pair_code"],
                                  panel_css=lambda: self.paths.panel_css.read_bytes(),
                                  new_code=self.new_pair_code,
+                                 set_appearance=self.set_appearance,
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
@@ -161,6 +170,11 @@ class Runtime:
         self.status.update(error="")
         log.info("pointer.json reloaded")
         await self.server._send_state()
+        if self.rtc:
+            # Editing config while on the WebRTC transport used to reach the
+            # engine but never the phone, so appearance and recentre timing
+            # silently disagreed until the next reconnect.
+            self.rtc.notify_state()
 
     async def _apply_layout(self, path: Path) -> None:
         try:
@@ -225,6 +239,7 @@ class Runtime:
                         "channel": (self.rtc.channel.readyState
                                     if self.rtc.channel else "none"),
                         "state": self.rtc.pc.connectionState}
+        d["appearance"] = self.config.ui.appearance
         d["phone_url"] = f"{self.config.signaling_url}/app"
         d["transport"] = self.config.transport
         d["sensor_hz"] = round(self.rtc.hz if self.rtc and self.rtc.is_open
@@ -327,6 +342,24 @@ class Runtime:
         """
         cfg = self.config.ice_servers
         return tuple(cfg) if cfg else None
+
+    def set_appearance(self, value: str) -> bool:
+        """Persist the chosen appearance and tell the phone at once.
+
+        It goes into pointer.json rather than staying in memory because the Mac
+        is the single source of truth for it: a phone connecting later must get
+        the same answer as one already connected, and the choice has to survive
+        a restart. Writing the file also routes it through the normal reload
+        path, so there is one way config reaches the phone, not two.
+        """
+        if value not in APPEARANCES:
+            return False
+        path = self.paths.pointer_json
+        data = json.loads(path.read_text())
+        data.setdefault("ui", {})["appearance"] = value
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        self._dispatch(self._apply_pointer(path))
+        return True
 
     def new_pair_code(self) -> None:
         """Drop the current code and republish under a fresh one.

@@ -235,6 +235,7 @@ class PhiceServer:
                             recenter=snap.recenter, idle_hz=cfg.idle_hz,
                             accessibility=st.accessibility,
                             ui={"haptics": cfg.ui.haptics, "keep_awake": cfg.ui.keep_awake,
+                                "appearance": cfg.ui.appearance,
                                 "recenter_ms": cfg.recenter_hold_ms})
         try:
             await conn.send(msg)

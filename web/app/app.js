@@ -44,6 +44,21 @@
   // out the pairing flow.
   const setScreen = (s) => { el.body.dataset.screen = s; };
 
+  // Appearance is chosen on the Mac and pushed down, so both surfaces match
+  // without the phone needing a setting of its own. Remembered locally too:
+  // the pairing screen is shown before any connection exists, and a returning
+  // user should not watch it change colour a second after it appears.
+  function setAppearance(mode) {
+    const root = document.documentElement;
+    if (mode === "system") root.removeAttribute("data-appearance");
+    else root.setAttribute("data-appearance", mode);
+    try { localStorage.setItem("phice.appearance", mode); } catch (_) { /* private mode */ }
+  }
+  try {
+    const remembered = localStorage.getItem("phice.appearance");
+    if (remembered) setAppearance(remembered);
+  } catch (_) { /* falls back to the system appearance */ }
+
   // ---------- pairing ----------
 
   async function iceServers() {
@@ -153,7 +168,10 @@
     if (msg.ui && msg.ui.recenter_ms) {
       el.body.style.setProperty("--recenter-ms", msg.ui.recenter_ms + "ms");
     }
-    if (msg.ui) { state.haptics = !!msg.ui.haptics; }
+    if (msg.ui) {
+      state.haptics = !!msg.ui.haptics;
+      if (msg.ui.appearance) setAppearance(msg.ui.appearance);
+    }
   }
 
   // ---------- layout ----------
