@@ -279,7 +279,7 @@ class PhiceServer:
             except Exception:
                 log.exception("engine tick failed")
             if self.state.engine.phase.value == "hold":
-                prog = round(self.state.engine.recenter_progress(), 1)
+                prog = round(self.state.engine.recenter_progress(), 2)  # 1dp visibly steps
                 if prog != last_recenter:
                     last_recenter = prog
                     await self._send_state()

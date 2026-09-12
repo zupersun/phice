@@ -84,7 +84,7 @@ class PointerConfig:
     recenter_hold_ms: int = 1000
     double_click_s: float = 0.5
     scroll_gain: float = 1.5
-    scroll_natural: bool = True
+    scroll_natural: bool = False
     auto_activate: bool = False
     wake_on_any_button: bool = True
     auto_deactivate: bool = True
@@ -151,7 +151,7 @@ class PointerConfig:
             recenter_hold_ms=_int(d, "recenter_hold_ms", 1000, 100, 10000),
             double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
             scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
-            scroll_natural=_bool(d, "scroll_natural", True),
+            scroll_natural=_bool(d, "scroll_natural", False),
             auto_activate=_bool(d, "auto_activate", False),
             wake_on_any_button=_bool(d, "wake_on_any_button", True),
             auto_deactivate=_bool(d, "auto_deactivate", True),

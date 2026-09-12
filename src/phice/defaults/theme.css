@@ -30,7 +30,7 @@
 
   --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
   --label-size: 15px;
-  --header-display: flex;
+  --header-display: none;
   --logo-height: 18px;
   --pad-bottom-margin: 12%;
   --pad-gap: 10px;
@@ -53,7 +53,21 @@ html, body {
   transition: background 160ms linear;
 }
 
-body[data-state="on"], body[data-state="held"], body[data-state="hold"] { background: var(--bg-on); }
+body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
+
+/* Recentering: the surface brightens as the hold completes, then snaps back to
+   the resting colour. Fingers cover the buttons and the LED, so the feedback has
+   to be the whole background. */
+body[data-state="hold"] {
+  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 26%), var(--bg-on));
+  transition: background 90ms linear;
+}
+body[data-state="hold"] .btn {
+  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 18%), var(--btn-bg));
+  transition: background 90ms linear;
+}
+/* Land back on the on-state cleanly rather than fading out of the flash. */
+body[data-state="held"], body[data-state="held"] .btn { transition: background 160ms ease-out; }
 
 #header {
   display: var(--header-display);
@@ -70,7 +84,9 @@ body[data-state="off"] #header { opacity: 0.35; }
 
 #pad {
   position: relative;
-  height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top) - 34px);
+  /* No header: the pad takes the full height below the safe area. */
+  height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
   margin: 0 calc(env(safe-area-inset-left) + 8px) 0 calc(env(safe-area-inset-right) + 8px);
 }
 

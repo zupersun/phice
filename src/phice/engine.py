@@ -209,7 +209,9 @@ class PointerEngine:
             return
         if role == "power":
             if kind == "press":
-                self._toggle_power(now)
+                self._power_press(now)
+            else:
+                self._power_release(now)
         elif role in ("left", "right"):
             if kind == "press":
                 self._click_press(role, now)
@@ -221,6 +223,24 @@ class PointerEngine:
         elif role == "recenter":
             if kind == "press" and self._phase in MOTION_PHASES:
                 self._snap()
+
+    def _power_press(self, now: float) -> None:
+        """Tap toggles off, hold recenters. The press only begins the hold; which
+        gesture it was is decided on release."""
+        if self._phase == Phase.OFF:
+            if self._enabled:
+                self._power_on(now)
+            return
+        if self._phase in MOTION_PHASES:
+            self._hold_started = now
+            self._set_phase(Phase.RECENTER_HOLD)
+
+    def _power_release(self, now: float) -> None:
+        if self._phase == Phase.RECENTER_HOLD:
+            # Never reached the threshold, so it was a tap.
+            self._go_off(now)
+        elif self._phase == Phase.RECENTER_HELD:
+            self._set_phase(Phase.ON)
 
     def _toggle_power(self, now: float) -> None:
         if self._phase == Phase.OFF:

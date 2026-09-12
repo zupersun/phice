@@ -53,7 +53,7 @@ def test_default_layout_parses():
     layout = load_layout(DEFAULTS_DIR / "layout.json")
     assert layout.roles() == {"left": "left", "scroll": "scroll", "right": "right",
                               "power": "power"}
-    assert layout.to_dict()["buttons"][0]["label"] == "L"
+    assert all(b["label"] == "" for b in layout.to_dict()["buttons"]), "no text"
 
 
 def _layout(buttons):

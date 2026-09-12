@@ -255,7 +255,7 @@ def test_two_buttons_outside_chord_window_both_click():
 
 
 def test_scroll_natural_and_inverted():
-    r = Rig()
+    r = Rig(PointerConfig(scroll_natural=True))
     r.power()
     r.send(scroll=True, sd=-10)
     assert [(e.kind, e.dy) for e in r.cursor.events] == [("scroll", -15)]
@@ -266,7 +266,7 @@ def test_scroll_natural_and_inverted():
 
 
 def test_scroll_carries_fractions():
-    r = Rig(PointerConfig(scroll_gain=0.5))
+    r = Rig(PointerConfig(scroll_gain=0.5, scroll_natural=True))
     r.power()
     r.send(scroll=True, sd=1)
     r.send(scroll=True, sd=1)
@@ -430,12 +430,14 @@ def test_set_config_applies_new_gain():
 
 
 def test_change_callback_fires_on_phase_change():
+    """A power tap now passes through RECENTER_HOLD: the press starts the hold and
+    the release decides it was a tap."""
     r = Rig()
     seen = []
     r.engine.on_change = lambda: seen.append(r.engine.phase)
     r.power()
     r.power()
-    assert seen == [Phase.ON, Phase.OFF]
+    assert seen == [Phase.ON, Phase.RECENTER_HOLD, Phase.OFF]
 
 
 def test_absolute_edge_clamp_holds_until_aim_returns():
@@ -596,3 +598,49 @@ def test_power_button_still_works_when_present():
     assert r.engine.phase == Phase.ON
     r.power()
     assert r.engine.phase == Phase.OFF
+
+
+def test_power_tap_turns_it_off():
+    """A quick tap is the off switch; a hold is recenter. They must not collide."""
+    r = Rig()
+    r.send(left=True)
+    r.send(left=False)      # wake
+    assert r.engine.phase == Phase.ON
+    r.send(power=True)
+    assert r.engine.phase == Phase.RECENTER_HOLD, "press begins the hold"
+    r.send(power=False)                         # released well before the threshold
+    assert r.engine.phase == Phase.OFF, "short press is a tap: power off"
+
+
+def test_power_hold_recenters_without_turning_off():
+    r = Rig(cursor=FakeCursor(x=100, y=100))
+    r.send(left=True)
+    r.send(left=False)
+    r.send(power=True)
+    r.stream(70, alpha=0)                       # past recenter_hold_ms
+    assert r.engine.phase == Phase.RECENTER_HELD
+    assert (r.cursor.x, r.cursor.y) == (720, 450), "snapped to the display centre"
+    r.send(alpha=0, power=False)
+    assert r.engine.phase == Phase.ON, "still on after recentering"
+
+
+def test_power_hold_reports_progress_for_the_animation():
+    r = Rig()
+    r.send(left=True)
+    r.send(left=False)
+    assert r.engine.recenter_progress() == 0.0
+    r.send(power=True)
+    r.stream(30, alpha=0)                       # roughly half of the 1s hold
+    mid = r.engine.recenter_progress()
+    assert 0.2 < mid < 0.9, f"progress should climb steadily, got {mid}"
+    r.stream(40, alpha=0)
+    assert r.engine.recenter_progress() == 1.0
+
+
+def test_power_while_off_turns_it_on():
+    r = Rig()
+    assert r.engine.phase == Phase.OFF
+    r.send(power=True)
+    assert r.engine.phase == Phase.ON
+    r.send(power=False)
+    assert r.engine.phase == Phase.ON, "the release must not immediately toggle it off"
