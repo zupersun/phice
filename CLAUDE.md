@@ -185,6 +185,47 @@ Network reality: university and corporate Wi-Fi usually block mDNS and isolate c
 `.local` and direct IP both fail there. A phone on cellular cannot reach a `10.x` address
 at all. Only `tailscale` covers every case.
 
+## External services and what they cost
+
+Everything Phice depends on beyond the Mac itself, what it costs, and how to get
+out of it. Check this before assuming a service is free or disposable.
+
+| Service | Plan | What breaks without it |
+|---|---|---|
+| **GitHub** (`zupersun/phice`) | free | nothing at runtime |
+| **Vercel** (`sun-dd2c/phice`) | Hobby, free, **non-commercial** | the phone page and pairing |
+| **Redis Cloud** (via Vercel marketplace) | free tier | pairing; the pointer keeps working once connected |
+| **Cloudflare Realtime TURN** | free tier, **1000 GB/month**, card on file | pairing across different networks |
+| Apple Developer | **not used** | — downloads show "unidentified developer" |
+
+### The TURN relay is the only thing with a card attached
+
+A relay is required whenever the phone and the Mac are on different networks
+behind NAT — a phone on cellular and a Mac on a campus network can each reach
+outward and neither can be reached. Measured on a real pair: every non-relayed
+candidate failed. On a shared Wi-Fi it connects directly and uses no relay at all.
+
+**Measured cost**, from the real protocol: a 245-byte packet, ~305 bytes on the
+wire, 60 Hz, charged in both directions:
+
+- ~132 MB per hour of active pointing
+- ~7,600 hours inside the 1000 GB free tier
+- Nothing accrues while the pointer is off
+
+**Set a $0 spend cap in Cloudflare billing**, so exceeding the tier stops the
+service instead of generating a bill.
+
+### To cancel it
+
+1. Cloudflare dashboard → **Realtime → TURN Server** → delete the key.
+2. Vercel → project → **Environment Variables** → remove `TURN_KEY_ID` and
+   `TURN_API_TOKEN`, then redeploy.
+
+`/api/ice` degrades honestly rather than breaking: it keeps answering with STUN
+only, reports `relay: false` with a reason, and the Mac logs that it will connect
+on a shared network and nowhere else. Pairing across networks stops working;
+everything else is unaffected.
+
 ## Conventions
 
 - Worktrees for plan execution live in `.worktrees/<branch>` (gitignored).
