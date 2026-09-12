@@ -110,12 +110,14 @@ class Runtime:
                                  panel_css=lambda: self.paths.panel_css.read_bytes(),
                                  new_code=self.new_pair_code,
                                  set_appearance=self.set_appearance,
+                                 request_panel=self.request_panel,
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
         self._pair_code: str = ""
         self._answer_wait: asyncio.Task | None = None
         self._rotate = False   # distinguishes "new code" from shutdown
+        self._panel_requested = False
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -342,6 +344,18 @@ class Runtime:
         """
         cfg = self.config.ice_servers
         return tuple(cfg) if cfg else None
+
+    def request_panel(self) -> None:
+        """Ask for the control panel window. Thread safe by design.
+
+        The window can only be created on the main thread, which the menu bar
+        owns, so this only raises a flag; the menu bar's timer picks it up.
+        """
+        self._panel_requested = True
+
+    def take_panel_request(self) -> bool:
+        requested, self._panel_requested = self._panel_requested, False
+        return requested
 
     def set_appearance(self, value: str) -> bool:
         """Persist the chosen appearance and tell the phone at once.

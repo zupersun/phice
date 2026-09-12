@@ -142,8 +142,8 @@ b { color: var(--fg); font-weight: 600; }
 .seg {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  width: 132px;
+  grid-template-columns: repeat(2, 1fr);
+  width: 104px;
   height: 26px;
   padding: 3px;
   border-radius: 999px;
@@ -159,8 +159,8 @@ b { color: var(--fg); font-weight: 600; }
   position: absolute;
   top: 3px;
   bottom: 3px;
-  width: calc((100% - 6px) / 3);
-  left: calc(3px + var(--knob-drag, var(--knob-i, 0)) * (100% - 6px) / 3);
+  width: calc((100% - 6px) / 2);
+  left: calc(3px + var(--knob-drag, var(--knob-i, 0)) * (100% - 6px) / 2);
   border-radius: 999px;
   background: var(--seg-knob);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
@@ -169,23 +169,21 @@ b { color: var(--fg); font-weight: 600; }
 /* Following a finger, so no easing: the knob must be under it, not chasing. */
 .seg[data-dragging] .knob { transition: none; }
 
-:root:not([data-theme]) .knob { --knob-i: 0; }
-:root[data-theme="dark"] .knob { --knob-i: 1; }
-:root[data-theme="light"] .knob { --knob-i: 2; }
+:root[data-theme="dark"] .knob { --knob-i: 0; }
+:root[data-theme="light"] .knob { --knob-i: 1; }
 
 .seg-labels {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  width: 132px;
+  grid-template-columns: repeat(2, 1fr);
+  width: 104px;
   font-size: 10px;
   letter-spacing: 0.02em;
   color: var(--dim);
   text-align: center;
 }
 .seg-labels span { padding-top: 1px; }
-:root:not([data-theme]) .seg-labels span:nth-child(1),
-:root[data-theme="dark"] .seg-labels span:nth-child(2),
-:root[data-theme="light"] .seg-labels span:nth-child(3) {
+:root[data-theme="dark"] .seg-labels span:nth-child(1),
+:root[data-theme="light"] .seg-labels span:nth-child(2) {
   color: var(--fg);
   font-weight: 600;
 }

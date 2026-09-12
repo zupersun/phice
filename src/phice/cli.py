@@ -40,8 +40,28 @@ def _backend(name: str):
     return QuartzCursor()
 
 
+def _ask_running_instance_to_show_itself(http_port: int) -> bool:
+    """If Phice is already running, bring its window up and let this copy exit.
+
+    Opening the app again is the one escape hatch a user is certain to find: the
+    menu bar item can be genuinely unreachable, because macOS puts new status
+    items to the left of existing ones and a full menu bar pushes them behind
+    the notch. Without this, closing the window left the app with no way back.
+    """
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/debug/panel", timeout=2) as r:
+            return r.status == 200
+    except (urllib.error.URLError, OSError, ValueError):
+        return False   # nothing there, or something else on the port: start normally
+
+
 def cmd_run(args) -> int:
     from .runtime import Runtime, setup_logging
+    if not args.headless and _ask_running_instance_to_show_itself(args.http_port):
+        print("Phice is already running; opened its window.")
+        return 0
     paths = _paths(args)
     setup_logging(paths, debug=bool(os.environ.get("PHICE_DEBUG")))
     runtime = Runtime(paths, _backend(args.backend), args.tls_port, args.http_port)

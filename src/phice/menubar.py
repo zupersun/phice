@@ -126,10 +126,13 @@ class PhiceApp(rumps.App):
             self.title = None
         else:
             self.icon = None
-            self.title = {"warn": "AM!", "disconnected": "AM", "off": "AM·", "on": "AM●"}[name]
+            self.title = {"warn": "Phice!", "disconnected": "Phice",
+                          "off": "Phice\u00b7", "on": "Phice\u25cf"}[name]
 
     def refresh(self, _):
         self._ticks += 1
+        if self.runtime.take_panel_request():
+            self.show_panel()
         if self._ticks == 2:
             # Every launch, not just the first: the menu bar icon can be
             # invisible behind the notch, and then there is nothing to click.

@@ -14,6 +14,10 @@ uv run pyinstaller packaging/phice.spec --noconfirm --log-level WARN
 
 test -d dist/Phice.app || { echo "build produced no bundle"; exit 1; }
 
+# Spotlight would otherwise index the build output too, leaving the user with two
+# Phice.app results and no way to tell which one is installed.
+touch dist/.metadata_never_index
+
 IDENTITY="${PHICE_SIGN_IDENTITY:-Phice Self Signed}"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
   echo "==> signing with '$IDENTITY'"

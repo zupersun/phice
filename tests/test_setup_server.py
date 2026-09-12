@@ -138,11 +138,21 @@ def test_panel_theme_control_touches_only_the_data_theme_attribute(setup):
     dot classes are for status -- no colour, size, or inline style may live here."""
     html = get(setup, "/panel")[2].decode()
     assert "style=" not in html
-    assert 'localStorage.getItem("phice-theme")' in html
     assert 'setAttribute("data-theme"' in html
-    assert 'removeAttribute("data-theme")' in html
-    # "light" and "dark" are written; "system" means the attribute is simply absent.
-    assert '"light"' in html and '"dark"' in html and '"system"' in html
+    assert '"light"' in html and '"dark"' in html
+    assert '"system"' not in html, "the system option was dropped"
+    # The one property the script is allowed to publish is the knob's position
+    # while a finger is on it; what that looks like is the stylesheet's business.
+    assert 'setProperty("--knob-drag"' in html
+
+
+def test_the_appearance_slider_is_draggable_and_server_backed(setup):
+    """The Mac owns this value because the phone follows it too, so the control
+    must read and write the runtime rather than only its own local storage."""
+    html = get(setup, "/panel")[2].decode()
+    assert "/debug/appearance?v=" in html, "the choice must reach the Mac"
+    assert "setPointerCapture" in html, "a drag that leaves the track must keep tracking"
+    assert "pointermove" in html and "pointerup" in html
 
 
 def test_panel_css_has_a_light_base_and_dark_overrides():

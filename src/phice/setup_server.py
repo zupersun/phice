@@ -61,7 +61,7 @@ PANEL_HTML = """<!doctype html>
 <script>
 try {
   var t = localStorage.getItem("phice-theme");
-  if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  document.documentElement.setAttribute("data-theme", t === "light" ? "light" : "dark");
 } catch (e) { /* private browsing, etc.: falls back to system appearance */ }
 </script>
 <div class="topbar">
@@ -69,12 +69,11 @@ try {
   <div class="appearance">
     <div class="seg" id="seg" role="radiogroup" aria-label="Appearance" tabindex="0">
       <span class="knob" aria-hidden="true"></span>
-      <span class="stop" role="radio" data-v="system" aria-label="System"></span>
       <span class="stop" role="radio" data-v="dark" aria-label="Dark"></span>
       <span class="stop" role="radio" data-v="light" aria-label="Light"></span>
     </div>
     <div class="seg-labels" aria-hidden="true">
-      <span>System</span><span>Dark</span><span>Light</span>
+      <span>Dark</span><span>Light</span>
     </div>
   </div>
 </div>
@@ -147,21 +146,18 @@ document.getElementById("grant").onclick = async () => {
 // Appearance: a three stop slider. The Mac owns the value -- the phone follows
 // it too -- so this reads from /debug/cursor and writes to /debug/appearance.
 // localStorage is only a cache, to place the knob before the first poll lands.
-const MODES = ["system", "dark", "light"];
+const MODES = ["dark", "light"];
 const seg = document.getElementById("seg");
 let dragging = false;
 
 function applyTheme(mode) {
-  const root = document.documentElement;
-  if (mode === "system") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", mode);
+  document.documentElement.setAttribute("data-theme", mode);
   seg.dataset.v = mode;
   for (const s of seg.querySelectorAll(".stop")) {
     s.setAttribute("aria-checked", String(s.dataset.v === mode));
   }
   try {
-    if (mode === "system") localStorage.removeItem("phice-theme");
-    else localStorage.setItem("phice-theme", mode);
+    localStorage.setItem("phice-theme", mode);
   } catch (e) { /* private browsing: the cache just will not stick */ }
 }
 
@@ -175,7 +171,7 @@ async function chooseTheme(mode) {
 function indexAt(clientX) {
   const r = seg.getBoundingClientRect();
   if (!r.width) return 0;
-  return Math.min(2, Math.max(0, ((clientX - r.left) / r.width) * 3 - 0.5));
+  return Math.min(1, Math.max(0, ((clientX - r.left) / r.width) * 2 - 0.5));
 }
 
 seg.addEventListener("pointerdown", (ev) => {
@@ -197,17 +193,17 @@ const endDrag = (ev) => {
 seg.addEventListener("pointerup", endDrag);
 seg.addEventListener("pointercancel", endDrag);
 seg.addEventListener("keydown", (ev) => {
-  const i = MODES.indexOf(seg.dataset.v || "system");
+  const i = MODES.indexOf(seg.dataset.v || "dark");
   if (ev.key === "ArrowLeft" && i > 0) chooseTheme(MODES[i - 1]);
-  else if (ev.key === "ArrowRight" && i < 2) chooseTheme(MODES[i + 1]);
+  else if (ev.key === "ArrowRight" && i < MODES.length - 1) chooseTheme(MODES[i + 1]);
   else return;
   ev.preventDefault();
 });
 
 try {
   const cached = localStorage.getItem("phice-theme");
-  applyTheme(cached === "light" || cached === "dark" ? cached : "system");
-} catch (e) { applyTheme("system"); }
+  applyTheme(cached === "light" ? "light" : "dark");
+} catch (e) { applyTheme("dark"); }
 
 refresh();
 setInterval(refresh, 1000);
@@ -316,6 +312,7 @@ class SetupServer:
                  panel_css: Callable[[], bytes] | None = None,
                  new_code: Callable[[], None] | None = None,
                  set_appearance: Callable[[str], bool] | None = None,
+                 request_panel: Callable[[], None] | None = None,
                  signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
@@ -325,6 +322,7 @@ class SetupServer:
         self._panel_css = panel_css
         self._new_code = new_code
         self._set_appearance = set_appearance
+        self._request_panel = request_panel
         self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
@@ -404,6 +402,9 @@ class SetupServer:
                     self._send(200 if ok else 400,
                                json.dumps({"ok": ok, "appearance": value}).encode(),
                                "application/json")
+                elif path == "/debug/panel" and outer._request_panel and self._is_local():
+                    outer._request_panel()
+                    self._send(200, b'{"ok":true}', "application/json")
                 elif path == "/debug/newcode" and outer._new_code and self._is_local():
                     outer._new_code()
                     self._send(200, b'{"ok":true}', "application/json")

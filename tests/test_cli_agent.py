@@ -66,3 +66,22 @@ def test_the_unfrozen_arguments_are_also_accepted_by_the_parser(monkeypatch, tmp
     args = plistlib.loads(cli._plist("/x", tmp_path, tmp_path).encode())["ProgramArguments"]
     assert cli.main(args[3:]) == 0          # drop interpreter, -m, phice
     assert seen["cmd"] == "run" and seen["config_dir"] == str(tmp_path)
+
+
+def test_a_second_launch_reopens_the_window_instead_of_starting_a_rival(monkeypatch):
+    """Closing the window used to strand the app: the menu bar item can be
+    genuinely unreachable behind the notch. Opening Phice again is the escape
+    hatch, so a second launch must talk to the first, not fight it."""
+    from phice import cli
+
+    asked: list[int] = []
+
+    def fake_ask(port: int) -> bool:
+        asked.append(port)
+        return True
+
+    monkeypatch.setattr(cli, "_ask_running_instance_to_show_itself", fake_ask)
+    args = type("A", (), {"headless": False, "http_port": 8080, "config_dir": None,
+                          "tls_port": 8443, "backend": "fake"})
+    assert cli.cmd_run(args) == 0
+    assert asked == [8080], "it must ask the running instance, not start a second one"
