@@ -72,6 +72,9 @@ class PointerConfig:
     gain_y_px_per_deg: float = 25.0
     invert_y: bool = False
     mapping: str = "absolute"
+    expo: float = 1.2
+    expo_ref_deg: float = 18.0
+    expo_max: float = 4.0
     one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
     deadzone_dps: float = 0.5
     accel: AccelConfig = field(default_factory=AccelConfig)
@@ -85,7 +88,7 @@ class PointerConfig:
     auto_activate: bool = False
     auto_deactivate: bool = True
     pickup_ms: int = 300
-    rest_seconds: float = 1.0
+    rest_seconds: float = 2.5
     rest_tilt_deg: float = 15.0
     rest_rate_dps: float = 8.0
     idle_hz_when_auto_activate: int = 10
@@ -126,6 +129,9 @@ class PointerConfig:
             gain_y_px_per_deg=_num(d, "gain_y_px_per_deg", 25.0, 0.1, 500.0),
             invert_y=_bool(d, "invert_y", False),
             mapping=mapping,
+            expo=_num(d, "expo", 1.2, 0.0, 10.0),
+            expo_ref_deg=_num(d, "expo_ref_deg", 18.0, 1.0, 90.0),
+            expo_max=_num(d, "expo_max", 4.0, 1.0, 20.0),
             one_euro=OneEuroConfig(
                 min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
                 beta=_num(oe, "beta", 0.02, 0.0, 10.0),
@@ -148,7 +154,7 @@ class PointerConfig:
             auto_activate=_bool(d, "auto_activate", False),
             auto_deactivate=_bool(d, "auto_deactivate", True),
             pickup_ms=_int(d, "pickup_ms", 300, 0, 5000),
-            rest_seconds=_num(d, "rest_seconds", 1.0, 0.1, 60.0),
+            rest_seconds=_num(d, "rest_seconds", 2.5, 0.1, 60.0),
             rest_tilt_deg=_num(d, "rest_tilt_deg", 15.0, 1.0, 80.0),
             rest_rate_dps=_num(d, "rest_rate_dps", 8.0, 0.0, 500.0),
             idle_hz_when_auto_activate=_int(d, "idle_hz_when_auto_activate", 10, 1, 60),

@@ -4,9 +4,21 @@
   "gain_y_px_per_deg": 25.0,
   "invert_y": false,
   "mapping": "absolute",
-  "one_euro": {"min_cutoff": 1.0, "beta": 0.02, "d_cutoff": 1.0},
+  "expo": 1.2,
+  "expo_ref_deg": 18.0,
+  "expo_max": 4.0,
+  "one_euro": {
+    "min_cutoff": 1.0,
+    "beta": 0.02,
+    "d_cutoff": 1.0
+  },
   "deadzone_dps": 0.5,
-  "accel": {"enabled": false, "threshold_dps": 40.0, "k": 0.01, "max_mult": 3.0},
+  "accel": {
+    "enabled": false,
+    "threshold_dps": 40.0,
+    "k": 0.01,
+    "max_mult": 3.0
+  },
   "freeze_ms_on_touch": 120,
   "freeze_ms_on_release": 60,
   "chord_window_ms": 50,
@@ -17,11 +29,14 @@
   "auto_activate": false,
   "auto_deactivate": true,
   "pickup_ms": 300,
-  "rest_seconds": 1.0,
+  "rest_seconds": 2.5,
   "rest_tilt_deg": 15.0,
   "rest_rate_dps": 8.0,
   "idle_hz_when_auto_activate": 10,
   "timeout_ms": 500,
   "cert_mode": "auto",
-  "ui": {"haptics": true, "keep_awake": "always"}
+  "ui": {
+    "haptics": true,
+    "keep_awake": "always"
+  }
 }

@@ -78,7 +78,8 @@ def test_power_on_keeps_cursor_where_it_is():
 
 
 def test_turning_right_moves_right_by_gain():
-    r = Rig()
+    # expo off: this measures the linear gain, not the feel curve.
+    r = Rig(PointerConfig(expo=0.0))
     r.power()
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)  # 10 degrees to the right, filter settles within ~1 s
@@ -88,7 +89,7 @@ def test_turning_right_moves_right_by_gain():
 
 
 def test_raising_top_edge_moves_up():
-    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(5, beta=0)
     r.stream(90, beta=10)
@@ -97,7 +98,7 @@ def test_raising_top_edge_moves_up():
 
 
 def test_invert_y_flips_vertical():
-    r = Rig(PointerConfig(invert_y=True), cursor=FakeCursor(x=700, y=500))
+    r = Rig(PointerConfig(invert_y=True, expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(5, beta=0)
     r.stream(90, beta=10)
@@ -115,7 +116,7 @@ def test_roll_never_moves_cursor():
 
 
 def test_yaw_wraps_across_zero():
-    r = Rig(cursor=FakeCursor(x=700, y=500))
+    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
     r.power()
     r.stream(90, alpha=5)  # 5 degrees left of the power-on aim
     assert r.cursor.x == pytest.approx(700 - 125, abs=3)
@@ -218,7 +219,7 @@ def test_chord_produces_no_click_and_cancels_on_early_release():
 
 
 def test_chord_hold_snaps_to_center_and_suppresses_clicks():
-    r = Rig()
+    r = Rig(PointerConfig(expo=0.0))
     r.power()
     r.send(left=True)
     r.send(right=True)
@@ -380,7 +381,7 @@ def test_sequence_regression_is_dropped():
 
 
 def test_auto_deactivate_at_rest():
-    r = Rig()
+    r = Rig(PointerConfig(rest_seconds=1.0))
     r.power()
     r.stream(70, beta=0, gamma=0, rr=(0.5, 0.5, 0.5))
     assert r.engine.phase == Phase.OFF
@@ -419,10 +420,10 @@ def test_gap_in_packets_resets_filter_without_jump():
 
 
 def test_set_config_applies_new_gain():
-    r = Rig()
+    r = Rig(PointerConfig(expo=0.0))
     r.power()
     r.stream(5, alpha=0)
-    r.engine.set_config(PointerConfig(gain_x_px_per_deg=50.0))
+    r.engine.set_config(PointerConfig(gain_x_px_per_deg=50.0, expo=0.0))
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)
     assert r.cursor.x == pytest.approx(100 + 500, abs=5)
@@ -475,3 +476,65 @@ def test_absolute_clutch_reanchors_without_jumping():
     r.cursor.clear()
     r.stream(5, alpha=330)
     assert r.cursor.events == []  # released at the new aim: still no jump
+
+
+def test_recenter_hold_does_not_trigger_auto_deactivate():
+    """Holding both buttons still for a second IS the recenter gesture, and it is
+    also exactly what rest detection looks for: flat, still, for rest_seconds.
+    Recentering used to snap to centre and then immediately power off."""
+    r = Rig(PointerConfig(recenter_hold_ms=1000, rest_seconds=1.0, auto_deactivate=True))
+    r.power()
+    r.send(left=True)
+    r.send(right=True)
+    # Hold perfectly still and flat for well over both timers.
+    r.stream(150, alpha=0, beta=0, gamma=0, rr=(0.2, 0.2, 0.2))
+    assert r.engine.phase == Phase.RECENTER_HELD
+    r.send(alpha=0, left=False)
+    r.send(alpha=0, right=False)
+    assert r.engine.phase == Phase.ON
+
+
+def test_holding_any_button_prevents_auto_deactivate():
+    """A held button means the user is demonstrably holding the device. Aiming at
+    a screen keeps the phone near-flat, which is geometrically the same as lying
+    on a desk, so button state is the discriminator."""
+    r = Rig(PointerConfig(rest_seconds=0.5, auto_deactivate=True))
+    r.power()
+    r.send(left=True)
+    r.stream(120, beta=0, gamma=0, rr=(0.1, 0.1, 0.1))
+    assert r.engine.phase == Phase.ON, "held button must keep it awake"
+    r.send(beta=0, left=False)
+    r.stream(120, beta=0, gamma=0, rr=(0.1, 0.1, 0.1))
+    assert r.engine.phase == Phase.OFF, "released and at rest: may power off"
+
+
+def test_expo_amplifies_large_sweeps_but_not_small_ones():
+    """Spanning the screen should not demand a huge arm movement, while small
+    corrections stay one-to-one for precision."""
+    linear = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=720, y=450,
+                  display_list=[Rect(0, 0, 4000, 2000)]))
+    curved = Rig(PointerConfig(expo=1.0), cursor=FakeCursor(x=720, y=450,
+                  display_list=[Rect(0, 0, 4000, 2000)]))
+    for r in (linear, curved):
+        r.power()
+        r.stream(90, alpha=0)
+    # A small turn: both should travel about the same distance.
+    for r in (linear, curved):
+        r.stream(90, alpha=358)
+    small_lin = linear.cursor.x - 720
+    small_cur = curved.cursor.x - 720
+    assert abs(small_cur - small_lin) < 0.35 * abs(small_lin), "small moves stay precise"
+    # A large turn: expo should travel meaningfully further.
+    for r in (linear, curved):
+        r.stream(120, alpha=320)
+    big_lin = linear.cursor.x - 720
+    big_cur = curved.cursor.x - 720
+    assert big_cur > big_lin * 1.5, f"large sweeps amplified: {big_cur} vs {big_lin}"
+
+
+def test_expo_zero_is_exactly_linear():
+    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r.power()
+    r.stream(5, alpha=0)
+    r.stream(90, alpha=350)
+    assert r.cursor.x == pytest.approx(700 + 250, abs=3)

@@ -239,6 +239,10 @@ class PointerEngine:
         return any(self._buttons.get(bid, _ButtonState()).pressed
                    for bid, role in self._roles.items() if role in ("clutch", "scroll"))
 
+    def _any_button_pressed(self) -> bool:
+        """Any layout button at all, not just the click roles."""
+        return any(st.pressed for st in self._buttons.values())
+
     def _any_click_button_pressed(self) -> bool:
         return any(self._buttons.get(bid, _ButtonState()).pressed
                    for bid, role in self._roles.items() if role in ("left", "right"))
@@ -372,11 +376,26 @@ class PointerEngine:
             return
         if rate_dps < self._cfg.deadzone_dps:
             return  # hold still; do not re-anchor, or slow aiming could never move
-        dx = (yaw - self._anchor[0]) * self._cfg.gain_x_px_per_deg
-        dy = -(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
+        dx = self._curve(yaw - self._anchor[0]) * self._cfg.gain_x_px_per_deg
+        dy = -self._curve(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
         if self._cfg.invert_y:
             dy = -dy
         self._move_to(self._anchor_pos[0] + dx, self._anchor_pos[1] + dy)
+
+    def _curve(self, degrees: float) -> float:
+        """Expo: amplify large offsets from the anchor, leave small ones alone.
+
+        Spanning a wide screen at a linear gain demands a big arm movement, but
+        raising the gain everywhere costs precision. Growing the gain with
+        distance from the anchor keeps small corrections one-to-one while making
+        edge-to-edge sweeps cheap. Still a pure function of aim, so the absolute
+        mapping's no-drift property survives.
+        """
+        cfg = self._cfg
+        if cfg.expo <= 0.0:
+            return degrees
+        mult = 1.0 + cfg.expo * (abs(degrees) / cfg.expo_ref_deg) ** 2
+        return degrees * min(mult, cfg.expo_max)
 
     def _move_to(self, tx: float, ty: float) -> None:
         """Move to an absolute target, clamped across displays, dragging if held."""
@@ -443,7 +462,13 @@ class PointerEngine:
             self._pickup_since = None
         elif self._pickup_since is None:
             self._pickup_since = now
-        if rest_pose and still:
+        # A held button means the user is demonstrably holding the device. Aiming
+        # at a screen keeps the phone near-flat, which is geometrically identical
+        # to lying on a desk -- and the recenter gesture is *defined* as holding
+        # both buttons still for a second, which was exactly the rest condition.
+        in_use = self._any_button_pressed() or self._phase in (Phase.RECENTER_HOLD,
+                                                               Phase.RECENTER_HELD)
+        if rest_pose and still and not in_use:
             if self._rest_since is None:
                 self._rest_since = now
             elif now - self._rest_since >= cfg.rest_seconds and self._phase in ACTIVE_PHASES \
