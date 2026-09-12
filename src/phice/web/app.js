@@ -281,9 +281,17 @@
   function applyState(msg) {
     state.phase = msg.phase;
     state.idleHz = msg.idle_hz | 0;
-    if (msg.ui) { state.haptics = !!msg.ui.haptics; state.keepAwake = msg.ui.keep_awake; }
+    if (msg.ui) {
+      state.haptics = !!msg.ui.haptics;
+      state.keepAwake = msg.ui.keep_awake;
+      if (msg.ui.recenter_ms) {
+        el.body.style.setProperty("--recenter-ms", msg.ui.recenter_ms + "ms");
+      }
+    }
     setPageState(msg.phase);
-    el.body.style.setProperty("--recenter-progress", String(msg.recenter || 0));
+    // Deliberately NOT setting --recenter-progress here. The browser animates it
+    // from the data-state change, which is smooth at 60fps; setting it per message
+    // restarted the transition ~50 times a second and stuttered.
     if (msg.phase === "held" && state.lastPhase !== "held") { tick(); setTimeout(tick, 90); }
     state.lastPhase = msg.phase;
     el.status.textContent = !msg.accessibility

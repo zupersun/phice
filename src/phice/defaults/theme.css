@@ -1,3 +1,9 @@
+@property --recenter-progress {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 /* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
    app.js never sets a colour, size or font of its own. */
 :root {
@@ -55,19 +61,29 @@ html, body {
 
 body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
 
-/* Recentering: the surface brightens as the hold completes, then snaps back to
-   the resting colour. Fingers cover the buttons and the LED, so the feedback has
-   to be the whole background. */
+/* Recentering: the surface brightens over the hold. The browser interpolates
+   --recenter-progress itself for the full duration, so it is smooth at 60fps and
+   independent of how often the Mac sends state. Fingers cover the buttons and the
+   LED while holding, so the whole surface has to carry the feedback. */
+body { --recenter-progress: 0; }
 body[data-state="hold"] {
-  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 26%), var(--bg-on));
-  transition: background 90ms linear;
+  --recenter-progress: 1;
+  transition: --recenter-progress var(--recenter-ms, 1000ms) linear;
+}
+body[data-state="hold"] {
+  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
 }
 body[data-state="hold"] .btn {
-  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 18%), var(--btn-bg));
-  transition: background 90ms linear;
+  background: color-mix(in srgb, #ffffff calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
+  /* The base .btn rule transitions background over 60ms. Against a value that is
+     already being interpolated every frame that only adds lag, so drop it here
+     and let the property animation drive the colour directly. */
+  transition: transform 60ms linear;
 }
-/* Land back on the on-state cleanly rather than fading out of the flash. */
-body[data-state="held"], body[data-state="held"] .btn { transition: background 160ms ease-out; }
+/* Land back on the resting colour rather than cutting out of the flash. */
+body[data-state="held"], body[data-state="held"] .btn {
+  transition: background 220ms ease-out;
+}
 
 #header {
   display: var(--header-display);
@@ -161,13 +177,8 @@ body[data-state="held"] .role-power::after {
 }
 .role-power[data-pressed="1"] { transform: scale(0.97); }
 
-/* Recenter hold: the ring fills as --recenter-progress goes 0 -> 1. */
-body[data-state="hold"] .role-left, body[data-state="hold"] .role-right {
-  background:
-    conic-gradient(var(--accent) calc(var(--recenter-progress, 0) * 360deg), transparent 0)
-    border-box;
-  color: var(--fg);
-}
+/* The recenter ring used to draw here. Removed: a coloured wedge sweeping around
+   the button read as a defect rather than progress, and fingers cover it anyway. */
 
 .overlay {
   position: fixed;

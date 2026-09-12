@@ -234,7 +234,8 @@ class PhiceServer:
         msg = state_message(conn=True, power=snap.power, phase=snap.phase.value,
                             recenter=snap.recenter, idle_hz=cfg.idle_hz,
                             accessibility=st.accessibility,
-                            ui={"haptics": cfg.ui.haptics, "keep_awake": cfg.ui.keep_awake})
+                            ui={"haptics": cfg.ui.haptics, "keep_awake": cfg.ui.keep_awake,
+                                "recenter_ms": cfg.recenter_hold_ms})
         try:
             await conn.send(msg)
         except Exception:
