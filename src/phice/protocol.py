@@ -184,6 +184,12 @@ def theme_changed_message() -> str:
     return json.dumps({"t": "theme_changed"})
 
 
+def theme_message(css: str) -> str:
+    """Push the stylesheet itself. The hosted page has no HTTP route back to the
+    Mac, so it receives the CSS rather than a hint to re-fetch it."""
+    return json.dumps({"t": "theme", "css": css})
+
+
 def err_message(code: str, msg: str) -> str:
     return json.dumps({"t": "err", "code": code, "msg": msg})
 
