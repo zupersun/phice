@@ -3,7 +3,7 @@ import asyncio
 import json
 
 import pytest
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 
 from phice.config import PointerConfig
 from phice.cursor_backend import FakeCursor
@@ -11,10 +11,15 @@ from phice.engine import PointerEngine
 from phice.rtc import RTCTransport, gather_complete
 
 
+def _no_stun() -> RTCConfiguration:
+    """Loopback peers need no STUN, and asking for it costs five seconds each."""
+    return RTCConfiguration(iceServers=[])
+
+
 async def _connect(transport: RTCTransport) -> tuple[RTCPeerConnection, object]:
     """Play the part of the phone: take the offer, answer it, return the channel."""
     offer = await transport.create_offer()
-    phone = RTCPeerConnection()
+    phone = RTCPeerConnection(configuration=_no_stun())
     opened = asyncio.get_running_loop().create_future()
     channels: dict = {}
 
@@ -41,8 +46,10 @@ def transport():
     engine.set_roles({"left": "left", "right": "right", "scroll": "scroll", "power": "power"})
     # NB: pressing `power` no longer starts the pointer. Any button press wakes it
     # and is consumed; power taps off and holds to recenter.
+    # No STUN: these peers only ever talk over loopback, and the round trip
+    # costs five seconds per connection while discovering nothing useful.
     t = RTCTransport(engine=engine, layout_json='{"version":1,"buttons":[]}',
-                     theme_css="body{}")
+                     theme_css="body{}", ice_servers=())
     t.cursor = cursor
     return t
 
@@ -94,7 +101,7 @@ async def test_layout_and_theme_are_pushed_on_open(transport):
     """The hosted page ships with no styling; it must receive the user's layout
     and theme over the channel or it renders nothing."""
     got: list[dict] = []
-    phone = RTCPeerConnection()
+    phone = RTCPeerConnection(configuration=_no_stun())
     ready = asyncio.get_running_loop().create_future()
 
     @phone.on("datachannel")

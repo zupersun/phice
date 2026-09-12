@@ -11,7 +11,13 @@ import json
 import logging
 from typing import Any
 
-from aiortc import RTCDataChannel, RTCPeerConnection, RTCSessionDescription
+from aiortc import (
+    RTCConfiguration,
+    RTCDataChannel,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+)
 
 from .engine import PointerEngine
 from .protocol import (
@@ -56,11 +62,20 @@ async def gather_complete(pc: RTCPeerConnection, timeout: float = 10.0) -> None:
 class RTCTransport:
     """One peer connection, one DataChannel, wired to the engine."""
 
-    def __init__(self, engine: PointerEngine, layout_json: str, theme_css: str):
+    #: Public STUN, needed to discover a routable address when the phone is not on
+    #: the same network. aiortc defaults to this too, but naming it lets tests turn
+    #: it off: on loopback the round trip costs five seconds per peer and buys
+    #: nothing.
+    DEFAULT_ICE_SERVERS = ("stun:stun.l.google.com:19302",)
+
+    def __init__(self, engine: PointerEngine, layout_json: str, theme_css: str,
+                 ice_servers: tuple[str, ...] | None = None):
         self.engine = engine
         self.layout_json = layout_json
         self.theme_css = theme_css
-        self.pc = RTCPeerConnection()
+        urls = self.DEFAULT_ICE_SERVERS if ice_servers is None else ice_servers
+        config = RTCConfiguration(iceServers=[RTCIceServer(urls=u) for u in urls])
+        self.pc = RTCPeerConnection(configuration=config)
         self.channel: RTCDataChannel | None = None
         self._tick: asyncio.Task | None = None
         self._closed = False
