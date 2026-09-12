@@ -3,7 +3,7 @@
 Date: 2026-09-11
 Status: approved by user. A reference build validated the whole design end to end
 (121 unit tests, 11 live patterns over real TLS). Implementation plan:
-`docs/superpowers/plans/2026-09-11-phice-mvp.md`
+`docs/plans/2026-09-11-phice-mvp.md`
 
 ## 1. Summary
 

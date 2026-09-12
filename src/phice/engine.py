@@ -15,7 +15,8 @@ from enum import StrEnum
 from .config import PointerConfig
 from .cursor_backend import CursorBackend, clamp_to_displays, display_containing
 from .filters import OneEuroFilter
-from .orientation import wrap180, yaw_pitch
+from .mapping import absorb_overshoot, accel_multiplier, expo_curve, unwrap_yaw
+from .orientation import yaw_pitch
 from .protocol import SensorPacket
 
 
@@ -362,10 +363,7 @@ class PointerEngine:
         if not p.has_orientation:
             return
         yaw, pitch = yaw_pitch(p.alpha, p.beta, p.gamma or 0.0)  # type: ignore[arg-type]
-        if self._yaw_raw_prev is None:
-            self._yaw_cont = yaw
-        else:
-            self._yaw_cont += wrap180(yaw - self._yaw_raw_prev)
+        self._yaw_cont = unwrap_yaw(self._yaw_raw_prev, yaw, self._yaw_cont)
         self._yaw_raw_prev = yaw
         dt = 0.0
         if self._last_ts is not None:
@@ -383,11 +381,9 @@ class PointerEngine:
         if prev is None or frozen or p.rate_dps < self._cfg.deadzone_dps:
             return
         dyaw, dpitch = yf - prev[0], pf - prev[1]
-        mult = 1.0
         ac = self._cfg.accel
-        if ac.enabled and dt > 0:
-            speed = math.hypot(dyaw, dpitch) / dt
-            mult = max(1.0, min(ac.max_mult, 1.0 + ac.k * max(0.0, speed - ac.threshold_dps)))
+        mult = accel_multiplier(dyaw, dpitch, dt, ac.enabled, ac.threshold_dps,
+                                ac.k, ac.max_mult)
         dx = dyaw * self._cfg.gain_x_px_per_deg * mult
         dy = -dpitch * self._cfg.gain_y_px_per_deg * mult
         if self._cfg.invert_y:
@@ -410,50 +406,28 @@ class PointerEngine:
             return
         if rate_dps < self._cfg.deadzone_dps:
             return  # hold still; do not re-anchor, or slow aiming could never move
-        dx = self._curve(yaw - self._anchor[0]) * self._cfg.gain_x_px_per_deg
-        dy = -self._curve(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
+        dx = self._curved(yaw - self._anchor[0]) * self._cfg.gain_x_px_per_deg
+        dy = -self._curved(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
         if self._cfg.invert_y:
             dy = -dy
         self._move_to(*self._absorb_overshoot(self._anchor_pos[0] + dx,
                                               self._anchor_pos[1] + dy))
 
     def _absorb_overshoot(self, tx: float, ty: float) -> tuple[float, float]:
-        """Stop aim past a screen edge accumulating without bound.
-
-        Absolute mapping parks the cursor at the edge while you aim beyond it, and
-        that is wanted -- but the discarded overshoot is unbounded, so aiming well
-        off-screen meant un-aiming nearly all of it before the cursor would move
-        again. The anchor absorbs everything past `edge_slack_px`, leaving a small
-        deliberate amount of stick and no more.
-        """
+        """Clamp to the displays and keep edge overshoot from accumulating."""
         bx, by = self._backend.get_position()
         displays = self._backend.displays()
         current = display_containing(displays, bx, by)
         cx, cy = clamp_to_displays(displays, tx, ty, current)
         slack = self._cfg.edge_slack_px
         ax, ay = self._anchor_pos
-        ex, ey = tx - cx, ty - cy
-        if abs(ex) > slack:
-            ax -= ex - math.copysign(slack, ex)
-        if abs(ey) > slack:
-            ay -= ey - math.copysign(slack, ey)
-        self._anchor_pos = (ax, ay)
+        self._anchor_pos = (absorb_overshoot(tx, cx, ax, slack),
+                            absorb_overshoot(ty, cy, ay, slack))
         return cx, cy
 
-    def _curve(self, degrees: float) -> float:
-        """Expo: amplify large offsets from the anchor, leave small ones alone.
-
-        Spanning a wide screen at a linear gain demands a big arm movement, but
-        raising the gain everywhere costs precision. Growing the gain with
-        distance from the anchor keeps small corrections one-to-one while making
-        edge-to-edge sweeps cheap. Still a pure function of aim, so the absolute
-        mapping's no-drift property survives.
-        """
+    def _curved(self, degrees: float) -> float:
         cfg = self._cfg
-        if cfg.expo <= 0.0:
-            return degrees
-        mult = 1.0 + cfg.expo * (abs(degrees) / cfg.expo_ref_deg) ** 2
-        return degrees * min(mult, cfg.expo_max)
+        return expo_curve(degrees, cfg.expo, cfg.expo_ref_deg, cfg.expo_max)
 
     def _move_to(self, tx: float, ty: float) -> None:
         """Move to an absolute target, clamped across displays, dragging if held."""

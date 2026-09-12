@@ -1,18 +1,31 @@
 # Phice
 
-Use an iPhone as a Wii-remote-style air mouse for macOS.
+Turn an iPhone into a Wii-remote-style air mouse for macOS.
 
-Hold the phone flat, point it at the screen, and the Mac cursor follows. Tap to click,
-hold and move to drag, slide the centre strip to scroll, hold both buttons for a second
-to snap back to the middle of the screen.
+Point the phone at your screen and the cursor follows. Tap to click, hold and move
+to drag, slide the centre strip to scroll, hold the power button to snap back to
+the middle.
 
-**There is no iOS app.** The phone runs a plain web page that your Mac serves over TLS
-on your own network. Nothing is installed on the phone beyond an optional Home Screen
-shortcut, nothing talks to the internet, and **you do not need an Apple Developer
-account** — not even the free tier — because there is no app to sign or sideload.
+**There is no iOS app, and there never will be.** The phone runs a plain web page
+your Mac serves — no App Store, no sideloading, and **no Apple Developer account**,
+not even the free tier. Nothing is installed on the phone beyond an optional Home
+Screen shortcut.
 
-The pointer never moves until you tap **POWER** on the phone. It is off by default,
-off after a timeout, and off when you lay the phone flat.
+Point it at the cursor, press any button, and it starts tracking from there. Set the
+phone down and it turns itself off.
+
+```
+iPhone (Safari)                          Mac (Phice.app)
+────────────────                         ────────────────────────
+CoreMotion ──┐                           validate the packet
+touch      ──┼── JSON, 60 Hz ── wss ──►  decide what should happen
+             │                           post a Quartz cursor event
+             └─◄── layout + theme ──────  push config changes live
+```
+
+Every pointer decision happens on the Mac, in a pure engine with no I/O, driven by
+an injected clock and a swappable cursor backend. That is why 174 tests run in under
+five seconds without a phone, a screen or a real cursor.
 
 ---
 
@@ -105,22 +118,27 @@ can move your cursor.
 
 ## Daily use
 
-Open the page from the Home Screen and tap **POWER**. The cursor is taken over exactly
-where it already was — powering on never jumps it.
+Open the page from the Home Screen. **Point the phone at the cursor and press any
+button** — tracking starts from wherever the cursor already is, so nothing jumps.
+That first press only wakes it; it does not click.
 
 | Gesture | Result |
 |---|---|
 | Turn the phone right / left | Cursor moves right / left |
 | Raise / lower the top edge | Cursor moves up / down |
-| Roll the phone about its long axis | Nothing — roll is cancelled out exactly |
-| Tap **L** | Left click |
-| Tap **R** | Right click |
-| Hold **L** and move | Drag |
-| Double tap **L** | Double click |
+| Roll the phone along its axis | Nothing — roll cancels out exactly |
+| Tap the left pad | Left click |
+| Tap the right pad | Right click |
+| Hold the left pad and move | Drag |
+| Double tap | Double click |
 | Slide the centre strip | Scroll |
-| Hold **L** + **R** together for 1 s | Snap the cursor to the centre of the display |
-| Tap **POWER** again | Pointer off |
-| Lay the phone flat for a second | Pointer off by itself |
+| **Hold** the power button | Snap the cursor to the centre of the display |
+| **Tap** the power button | Pointer off |
+| Set the phone down | Pointer off by itself |
+
+The small button below the pads carries a status light: **red when idle, green
+while driving the cursor**. Holding it brightens the whole surface as the recenter
+completes, because your fingers cover the light at the moment it matters.
 
 Losing Wi-Fi mid-drag releases every held button rather than leaving one stuck down.
 
