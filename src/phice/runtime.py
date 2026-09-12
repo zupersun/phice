@@ -202,6 +202,8 @@ class Runtime:
         it can be invisible (a full menu bar on a notched Mac hides new items), and
         then there is otherwise no way to tell why the pointer is not moving."""
         d = dict(self.status.read())
+        d["sensor_hz"] = round(self.state.sensor_hz, 1)
+        d["phone_caps"] = self.state.caps
         d["cert_mode"] = self.config.cert_mode
         d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):

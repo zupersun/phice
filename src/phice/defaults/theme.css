@@ -21,6 +21,13 @@
   --scroll-thumb-w: 4px;
   --scroll-thumb-h: 34%;
 
+  /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
+  --led-off: #ff453a;
+  --led-on: #30d158;
+  --power-bg: #10161d;
+  --power-border: 1px solid #1e2731;
+  --led-size: 9px;
+
   --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
   --label-size: 15px;
   --header-display: flex;
@@ -113,8 +120,30 @@ body[data-state="off"] #header { opacity: 0.35; }
   transition: top 0s, background 120ms linear;
 }
 
-.role-power { font-size: 12px; }
-body[data-state="on"] .role-power, body[data-state="held"] .role-power { color: var(--accent); }
+/* Power: a small unobtrusive button whose only job is to carry the LED. */
+.role-power {
+  background: var(--power-bg);
+  border: var(--power-border);
+  border-radius: 999px;
+  box-shadow: none;
+}
+.role-power::after {
+  content: "";
+  width: var(--led-size);
+  height: var(--led-size);
+  border-radius: 50%;
+  background: var(--led-off);
+  box-shadow: 0 0 7px var(--led-off), 0 0 2px #000 inset;
+  transition: background 140ms linear, box-shadow 140ms linear;
+}
+/* Green once the pointer is actually driving the cursor. */
+body[data-state="on"] .role-power::after,
+body[data-state="hold"] .role-power::after,
+body[data-state="held"] .role-power::after {
+  background: var(--led-on);
+  box-shadow: 0 0 9px var(--led-on), 0 0 2px #000 inset;
+}
+.role-power[data-pressed="1"] { transform: scale(0.97); }
 
 /* Recenter hold: the ring fills as --recenter-progress goes 0 -> 1. */
 body[data-state="hold"] .role-left, body[data-state="hold"] .role-right {

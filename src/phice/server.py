@@ -73,6 +73,8 @@ class ServerState:
     layout: Layout
     config: PointerConfig
     accessibility: bool = True
+    sensor_hz: float = 0.0
+    caps: str = ""
     client: ServerConnection | None = None
     client_name: str = ""
     recorder: object | None = None  # an open text file while recording
@@ -170,6 +172,7 @@ class PhiceServer:
             await old.close(4001, "replaced")
         st.client = conn
         st.client_name = msg.name
+        st.caps = msg.caps
         # Session marker for tools/replay.py. Never record the raw hello: it carries a token.
         st.record(json.dumps({"t": "hello", "ver": msg.ver, "name": msg.name}))
         st.engine.connected()
@@ -202,6 +205,8 @@ class PhiceServer:
                     continue
                 bad = 0
                 if isinstance(m, SensorPacket):
+                    if m.hz:
+                        st.sensor_hz = m.hz
                     st.engine.handle(m)
                 elif isinstance(m, Ping):
                     await conn.send(pong_message())

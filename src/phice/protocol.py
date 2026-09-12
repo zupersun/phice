@@ -29,6 +29,7 @@ class Hello:
     pair: str | None
     token: str | None
     name: str
+    caps: str = ""
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class SensorPacket:
     buttons: dict[str, bool]
     counters: dict[str, int]
     scroll_delta: float
+    hz: float = 0.0
 
     @property
     def rate_dps(self) -> float:
@@ -140,6 +142,7 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
             buttons=_button_map(d.get("b", {}), "b", as_bool=True),
             counters=_button_map(d.get("c", {}), "c", as_bool=False),
             scroll_delta=_num(d.get("sd", 0.0), -10000.0, 10000.0, "sd"),  # type: ignore[arg-type]
+            hz=_num(d.get("hz", 0.0), 0.0, 1000.0, "hz"),  # type: ignore[arg-type]
         )
     if t == "hello":
         ver = d.get("ver")
@@ -148,8 +151,11 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
         name = d.get("name", "phone")
         if not isinstance(name, str):
             raise ProtocolError("name: expected string")
+        caps = d.get("caps", "")
+        if not isinstance(caps, str):
+            raise ProtocolError("caps: expected string")
         return Hello(ver=ver, pair=_token(d.get("pair"), "pair"), token=_token(d.get("token"), "token"),
-                     name=name[:64])
+                     name=name[:64], caps=caps[:200])
     if t == "ping":
         return Ping()
     if t == "bye":

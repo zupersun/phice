@@ -40,6 +40,8 @@
     buttons: new Map(),   // id -> {role, pressed, count, el, rect}
     touches: new Map(),   // touch identifier -> {id, lastY}
     scrollDelta: 0,
+    motionTimes: [],
+    hz: 0,
     orientation: null,    // [alpha, beta, gamma]
     rotationRate: [0, 0, 0],
     gravity: [0, 0, 0],
@@ -51,14 +53,29 @@
     el.body.dataset.state = s;
   }
 
+  function hapticCaps() {
+    const c = [];
+    if (typeof navigator.vibrate === "function") c.push("vibrate");
+    try {
+      if ("switch" in document.createElement("input")) c.push("switch");
+    } catch (_) { /* ignore */ }
+    if (el.hapticLabel) c.push("label");
+    return c.join(",") || "none";
+  }
+
   function tick() {
     if (!state.haptics) return;
-    // Safari has no vibration API. Toggling a native switch control produces a
-    // real haptic on iOS 17.4+. Harmless everywhere else.
-    // iOS fires the system haptic when a `switch` control toggles, but only via
-    // the LABEL and only if the control is actually rendered -- opacity:0 or
-    // display:none silently produce no haptic at all.
-    try { (el.hapticLabel || el.haptic).click(); } catch (_) { /* ignore */ }
+    // Safari has historically had no vibration API, so the only route is toggling
+    // a native `switch` control -- and only by clicking the LABEL, and only while
+    // the control is genuinely rendered. Try the standard API first in case a
+    // newer iOS has gained it.
+    try {
+      if (typeof navigator.vibrate === "function") { navigator.vibrate(10); }
+    } catch (_) { /* ignore */ }
+    try {
+      const target = el.hapticLabel || el.haptic;
+      if (target) target.click();
+    } catch (_) { /* ignore */ }
   }
 
   function num(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
@@ -180,7 +197,19 @@
     state.orientation = [num(ev.alpha), num(ev.beta), num(ev.gamma)];
   }
 
+  // Safari exposes no way to request a sensor rate, so measure what we actually
+  // get rather than assume. Reported to the Mac and shown in /debug/cursor.
+  function noteMotionTick() {
+    const now = performance.now();
+    state.motionTimes.push(now);
+    while (state.motionTimes.length && now - state.motionTimes[0] > 1000) {
+      state.motionTimes.shift();
+    }
+    state.hz = state.motionTimes.length;
+  }
+
   function onMotion(ev) {
+    noteMotionTick();
     const rr = ev.rotationRate || {};
     state.rotationRate = [num(rr.alpha), num(rr.beta), num(rr.gamma)];
     const g = ev.accelerationIncludingGravity || {};
@@ -245,6 +274,7 @@
       t: "s", seq: state.seq, ts: now / 1000,
       o: state.orientation, rr: state.rotationRate, g: state.gravity,
       b, c, sd: Math.round(sd * 100) / 100,
+      hz: state.hz,
     }));
   }
 

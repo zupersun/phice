@@ -48,9 +48,11 @@ def test_unreadable_file_raises(tmp_path):
 
 
 def test_default_layout_parses():
-    """No power button: the pointer wakes on the first press of any button."""
+    """A power button exists to carry the status LED and to shut the pointer
+    down, but it is not how you start: any button wakes it."""
     layout = load_layout(DEFAULTS_DIR / "layout.json")
-    assert layout.roles() == {"left": "left", "scroll": "scroll", "right": "right"}
+    assert layout.roles() == {"left": "left", "scroll": "scroll", "right": "right",
+                              "power": "power"}
     assert layout.to_dict()["buttons"][0]["label"] == "L"
 
 
