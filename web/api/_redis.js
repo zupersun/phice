@@ -17,7 +17,26 @@ function discover() {
   if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
     return { base: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN };
   }
+  // The Vercel marketplace integration injects only a redis:// connection string.
+  // A serverless function cannot readily hold a raw Redis socket, but Upstash
+  // serves REST on the same host with the URL's password as the bearer token.
+  for (const key of ["KV_REDIS_URL", "REDIS_URL", "KV_URL", "DATABASE_URL"]) {
+    const derived = fromRedisUrl(env[key]);
+    if (derived) return derived;
+  }
   return null;
+}
+
+function fromRedisUrl(value) {
+  if (!value) return null;
+  try {
+    const u = new URL(value);
+    const token = decodeURIComponent(u.password || "");
+    if (!token || !u.hostname) return null;
+    return { base: `https://${u.hostname}`, token };
+  } catch {
+    return null;
+  }
 }
 
 const CONN = discover();
