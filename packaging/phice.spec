@@ -12,9 +12,20 @@ datas = [
     ("../src/phice/web", "web"),
 ]
 
-hiddenimports = collect_submodules("rumps") + [
-    "Quartz", "AppKit", "Foundation", "ApplicationServices", "objc",
-]
+# collect_submodules is required per framework: listing a bare name pulls in the
+# top-level module but not its submodules or bindings, and ApplicationServices was
+# silently missing from the bundle as a result -- which made the Accessibility check
+# raise ImportError and report "not granted" forever.
+hiddenimports = collect_submodules("rumps")
+# ApplicationServices/__init__ imports CoreText, HIServices, Quartz and objc
+# *inside a function*, so static analysis never sees them. HIServices is the
+# one that actually provides AXIsProcessTrustedWithOptions.
+for _fw in ("objc", "Foundation", "AppKit", "Quartz", "ApplicationServices",
+            "CoreText", "HIServices", "CoreFoundation"):
+    try:
+        hiddenimports += collect_submodules(_fw)
+    except Exception:
+        hiddenimports.append(_fw)
 
 a = Analysis(
     ["entry.py"],
