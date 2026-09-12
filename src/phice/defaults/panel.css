@@ -1,0 +1,62 @@
+/* Phice control panel. Edit freely: the window reloads it live, exactly like the
+   phone's theme.css. Nothing here is compiled into the app. */
+:root {
+  --bg: #0b0f14;
+  --fg: #e8eef5;
+  --dim: #7b8a9c;
+  --accent: #3ea6ff;
+  --ok: #30d158;
+  --warn: #ffb340;
+  --bad: #ff453a;
+  --card: #121820;
+  --line: #1f2833;
+  --code-size: 46px;
+  --radius: 14px;
+  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 22px 20px 26px;
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.55 var(--font);
+  -webkit-user-select: none; user-select: none;
+}
+h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
+.sub { color: var(--dim); margin: 0 0 18px; font-size: 13px; }
+
+.card { background: var(--card); border: 1px solid var(--line);
+        border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px; }
+
+.code { font-size: var(--code-size); font-weight: 700; letter-spacing: 10px;
+        text-align: center; color: var(--accent); margin: 6px 0 4px;
+        -webkit-user-select: all; user-select: all; }
+.code-hint { text-align: center; color: var(--dim); font-size: 12px; margin: 0; }
+
+.url { font-size: 13px; color: var(--fg); word-break: break-all;
+       -webkit-user-select: all; user-select: all; }
+
+.row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 7px var(--warn); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 7px var(--bad); }
+.row .what { flex: 1; }
+.row .val { color: var(--dim); font-size: 13px; }
+
+button {
+  font: inherit; font-size: 13px; font-weight: 600;
+  background: #1b242f; color: var(--fg);
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 14px; margin: 4px 6px 0 0;
+}
+button.primary { background: var(--accent); color: #04121f; border-color: transparent; }
+button:hover { border-color: var(--dim); }
+button:active { transform: translateY(1px); }
+button[hidden] { display: none; }
+
+.note { color: var(--dim); font-size: 12px; margin: 12px 0 0; }
+
+ol { margin: 8px 0 0; padding-left: 20px; color: var(--dim); font-size: 13px; }
+li { margin: 5px 0; }
+b { color: var(--fg); font-weight: 600; }

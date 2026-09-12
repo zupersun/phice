@@ -185,6 +185,7 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
         assert rt.status.read()["pair_code"] == published["code"]
     finally:
         task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
         if rt.rtc:
             await rt.rtc.close()
 
@@ -235,5 +236,151 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
         assert len(set(codes)) == 1, f"the code must not change between offers: {codes}"
     finally:
         task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if rt.rtc:
+            await rt.rtc.close()
+
+
+async def test_the_phone_is_told_what_the_engine_did(transport):
+    """A press that the Mac acts on but never acknowledges looks identical to a
+    press that was dropped: no LED, no recenter bar, nothing. The phone drives
+    every visual from these messages."""
+    states: list[dict] = []
+    phone = RTCPeerConnection(configuration=_no_stun())
+    opened = asyncio.get_running_loop().create_future()
+
+    @phone.on("datachannel")
+    def on_channel(channel):
+        @channel.on("message")
+        def on_message(msg):
+            m = json.loads(msg)
+            if m["t"] == "state":
+                states.append(m)
+
+        # aiortc fires `datachannel` once the channel is already open, so the
+        # "open" event may never arrive for it.
+        if not opened.done():
+            opened.set_result(channel)
+
+    offer = await transport.create_offer()
+    await phone.setRemoteDescription(RTCSessionDescription(**offer))
+    await phone.setLocalDescription(await phone.createAnswer())
+    await gather_complete(phone)
+    await transport.accept_answer({"sdp": phone.localDescription.sdp,
+                                   "type": phone.localDescription.type})
+    try:
+        channel = await asyncio.wait_for(opened, timeout=10)
+        for seq in range(1, 6):   # a real phone streams; one packet can race the open
+            channel.send(json.dumps({
+                "t": "s", "seq": seq, "ts": seq / 60, "o": [0, 0, 0], "rr": [0, 0, 0],
+                "g": [0, 0, 9.8], "b": {"left": 1}, "c": {"left": 1}, "sd": 0}))
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.3)
+        phases = [s["phase"] for s in states]
+        assert phases[0] == "off", "the first state says the pointer is idle"
+        assert "on" in phases, f"a press must be acknowledged, got {phases}"
+        assert states[-1]["ui"]["recenter_ms"] > 0, "the phone times its own animation"
+    finally:
+        await phone.close()
+        await transport.close()
+
+
+async def test_status_says_connected_while_a_phone_is_on_the_data_channel(tmp_path, monkeypatch):
+    """/debug/cursor and the menu bar both read this. Reporting "not connected"
+    through a working WebRTC session sends every diagnosis down the wrong path."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d.update(transport="webrtc", signaling_url="https://example.invalid")
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt.rtc = RTCTransport(engine=rt.engine, layout_json='{"version":1,"buttons":[]}',
+                          theme_css="body{}", ice_servers=())
+    status = asyncio.ensure_future(rt._status_loop())
+    try:
+        phone, _channel = await _connect(rt.rtc)
+        for _ in range(30):
+            if rt.status.read()["connected"]:
+                break
+            await asyncio.sleep(0.1)
+        assert rt.status.read()["connected"], "an open data channel is a connected phone"
+        assert rt._debug_cursor()["phone_url"].endswith("/app")
+    finally:
+        status.cancel()
+        await asyncio.gather(status, return_exceptions=True)
+        await phone.close()
+        await rt.rtc.close()
+
+
+async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
+    """The panel's "new code" button. Its whole reason to exist is a phone that
+    is stuck, so doing nothing while one is attached defeats the point."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d.update(transport="webrtc", signaling_url="https://example.invalid")
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    codes: list[str] = []
+    phones: list[RTCPeerConnection] = []
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            codes.append(code)
+            self._offer = offer
+
+        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+            if len(codes) > 1:
+                await asyncio.sleep(3600)     # only the first code gets a phone
+            phone = RTCPeerConnection(configuration=_no_stun())
+            phones.append(phone)
+            await phone.setRemoteDescription(RTCSessionDescription(**self._offer))
+            await phone.setLocalDescription(await phone.createAnswer())
+            await gather_complete(phone)
+            return {"sdp": phone.localDescription.sdp, "type": phone.localDescription.type}
+
+    import phice.runtime as runtime_mod
+    original, runtime_mod.SignalingClient = runtime_mod.SignalingClient, FakeSignaling
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt._loop = asyncio.get_running_loop()
+    rt.rtc_ice_servers = ()
+    task = asyncio.ensure_future(rt.start_webrtc())
+    try:
+        for _ in range(100):
+            if rt.rtc and rt.rtc.is_open:
+                break
+            await asyncio.sleep(0.1)
+        assert rt.rtc.is_open, "the fake phone never connected"
+
+        rt.new_pair_code()
+        for _ in range(100):
+            if len(codes) > 1:
+                break
+            await asyncio.sleep(0.1)
+        assert len(codes) > 1, "no fresh offer was published"
+        assert codes[1] != codes[0], "the code must actually change"
+    finally:
+        runtime_mod.SignalingClient = original
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        for phone in phones:
+            await phone.close()
         if rt.rtc:
             await rt.rtc.close()

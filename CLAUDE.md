@@ -54,6 +54,11 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `connected: true, phase: "off"` | Connected, pointer not armed. Tap POWER. |
 | `phase: "on", accessibility: false` | Everything works except the macOS permission. |
 | `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
+| `rtc.frames` climbing, `sensor_hz: 0` | Buttons arrive, motion does not. The phone was refused sensor access; it reports what iOS answered in `phone connected: ... (caps: ...)`. |
+| `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
+
+`connected` is true for either transport. The pointer switching itself off a second after
+it is armed is the packet timeout doing its job, not a bug: no packets are arriving.
 
 `phice grant` asks macOS for Accessibility **from the running agent**, which is what
 makes it list the right binary. Prompting from a terminal would add the terminal
@@ -97,6 +102,11 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 - **`accessibility` gates nothing** — it is only reported to the phone, so the cursor can
   move while the status says otherwise. The runtime polls it in `_status_loop`; do not
   move that back to the menu bar, which may never appear.
+- **The control panel is a WKWebView, not native widgets**, so its design lives in
+  `panel.css` in the config folder and the user can restyle it exactly like the phone's
+  theme. It loads `http://127.0.0.1:<port>/panel`, which App Transport Security blocks
+  unless the bundle declares `NSAllowsLocalNetworking` -- the only symptom is a blank
+  window. It opens at every launch because the pairing code changes each launch.
 - **The menu bar icon may be invisible.** macOS adds new status items to the left of
   existing ones; on a notched Mac with a full menu bar they land behind the notch.
   Never rely on the menu bar as the only way to see state — that is why the debug hook
@@ -169,6 +179,18 @@ These were each discovered the hard way. Changing them re-breaks the product.
     the server cannot answer and the test times out.
 12. **iOS will not install a bare `.crt`.** Serve `/ca.mobileconfig` as
     `application/x-apple-aspen-config`.
+13. **The hosted page's own chrome must not live in the stylesheet the Mac replaces.**
+    `web/app/index.html` has two: `#theme`, overwritten wholesale by the pushed theme, and
+    `#shell`, which the page owns. They were one, so the first theme push deleted the rule
+    that displays the Start button -- motion access could then never be granted and the
+    phone streamed nothing, while the pad rendered perfectly.
+14. **Every transport must push engine state back.** The phone draws its LED, its recenter
+    bar and every reaction from `state` messages. The WebRTC transport shipped without
+    wiring `engine.on_change`, so each button worked and looked dead.
+15. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
+    be *started* inside the user gesture -- awaiting the first puts the second outside it.
+    Check the returned value, and then check that events actually arrive: a listener that
+    is attached but never fires is indistinguishable from a working one.
 
 ## Why TLS is not optional
 

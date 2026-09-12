@@ -21,7 +21,7 @@ hiddenimports = collect_submodules("rumps")
 # *inside a function*, so static analysis never sees them. HIServices is the
 # one that actually provides AXIsProcessTrustedWithOptions.
 for _fw in ("objc", "Foundation", "AppKit", "Quartz", "ApplicationServices",
-            "CoreText", "HIServices", "CoreFoundation"):
+            "CoreText", "HIServices", "CoreFoundation", "WebKit"):
     try:
         hiddenimports += collect_submodules(_fw)
     except Exception:
@@ -67,5 +67,9 @@ app = BUNDLE(
         "NSHumanReadableCopyright": "",
         "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
+        # The panel window is WKWebView loading 127.0.0.1 over plain HTTP.
+        # App Transport Security blocks that without this exemption, and the
+        # only symptom is a blank window.
+        "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
     },
 )

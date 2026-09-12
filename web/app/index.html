@@ -4,35 +4,45 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Phice">
 <title>Phice</title>
-<style id="theme">
-  /* Replaced wholesale by the theme pushed from the Mac. These few rules only
-     make the pairing screen legible before that arrives. */
+
+<!-- The Mac's theme, pushed over the data channel and replaced wholesale. It
+     styles the pad and nothing else. -->
+<style id="theme"></style>
+
+<!-- This page's own chrome. It must NEVER be replaced: the theme used to
+     overwrite it, which deleted the rule that shows the Start button, so motion
+     access could not be granted and the phone sent no orientation at all.
+     It comes after #theme so it wins any tie. -->
+<style id="shell">
   html,body{height:100%;margin:0;background:#000;color:#e8eef5;
             font:16px -apple-system,system-ui,sans-serif;
             touch-action:none;-webkit-user-select:none;user-select:none}
-  .overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
-           padding:24px;text-align:center}
-  body[data-state="pair"] #ov-pair,
-  body[data-state="connecting"] #ov-connecting,
-  body[data-state="failed"] #ov-failed,
-  body[data-state="start"] #ov-start{display:flex}
+  .screen{position:fixed;inset:0;z-index:10;display:none;
+          align-items:center;justify-content:center;
+          padding:24px;text-align:center;background:#000}
+  body[data-screen="pair"] #screen-pair,
+  body[data-screen="connecting"] #screen-connecting,
+  body[data-screen="failed"] #screen-failed,
+  body[data-screen="start"] #screen-start{display:flex}
   #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
-        background:#111a24;color:#e8eef5;border:1px solid #233; border-radius:12px;
+        background:#111a24;color:#e8eef5;border:1px solid #233;border-radius:12px;
         padding:14px;text-transform:uppercase}
-  button{font:inherit;font-size:17px;padding:15px 32px;border:none;border-radius:13px;
-         background:#3ea6ff;color:#04121f;font-weight:700;margin-top:16px}
-  p{color:#6b7a8c;line-height:1.5}
-  #link-note{position:fixed;left:0;right:0;bottom:8px;text-align:center;
+  .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;
+                 border-radius:13px;background:#3ea6ff;color:#04121f;
+                 font-weight:700;margin-top:16px}
+  .screen p{color:#6b7a8c;line-height:1.5}
+  #link-note{position:fixed;left:0;right:0;bottom:8px;z-index:11;text-align:center;
              font-size:12px;color:#ffb340;margin:0}
   body[data-link="unstable"] #link-note{display:block}
   body:not([data-link="unstable"]) #link-note{display:none}
 </style>
-<body data-state="pair">
+
+<body data-screen="pair" data-state="disconnected">
   <main id="pad" aria-label="Mouse controls"></main>
 
   <p id="link-note" hidden>Connection unstable…</p>
 
-  <div class="overlay" id="ov-pair">
+  <div class="screen" id="screen-pair">
     <div>
       <h1>Phice</h1>
       <p>Enter the six-character code shown on your Mac.</p>
@@ -42,9 +52,9 @@
     </div>
   </div>
 
-  <div class="overlay" id="ov-connecting"><div><h1>Connecting…</h1></div></div>
+  <div class="screen" id="screen-connecting"><div><h1>Connecting…</h1></div></div>
 
-  <div class="overlay" id="ov-start">
+  <div class="screen" id="screen-start">
     <div>
       <h1>Connected</h1>
       <p>Tap to allow motion access.</p>
@@ -52,7 +62,7 @@
     </div>
   </div>
 
-  <div class="overlay" id="ov-failed">
+  <div class="screen" id="screen-failed">
     <div>
       <h1>Could not connect</h1>
       <p id="why"></p>

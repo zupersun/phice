@@ -13,13 +13,18 @@ def setup(tmp_path):
     cp = CertPaths.under(tmp_path)
     ensure_ca(cp, "testmac")
     cursor = {"x": 1, "y": 2}
+    rotated: list[bool] = []
     s = SetupServer(0, lambda: ca_der(cp), lambda: ("http://10.0.0.5:8080/ca.mobileconfig",
                                                     "https://10.0.0.5:8443/?pair=tok", True,
                                                     "http://testmac.local:8080/ca.mobileconfig",
                                                     "https://testmac.local:8443/?pair=tok"),
                     debug_cursor=lambda: cursor,
+                    pair_code=lambda: "ABC123",
+                    panel_css=lambda: b"body{color:red}",
+                    new_code=lambda: rotated.append(True),
                     ca_mobileconfig=lambda: ca_mobileconfig(cp))
     port = s.start()
+    s.rotated = rotated
     yield port
     s.stop()
 
@@ -98,3 +103,30 @@ def test_check_page_links_to_the_pairing_url_when_trusted():
     html = check_html("http://m/ca.mobileconfig", "https://m:8443/?pair=tok")
     assert 'href="https://m:8443/?pair=tok"' in html
     assert "https://m:8443/assets/apple-touch-icon.png" in html
+
+
+def test_panel_serves_its_stylesheet_separately(setup):
+    """The panel's design lives in a file the user owns, exactly like the phone's
+    theme. Inlining it into the HTML would make the window unrestylable."""
+    status, ctype, body = get(setup, "/panel")
+    assert status == 200 and "text/html" in ctype
+    html = body.decode()
+    assert 'href="/panel.css"' in html
+    assert "<style" not in html, "no design baked into the page"
+    status, ctype, css = get(setup, "/panel.css")
+    assert status == 200 and "text/css" in ctype
+    assert css == b"body{color:red}"
+
+
+def test_panel_shows_the_pairing_code_and_status_from_one_source(setup):
+    """Everything the window displays comes from /debug/cursor, so the window and
+    the diagnosing command can never disagree."""
+    html = get(setup, "/panel")[2].decode()
+    assert "/debug/cursor" in html
+    assert "/debug/newcode" in html
+
+
+def test_new_code_button_reaches_the_runtime(setup):
+    req = urllib.request.Request(f"http://127.0.0.1:{setup}/debug/newcode", method="POST")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        assert r.status == 200

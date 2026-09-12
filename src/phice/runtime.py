@@ -99,10 +99,14 @@ class Runtime:
                                  ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths),
                                  grant_accessibility=lambda: accessibility_trusted(prompt=True),
                                  pair_code=lambda: self.status.read()["pair_code"],
+                                 panel_css=lambda: self.paths.panel_css.read_bytes(),
+                                 new_code=self.new_pair_code,
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
         self._pair_code: str = ""
+        self._answer_wait: asyncio.Task | None = None
+        self._rotate = False   # distinguishes "new code" from shutdown
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -215,7 +219,16 @@ class Runtime:
         it can be invisible (a full menu bar on a notched Mac hides new items), and
         then there is otherwise no way to tell why the pointer is not moving."""
         d = dict(self.status.read())
-        d["sensor_hz"] = round(self.state.sensor_hz, 1)
+        if self.rtc:
+            d["rtc"] = {"frames": self.rtc.frames, "bad": self.rtc.bad_frames,
+                        "last_error": self.rtc.last_error,
+                        "channel": (self.rtc.channel.readyState
+                                    if self.rtc.channel else "none"),
+                        "state": self.rtc.pc.connectionState}
+        d["phone_url"] = f"{self.config.signaling_url}/app"
+        d["transport"] = self.config.transport
+        d["sensor_hz"] = round(self.rtc.hz if self.rtc and self.rtc.is_open
+                               else self.state.sensor_hz, 1)
         d["phone_caps"] = self.state.caps
         d["cert_mode"] = self.config.cert_mode
         d["mapping"] = self.config.mapping
@@ -231,8 +244,13 @@ class Runtime:
 
     async def _status_loop(self) -> None:
         while True:
-            self.status.update(connected=self.state.client is not None,
-                               device_name=self.state.client_name,
+            # Either transport can be the live one. Reading only state.client
+            # reported "not connected" through an entire working WebRTC session,
+            # which sent every diagnosis down the wrong path.
+            rtc_open = self.rtc is not None and self.rtc.is_open
+            self.status.update(connected=rtc_open or self.state.client is not None,
+                               device_name=(self.rtc.client_name if rtc_open
+                                            else self.state.client_name),
                                phase=self.engine.phase.value)
             # Poll here rather than relying on the menu bar, which may never appear.
             if not isinstance(self.backend, FakeCursor):
@@ -310,6 +328,26 @@ class Runtime:
         cfg = self.config.ice_servers
         return tuple(cfg) if cfg else None
 
+    def new_pair_code(self) -> None:
+        """Drop the current code and republish under a fresh one.
+
+        Cancelling the wait is what actually does it: the publish loop is parked
+        in wait_for_answer, and closing the peer connection would not wake it.
+        """
+        self._pair_code = ""
+        task = self._answer_wait
+        if task is not None and self._loop is not None and not self._loop.is_closed():
+            # Only this path produces a cancellation, so only this path may mark
+            # one as expected. Setting the flag unconditionally left it armed and
+            # the loop then swallowed a real shutdown.
+            self._rotate = True
+            self._loop.call_soon_threadsafe(task.cancel)
+        elif self.rtc is not None:
+            # Already paired: there is no wait to cancel, so end the session and
+            # let the loop publish a fresh offer. Without this the button looked
+            # dead for exactly the user who needs it -- one whose phone is stuck.
+            self._dispatch(self.rtc.close())
+
     async def start_webrtc(self) -> None:
         """Publish an offer under a short code and wait for a phone to answer.
 
@@ -335,6 +373,7 @@ class Runtime:
             self.rtc = RTCTransport(engine=self.engine,
                                     layout_json=self.paths.layout_json.read_text(),
                                     theme_css=self.paths.theme_css.read_text(),
+                                    accessibility=lambda: self.status.read()["accessibility"],
                                     ice_servers=(self.rtc_ice_servers
                                                  if self.rtc_ice_servers is not None
                                                  else ice))
@@ -355,11 +394,25 @@ class Runtime:
                 continue
             self.status.update(pair_code=code, error="")
             log.info("pairing code %s -- enter it at %s/app", code, self.config.signaling_url)
+            self._answer_wait = asyncio.ensure_future(client.wait_for_answer(code))
             try:
-                answer = await client.wait_for_answer(code)
+                answer = await self._answer_wait
             except SignalingError:
                 await self.rtc.close()
-                continue  # the code expired unused; mint another
+                continue            # the code expired unused; mint another
+            except asyncio.CancelledError:
+                # Two very different things arrive here: the panel asking for a
+                # new code, and this whole task being shut down. Swallowing both
+                # made the loop immortal -- the app could not quit and the test
+                # suite hung at random.
+                await self.rtc.close()
+                if not self._rotate:
+                    raise
+                self._rotate = False
+                continue
+            finally:
+                self._answer_wait = None
+                self._rotate = False   # never let a stale request eat a shutdown
             await self.rtc.accept_answer(answer)
             while self.rtc.pc.connectionState not in ("failed", "closed", "disconnected"):
                 await asyncio.sleep(1.0)

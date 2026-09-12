@@ -25,7 +25,7 @@ def resource_dir() -> Path:
 PACKAGE_DIR = resource_dir()
 DEFAULTS_DIR = PACKAGE_DIR / "defaults"
 WEB_DIR = PACKAGE_DIR / "web"
-UI_FILES = ("layout.json", "theme.css")
+UI_FILES = ("layout.json", "theme.css", "panel.css")
 
 
 def default_config_dir() -> Path:
@@ -45,6 +45,8 @@ class Paths:
     def layout_json(self) -> Path: return self.root / "layout.json"
     @property
     def theme_css(self) -> Path: return self.root / "theme.css"
+    @property
+    def panel_css(self) -> Path: return self.root / "panel.css"
     @property
     def assets(self) -> Path: return self.root / "assets"
     @property

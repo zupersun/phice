@@ -7,6 +7,7 @@ import webbrowser
 
 import rumps
 
+from . import window
 from .cli import agent_plist_path
 from .cursor_backend import accessibility_trusted as _trusted
 from .paths import Paths
@@ -45,6 +46,7 @@ class PhiceApp(rumps.App):
         self.menu = [
             self.item_status,
             None,
+            rumps.MenuItem("Open Phice window", callback=self.show_panel),
             rumps.MenuItem("Show setup page…", callback=self.show_setup),
             self.item_enabled,
             rumps.MenuItem("Reload config now", callback=self.reload_config),
@@ -62,6 +64,15 @@ class PhiceApp(rumps.App):
         self._ticks = 0
 
     # ----- menu actions -----------------------------------------------------
+
+    def panel_url(self) -> str:
+        return f"http://127.0.0.1:{self.runtime.http_port}/panel"
+
+    def show_panel(self, _=None):
+        # Falls back to the browser rather than failing silently: on a Mac where
+        # WebKit will not load, the panel is still the only place the code lives.
+        if not window.open_panel(self.panel_url()):
+            webbrowser.open(self.panel_url())
 
     def show_setup(self, _):
         webbrowser.open(f"http://127.0.0.1:{self.runtime.http_port}/setup")
@@ -119,6 +130,12 @@ class PhiceApp(rumps.App):
 
     def refresh(self, _):
         self._ticks += 1
+        if self._ticks == 2:
+            # Every launch, not just the first: the menu bar icon can be
+            # invisible behind the notch, and then there is nothing to click.
+            # The pairing code changes each launch anyway, so the window is
+            # what the user needs to see.
+            self.show_panel()
         if self._ticks % 3 == 1:
             self.runtime.set_accessibility(accessibility_trusted())
         s = self.runtime.status.read()

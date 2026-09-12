@@ -30,9 +30,17 @@
     timer: null,
     motionTimes: [],
     hz: 0,
+    perm: "",
   };
 
-  const setState = (s) => { el.body.dataset.state = s; };
+  // Two independent state machines, and they must stay independent:
+  //   data-screen -- this page's own flow (pair / connecting / start / live),
+  //                  styled by #shell, which the Mac never touches.
+  //   data-state  -- the Mac engine's phase (off / on / hold / held), styled by
+  //                  the pushed theme.
+  // They used to share one attribute, so the Mac's first status message wiped
+  // out the pairing flow.
+  const setScreen = (s) => { el.body.dataset.screen = s; };
 
   // ---------- pairing ----------
 
@@ -50,7 +58,7 @@
   }
 
   async function pair(code) {
-    setState("connecting");
+    setScreen("connecting");
     // Both peers take their ICE configuration from the same endpoint. Mismatched
     // lists gather candidates that cannot pair, and a relay is required whenever
     // the two devices are on different networks behind NAT.
@@ -109,7 +117,7 @@
 
   function fail(why) {
     el.why.textContent = why;
-    setState("failed");
+    setScreen("failed");
   }
 
   // ---------- channel ----------
@@ -122,7 +130,7 @@
       // only to tell the Mac what this phone can do. Haptics have been guessed at
       // twice; the Mac logs this instead.
       channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
-      setState("start");
+      setScreen("start");
     });
     channel.addEventListener("close", () => fail("The Mac closed the connection."));
     channel.addEventListener("message", (ev) => {
@@ -248,10 +256,27 @@
 
   async function startSensors() {
     const D = window.DeviceOrientationEvent, M = window.DeviceMotionEvent;
-    // requestPermission must be called from a user gesture, which is why this
-    // hangs off the Start button rather than running on load.
-    if (D && typeof D.requestPermission === "function") await D.requestPermission();
-    if (M && typeof M.requestPermission === "function") await M.requestPermission();
+    // Both prompts must be STARTED inside the user gesture. Awaiting the first
+    // before asking for the second puts the second outside the gesture, and iOS
+    // rejects it -- which aborted this function before a single listener was
+    // attached, leaving a page that looked connected and sent nothing.
+    const asks = [];
+    if (D && typeof D.requestPermission === "function") asks.push(D.requestPermission());
+    if (M && typeof M.requestPermission === "function") asks.push(M.requestPermission());
+    const results = await Promise.allSettled(asks);
+    // Report exactly what iOS answered. Guessing at the permission state from
+    // the outside has cost hours; the Mac logs this and shows it in the panel.
+    state.perm = (asks.length === 0 ? "no-prompt-api" : results.map((r, i) =>
+      (i === 0 ? "orient=" : "motion=") +
+      (r.status === "rejected" ? "threw:" + (r.reason && r.reason.name) : r.value)).join(","));
+    if (state.channel && state.channel.readyState === "open") {
+      state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
+                                          caps: hapticCaps() + "," + state.perm }));
+    }
+    // iOS resolves to "denied" WITHOUT throwing when Motion & Orientation Access
+    // is off, or when this site was refused once before. Ignoring the result is
+    // what made the failure silent.
+    const denied = results.some((r) => r.status === "rejected" || r.value === "denied");
 
     window.addEventListener("deviceorientation", (e) => {
       state.orientation = [e.alpha, e.beta, e.gamma];
@@ -264,9 +289,28 @@
       state.gravity = [g.x || 0, g.y || 0, g.z || 9.8];
     });
 
-    el.body.dataset.state = "on";
+    setScreen("live");
     if (state.timer) clearInterval(state.timer);
     state.timer = setInterval(() => send(false), 1000 / 60);
+
+    // Attaching a listener proves nothing: permission can be refused and the
+    // events simply never arrive. The Mac then times the pointer out a second
+    // after it is switched on, which reads as "it turns itself off".
+    setTimeout(() => {
+      if (state.orientation) return;
+      clearInterval(state.timer);
+      state.timer = null;
+      if (state.channel && state.channel.readyState === "open") {
+        state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
+                                            caps: "NO-MOTION," + state.perm }));
+      }
+      fail(denied
+        ? "iPhone refused motion access for this site. Settings \u203a Apps \u203a Safari "
+          + "\u203a Motion & Orientation Access must be ON. If it already is, that switch "
+          + "also needs turning off and on again to clear a past refusal. Then reload."
+        : "Connected, but the iPhone is sending no motion data. Settings \u203a Apps \u203a "
+          + "Safari \u203a Motion & Orientation Access must be ON, then reload this page.");
+    }, 2500);
   }
 
   // Safari exposes no way to request a sensor rate, so measure what actually
@@ -322,8 +366,8 @@
   document.getElementById("btn-start").addEventListener("click", () => {
     startSensors().catch(() => fail("Motion access was denied. Allow it in Settings › Apps › Safari › Motion & Orientation Access."));
   });
-  document.getElementById("btn-retry").addEventListener("click", () => setState("pair"));
+  document.getElementById("btn-retry").addEventListener("click", () => setScreen("pair"));
 
   el.code.value = localStorage.getItem("phice.code") || "";
-  setState("pair");
+  setScreen("pair");
 })();

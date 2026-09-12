@@ -36,7 +36,7 @@ echo "==> verifying the bundle can actually resolve its resources"
 T="$(mktemp -d)"
 dist/Phice.app/Contents/MacOS/Phice --config-dir "$T" paths >/dev/null \
   || { echo "bundle cannot resolve its packaged resources"; rm -rf "$T"; exit 1; }
-for f in pointer.json layout.json theme.css assets/logo.svg; do
+for f in pointer.json layout.json theme.css panel.css assets/logo.svg; do
   test -e "$T/$f" || { echo "MISSING from bundle: $f"; rm -rf "$T"; exit 1; }
 done
 rm -rf "$T"

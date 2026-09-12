@@ -53,6 +53,79 @@ def _alt_block(url: str | None, what: str) -> str:
          resolves <code>.local</code> names:<br><code>{url}</code></p>"""
 
 
+PANEL_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Phice</title>
+<link rel="stylesheet" href="/panel.css">
+<h1>Phice</h1>
+<p class="sub" id="sub">Checking\u2026</p>
+
+<div class="card" id="pair-card">
+  <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
+  <p class="code-hint">Enter this on your phone</p>
+</div>
+
+<div class="card">
+  <div class="url" id="url">\u2014</div>
+  <button id="copy">Copy link</button>
+  <button id="newcode">New code</button>
+</div>
+
+<div class="card">
+  <div class="row"><span class="dot" id="d-acc"></span>
+    <span class="what">Can move the cursor</span><span class="val" id="v-acc">?</span></div>
+  <div class="row"><span class="dot" id="d-conn"></span>
+    <span class="what">Phone connected</span><span class="val" id="v-conn">?</span></div>
+  <div class="row"><span class="dot" id="d-ptr"></span>
+    <span class="what">Pointer</span><span class="val" id="v-ptr">?</span></div>
+  <button id="grant">Grant permission\u2026</button>
+</div>
+
+<div class="card">
+  <b>How to connect</b>
+  <ol>
+    <li>Open the link above on your iPhone.</li>
+    <li>Type the code, then tap <b>Start</b> and allow motion access.</li>
+    <li>Point at the cursor and press any button to begin.</li>
+  </ol>
+  <p class="note">Closing this window leaves Phice running in the menu bar.</p>
+</div>
+
+<script>
+function dot(el, cls) { el.className = "dot" + (cls ? " " + cls : ""); }
+async function refresh() {
+  try {
+    const r = await fetch("/debug/cursor", { cache: "no-store" });
+    const d = await r.json();
+    document.getElementById("code").textContent = d.pair_code || "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
+    document.getElementById("url").textContent = d.phone_url || "\u2014";
+    document.getElementById("sub").textContent =
+      d.connected ? "Connected to " + (d.device_name || "your phone")
+                  : "Waiting for your phone";
+    const acc = document.getElementById("v-acc");
+    acc.textContent = d.accessibility ? "granted" : "not granted";
+    dot(document.getElementById("d-acc"), d.accessibility ? "ok" : "bad");
+    document.getElementById("grant").hidden = !!d.accessibility;
+    document.getElementById("v-conn").textContent = d.connected ? "yes" : "no";
+    dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
+    document.getElementById("v-ptr").textContent = d.phase;
+    dot(document.getElementById("d-ptr"),
+        d.phase === "on" ? "ok" : d.phase === "off" ? "warn" : "");
+  } catch (e) { /* the app is restarting; the next tick will catch up */ }
+}
+document.getElementById("copy").onclick = () =>
+  navigator.clipboard.writeText(document.getElementById("url").textContent);
+document.getElementById("newcode").onclick = async () => {
+  await fetch("/debug/newcode", { method: "POST" }); refresh();
+};
+document.getElementById("grant").onclick = async () => {
+  await fetch("/debug/grant"); refresh();
+};
+refresh();
+setInterval(refresh, 1000);
+</script>
+"""
+
 def check_html(ca_url: str, pair_url: str) -> str:
     """Self-diagnosing page, served over plain HTTP so it always loads.
 
@@ -152,12 +225,16 @@ class SetupServer:
                  ca_mobileconfig: Callable[[], bytes] | None = None,
                  grant_accessibility: Callable[[], bool] | None = None,
                  pair_code: Callable[[], str] | None = None,
+                 panel_css: Callable[[], bytes] | None = None,
+                 new_code: Callable[[], None] | None = None,
                  signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
         self._ca_mobileconfig = ca_mobileconfig
         self._grant_accessibility = grant_accessibility
         self._pair_code = pair_code
+        self._panel_css = panel_css
+        self._new_code = new_code
         self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
@@ -185,6 +262,9 @@ class SetupServer:
 
             def _is_local(self) -> bool:
                 return self.client_address[0] in ("127.0.0.1", "::1")
+
+            def do_POST(self):  # noqa: N802
+                self.do_GET()
 
             def do_GET(self):  # noqa: N802
                 path = self.path.split("?", 1)[0]
@@ -220,6 +300,16 @@ class SetupServer:
                             f"<p class='muted'>Single use, and it expires after five "
                             f"minutes. Reload for the current one.</p></div>")
                     self._send(200, body.encode(), "text/html; charset=utf-8")
+                elif path == "/panel" and self._is_local():
+                    self._send(200, PANEL_HTML.encode(), "text/html; charset=utf-8")
+                elif path == "/panel.css" and self._is_local():
+                    # Served from the config directory so the user can restyle it,
+                    # exactly like the phone's theme.
+                    css = outer._panel_css() if outer._panel_css else b""
+                    self._send(200, css, "text/css; charset=utf-8")
+                elif path == "/debug/newcode" and outer._new_code and self._is_local():
+                    outer._new_code()
+                    self._send(200, b'{"ok":true}', "application/json")
                 elif path == "/check":
                     ca_url, pair_url, *_ = outer._urls()  # one call: each mints a token
                     self._send(200, check_html(ca_url, pair_url).encode(),
