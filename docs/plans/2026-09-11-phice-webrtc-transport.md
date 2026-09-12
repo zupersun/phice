@@ -10,6 +10,22 @@
 
 **Source context:** `CLAUDE.md` in the repo root.
 
+**Revised 2026-09-11**, after the app-bundle work and a round of feel changes. What moved
+underneath this plan:
+
+- The Mac ships as a signed `Phice.app` (`./packaging/build.sh`), not a `uv` checkout.
+- There is no power-to-start gesture. **Any button press wakes the pointer** and is
+  consumed; the power button now taps to turn off and **holds to recenter**.
+- Buttons carry no text. A status LED lives in the power button, driven purely by
+  `body[data-state]` in the theme.
+- The recenter animation is **not** driven by state messages any more. The page receives
+  `ui.recenter_ms` once and the browser interpolates `--recenter-progress` itself via
+  `@property`. A hosted client that sets that property per message will stutter.
+- Sensor packets carry `hz` (the rate the phone actually achieves) and the `hello` frame
+  carries `caps` (which haptic mechanisms exist). Both surface in `/debug/cursor`.
+- Pure pointer maths moved to `mapping.py`; the engine is unchanged in behaviour.
+- Baseline is **174 tests**, not 141.
+
 ---
 
 ## Pre-flight: read this before Task 1
@@ -47,12 +63,18 @@ Whether the direct peer-to-peer path actually establishes on a given network. On
 
 ```
 web/                          NEW - deployed to Vercel, not part of the Python package
-  index.html                  the hosted shell (no styling of its own)
-  app.js                      WebRTC client: pairing, sensors, buttons
+  index.html                  landing page: what it is, and the Mac download
+  app/index.html              the phone client shell (no styling of its own)
+  app/app.js                  WebRTC client: pairing, sensors, buttons
   api/offer.js                POST store an offer, GET retrieve it
   api/answer.js               POST store an answer, GET retrieve it
   vercel.json                 routing + headers
   package.json                declares the KV dependency
+
+  NOTE: the landing page is specified in its own plan
+  (2026-09-11-phice-landing-and-distribution.md) and is deliberately NOT built
+  here. This plan only needs `/app` to work; index.html can be a stub redirect
+  until that plan runs.
 
 src/phice/
   signaling.py                NEW: talks to the Vercel letterbox over HTTPS
@@ -452,6 +474,8 @@ def transport():
     cursor = FakeCursor()
     engine = PointerEngine(PointerConfig(), cursor)
     engine.set_roles({"left": "left", "right": "right", "scroll": "scroll", "power": "power"})
+    # NB: pressing `power` no longer starts the pointer. Any button press wakes it
+    # and is consumed; power taps off and holds to recenter.
     t = RTCTransport(engine=engine, layout_json='{"version":1,"buttons":[]}',
                      theme_css="body{}")
     t.cursor = cursor
@@ -470,14 +494,14 @@ async def test_offer_has_gathered_candidates_before_it_is_published(transport):
 async def test_data_channel_carries_sensor_packets_into_the_engine(transport):
     phone, channel = await _connect(transport)
     try:
-        # Power on, then turn right; the engine must move the fake cursor.
-        for seq, (alpha, power) in enumerate(
-                [(0.0, 1), (0.0, 0)] + [(350.0, 0)] * 90, start=1):
+        # Wake with a left press (consumed, not a click), then turn right.
+        for seq, (alpha, left, lc) in enumerate(
+                [(0.0, 1, 1), (0.0, 0, 1)] + [(350.0, 0, 1)] * 90, start=1):
             channel.send(json.dumps({
                 "t": "s", "seq": seq, "ts": seq / 60, "o": [alpha, 0, 0],
                 "rr": [10, 0, 0], "g": [0, 0, 9.8],
-                "b": {"left": 0, "right": 0, "scroll": 0, "power": power},
-                "c": {"left": 0, "right": 0, "scroll": 0, "power": 1 if seq > 1 else 0},
+                "b": {"left": left, "right": 0, "scroll": 0, "power": 0},
+                "c": {"left": lc, "right": 0, "scroll": 0, "power": 0},
                 "sd": 0}))
             await asyncio.sleep(0)
         await asyncio.sleep(0.4)
@@ -535,7 +559,7 @@ async def test_disconnect_releases_held_buttons(transport):
     phone, channel = await _connect(transport)
     channel.send(json.dumps({
         "t": "s", "seq": 1, "ts": 0.016, "o": [0, 0, 0], "rr": [10, 0, 0], "g": [0, 0, 9.8],
-        "b": {"power": 1}, "c": {"power": 1}, "sd": 0}))
+        "b": {"left": 1}, "c": {"left": 1}, "sd": 0}))
     await asyncio.sleep(0.2)
     await phone.close()
     await asyncio.sleep(0.5)
@@ -1028,6 +1052,8 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
     rate: [0, 0, 0],
     gravity: [0, 0, 9.8],
     timer: null,
+    motionTimes: [],
+    hz: 0,
   };
 
   const setState = (s) => { el.body.dataset.state = s; };
@@ -1090,7 +1116,13 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
 
   function wireChannel(channel) {
     state.channel = channel;
-    channel.addEventListener("open", () => setState("start"));
+    channel.addEventListener("open", () => {
+      // Pairing already happened through the signaling code, so this hello exists
+      // only to tell the Mac what this phone can do. Haptics have been guessed at
+      // twice; the Mac logs this instead.
+      channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
+      setState("start");
+    });
     channel.addEventListener("close", () => fail("The Mac closed the connection."));
     channel.addEventListener("message", (ev) => {
       let msg;
@@ -1102,10 +1134,15 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
   }
 
   function applyState(msg) {
-    if (msg.phase) el.body.dataset.phase = msg.phase;
-    if (typeof msg.recenter === "number") {
-      el.body.style.setProperty("--recenter-progress", String(msg.recenter));
+    // data-state drives everything visual, including the status LED, entirely from
+    // the theme. Do NOT set --recenter-progress here: the browser interpolates it
+    // itself from the data-state change via @property, and writing it per message
+    // restarts the transition ~50 times a second and stutters.
+    if (msg.phase) el.body.dataset.state = msg.phase;
+    if (msg.ui && msg.ui.recenter_ms) {
+      el.body.style.setProperty("--recenter-ms", msg.ui.recenter_ms + "ms");
     }
+    if (msg.ui) { state.haptics = !!msg.ui.haptics; }
   }
 
   // ---------- layout ----------
@@ -1219,6 +1256,7 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
       state.orientation = [e.alpha, e.beta, e.gamma];
     });
     window.addEventListener("devicemotion", (e) => {
+      noteMotionTick();
       const r = e.rotationRate || {};
       state.rate = [r.alpha || 0, r.beta || 0, r.gamma || 0];
       const g = e.accelerationIncludingGravity || {};
@@ -1228,6 +1266,26 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
     el.body.dataset.state = "on";
     if (state.timer) clearInterval(state.timer);
     state.timer = setInterval(() => send(false), 1000 / 60);
+  }
+
+  // Safari exposes no way to request a sensor rate, so measure what actually
+  // arrives rather than assume 60. Reported to the Mac, shown in /debug/cursor.
+  function noteMotionTick() {
+    const now = performance.now();
+    state.motionTimes.push(now);
+    while (state.motionTimes.length && now - state.motionTimes[0] > 1000) {
+      state.motionTimes.shift();
+    }
+    state.hz = state.motionTimes.length;
+  }
+
+  function hapticCaps() {
+    const c = [];
+    if (typeof navigator.vibrate === "function") c.push("vibrate");
+    try {
+      if ("switch" in document.createElement("input")) c.push("switch");
+    } catch (_) { /* ignore */ }
+    return c.join(",") || "none";
   }
 
   function send(force) {
@@ -1248,6 +1306,7 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
       rr: state.rate.map((v) => Math.round(v * 100) / 100),
       g: state.gravity.map((v) => Math.round(v * 100) / 100),
       b, c, sd: Math.round(sd * 100) / 100,
+      hz: state.hz,
     }));
   }
 
@@ -1508,7 +1567,7 @@ def cmd_webrtc(args) -> int:
         data["signaling_url"] = args.signaling_url
     paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
     print(f"transport set to 'webrtc' in {paths.pointer_json}\n"
-          f"phone page: {data['signaling_url']}\n"
+          f"phone page: {data['signaling_url']}/app\n"
           f"pairing code: http://127.0.0.1:{args.http_port}/pair\n"
           "Restart the app for this to take effect: phice install")
     return 0
@@ -1554,7 +1613,7 @@ Expected: a `pair_code` of six characters, and no certificate work in the log.
 
 - [ ] **Step 2: Pair from the phone**
 
-Open `https://YOUR-PROJECT.vercel.app` on the iPhone — **no certificate warning**.
+Open `https://YOUR-PROJECT.vercel.app/app` on the iPhone — **no certificate warning**.
 Enter the code, tap **Connect**, then **Start**, and allow motion access.
 
 Expected: the buttons appear, styled by *your* `theme.css`, pushed from the Mac.
