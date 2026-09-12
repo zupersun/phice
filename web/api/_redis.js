@@ -38,7 +38,13 @@ async function withClient(fn) {
   try {
     return await fn(client);
   } finally {
-    client.destroy();
+    // node-redis v4 has disconnect(); destroy() only arrived in v5. Closing must
+    // never mask the real result, so swallow anything thrown here.
+    try {
+      await client.disconnect();
+    } catch {
+      /* already gone */
+    }
   }
 }
 
