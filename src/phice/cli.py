@@ -152,6 +152,24 @@ def cmd_tailscale(args) -> int:
     return 0
 
 
+def cmd_calibrate(args) -> int:
+    """Ask the running app to start a calibration run."""
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{args.http_port}/calibrate/start", timeout=10) as r:
+            info = json.load(r)
+    except (urllib.error.URLError, OSError, ValueError):
+        print("Could not reach the running app. Is it started? Try: phice install",
+              file=sys.stderr)
+        return 1
+    print(f"Calibration started: {info['trials']} trials on a "
+          f"{info['width']}x{info['height']} display.\n"
+          "Follow each target with the phone. The window shows what to do.")
+    return 0
+
+
 def cmd_grant(args) -> int:
     """Ask macOS for Accessibility from the running agent, so the right binary is listed."""
     import urllib.error
@@ -278,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         ("certs", cmd_certs, "create or renew the TLS certificate"),
         ("tailscale", cmd_tailscale, "use a trusted tailnet certificate"),
         ("grant", cmd_grant, "ask macOS for Accessibility permission"),
+        ("calibrate", cmd_calibrate, "fit the pointer to you by measuring"),
     ):
         sp = sub.add_parser(name, help=help_text)
         sp.set_defaults(func=fn)

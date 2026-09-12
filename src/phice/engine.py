@@ -81,6 +81,10 @@ class PointerEngine:
         self._f_pitch = OneEuroFilter()
         self._reset_motion()
         self.on_change: Callable[[], None] | None = None
+        #: Raw look direction, for calibration. The unfiltered angles are what
+        #: calibration needs: it measures how far the phone actually turned,
+        #: which must not depend on the settings being fitted.
+        self.on_look: Callable[[float, float, float], None] | None = None
 
     # ----- external control -------------------------------------------------
 
@@ -364,6 +368,8 @@ class PointerEngine:
         if not p.has_orientation:
             return
         yaw, pitch = yaw_pitch(p.alpha, p.beta, p.gamma or 0.0)  # type: ignore[arg-type]
+        if self.on_look:
+            self.on_look(now, yaw, pitch)
         self._yaw_cont = unwrap_yaw(self._yaw_raw_prev, yaw, self._yaw_cont)
         self._yaw_raw_prev = yaw
         dt = 0.0

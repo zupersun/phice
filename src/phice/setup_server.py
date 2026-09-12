@@ -210,6 +210,96 @@ setInterval(refresh, 1000);
 </script>
 """
 
+CALIBRATE_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Calibrate Phice</title>
+<link rel="stylesheet" href="/calibrate.css">
+<script>
+try {
+  var th = localStorage.getItem("phice-theme");
+  document.documentElement.setAttribute("data-theme", th === "light" ? "light" : "dark");
+} catch (e) { /* falls back to the stylesheet's own default */ }
+</script>
+
+<div id="target"></div>
+
+<div id="hud">
+  <span id="task">Getting ready\u2026</span>
+  <span id="hint"></span>
+  <span id="bar"><i></i></span>
+</div>
+
+<div id="done">
+  <div>
+    <h1>Calibration finished</h1>
+    <p id="summary">Measured from your own trials.</p>
+    <div id="results"></div>
+    <button id="apply">Use these settings</button>
+    <button id="again" class="secondary">Run it again</button>
+  </div>
+</div>
+
+<script>
+const body = document.body, target = document.getElementById("target");
+const HINTS = {
+  still: "Hold the phone still. Do not try to correct the cursor.",
+  step: "Move the cursor onto the target and hold it there.",
+  sweep: "Sweep to it as fast as you can, then settle."
+};
+
+function show(s) {
+  if (s.done) {
+    body.dataset.done = "1";
+    render(s.fitted || {});
+    return;
+  }
+  delete body.dataset.done;
+  body.dataset.kind = s.kind;
+  body.dataset.inside = s.inside ? "1" : "0";
+  // Only numbers cross this line; calibrate.css decides what they look like.
+  target.style.setProperty("--tx", s.x);
+  target.style.setProperty("--ty", s.y);
+  target.style.setProperty("--tr", s.radius);
+  body.style.setProperty("--progress", s.total ? s.index / s.total : 0);
+  document.getElementById("task").textContent =
+    "Trial " + (s.index + 1) + " of " + s.total;
+  document.getElementById("hint").textContent = HINTS[s.kind] || "";
+}
+
+function render(fitted) {
+  const lines = [];
+  for (const [k, v] of Object.entries(fitted)) {
+    if (k === "evidence" || k === "samples") continue;
+    lines.push(k + ": " + (typeof v === "object" ? JSON.stringify(v) : v));
+  }
+  for (const [k, v] of Object.entries(fitted.evidence || {})) lines.push("  " + k + ": " + v);
+  document.getElementById("results").textContent =
+    lines.join("\n") || "Not enough usable trials. Try again and follow each target.";
+  document.getElementById("apply").hidden = !!fitted.error || !lines.length;
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/calibrate/state", { cache: "no-store" });
+    const s = await r.json();
+    if (s.running) show(s);
+  } catch (e) { /* the app is restarting; the next tick catches up */ }
+}
+document.getElementById("apply").onclick = async () => {
+  const r = await fetch("/calibrate/apply");
+  const out = await r.json();
+  document.getElementById("summary").textContent =
+    out.ok ? "Saved. Your pointer now uses these." : ("Could not save: " + (out.error || ""));
+};
+document.getElementById("again").onclick = async () => {
+  await fetch("/calibrate/start");
+  delete body.dataset.done;
+};
+poll();
+setInterval(poll, 120);
+</script>
+"""
+
 def check_html(ca_url: str, pair_url: str) -> str:
     """Self-diagnosing page, served over plain HTTP so it always loads.
 
@@ -313,6 +403,11 @@ class SetupServer:
                  new_code: Callable[[], None] | None = None,
                  set_appearance: Callable[[str], bool] | None = None,
                  request_panel: Callable[[], None] | None = None,
+                 calibrate_html: Callable[[], bytes] | None = None,
+                 calibrate_css: Callable[[], bytes] | None = None,
+                 calibration_state: Callable[[], dict] | None = None,
+                 start_calibration: Callable[[], dict] | None = None,
+                 apply_calibration: Callable[[], dict] | None = None,
                  signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
@@ -323,6 +418,11 @@ class SetupServer:
         self._new_code = new_code
         self._set_appearance = set_appearance
         self._request_panel = request_panel
+        self._calibrate_html = calibrate_html
+        self._calibrate_css = calibrate_css
+        self._calibration_state = calibration_state
+        self._start_calibration = start_calibration
+        self._apply_calibration = apply_calibration
         self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
@@ -401,6 +501,19 @@ class SetupServer:
                     ok = outer._set_appearance(value)
                     self._send(200 if ok else 400,
                                json.dumps({"ok": ok, "appearance": value}).encode(),
+                               "application/json")
+                elif path == "/calibrate" and outer._calibrate_html and self._is_local():
+                    self._send(200, outer._calibrate_html(), "text/html; charset=utf-8")
+                elif path == "/calibrate.css" and outer._calibrate_css and self._is_local():
+                    self._send(200, outer._calibrate_css(), "text/css; charset=utf-8")
+                elif path == "/calibrate/state" and outer._calibration_state and self._is_local():
+                    self._send(200, json.dumps(outer._calibration_state()).encode(),
+                               "application/json")
+                elif path == "/calibrate/apply" and outer._apply_calibration and self._is_local():
+                    self._send(200, json.dumps(outer._apply_calibration()).encode(),
+                               "application/json")
+                elif path == "/calibrate/start" and outer._start_calibration and self._is_local():
+                    self._send(200, json.dumps(outer._start_calibration()).encode(),
                                "application/json")
                 elif path == "/debug/panel" and outer._request_panel and self._is_local():
                     outer._request_panel()

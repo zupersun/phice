@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .calibrate import Calibration, fit, write_session
 from .certs import (
     CertError,
     CertPaths,
@@ -39,7 +40,7 @@ from .pairing import PairingManager
 from .paths import Paths
 from .rtc import RTCTransport
 from .server import PhiceServer, ServerState
-from .setup_server import SetupServer
+from .setup_server import CALIBRATE_HTML, SetupServer
 from .signaling import SignalingClient, SignalingError, new_pairing_code
 
 log = logging.getLogger("phice")
@@ -111,6 +112,11 @@ class Runtime:
                                  new_code=self.new_pair_code,
                                  set_appearance=self.set_appearance,
                                  request_panel=self.request_panel,
+                                 calibrate_html=lambda: CALIBRATE_HTML.encode(),
+                                 calibrate_css=lambda: self.paths.calibrate_css.read_bytes(),
+                                 calibration_state=self.calibration_state,
+                                 start_calibration=self.start_calibration,
+                                 apply_calibration=self.apply_calibration,
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
@@ -118,6 +124,8 @@ class Runtime:
         self._answer_wait: asyncio.Task | None = None
         self._rotate = False   # distinguishes "new code" from shutdown
         self._panel_requested = False
+        self._panel_url: str | None = None
+        self.calibration: Calibration | None = None
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -345,6 +353,63 @@ class Runtime:
         cfg = self.config.ice_servers
         return tuple(cfg) if cfg else None
 
+    # ----- calibration ------------------------------------------------------
+
+    def start_calibration(self) -> dict:
+        """Begin a calibration run and show its window."""
+        rect = self.backend.displays()[0] if self.backend.displays() else None
+        width = int(rect.w) if rect else 1440
+        height = int(rect.h) if rect else 900
+        self.calibration = Calibration(width=width, height=height)
+        self.engine.on_look = self._calibration_sample
+        self.request_panel_url(f"http://127.0.0.1:{self.http_port}/calibrate")
+        return {"trials": len(self.calibration.plan), "width": width, "height": height}
+
+    def _calibration_sample(self, now: float, yaw: float, pitch: float) -> None:
+        cal = self.calibration
+        if cal is None or cal.finished:
+            return
+        pos = self.backend.get_position()
+        if cal.trial is not None and cal._current is None:
+            cal.begin(now, pos)
+        cal.observe(now, pos, yaw, pitch)
+        if cal.finished:
+            self.engine.on_look = None
+
+    def calibration_state(self) -> dict:
+        cal = self.calibration
+        if cal is None:
+            return {"running": False}
+        state = dict(cal.state(), running=True)
+        if cal.finished:
+            state["fitted"] = fit(cal.results, json.loads(self.paths.pointer_json.read_text()))
+        return state
+
+    def apply_calibration(self) -> dict:
+        """Write the fitted settings into pointer.json, keeping the evidence."""
+        cal = self.calibration
+        if cal is None or not cal.finished:
+            return {"ok": False, "error": "calibration has not finished"}
+        data = json.loads(self.paths.pointer_json.read_text())
+        fitted = fit(cal.results, data)
+        if "error" in fitted:
+            return {"ok": False, **fitted}
+        for key, value in fitted.items():
+            if key in ("samples", "evidence"):
+                continue
+            if key == "one_euro":
+                data.setdefault("one_euro", {}).update(value)
+            else:
+                data[key] = value
+        self.paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
+        write_session(self.paths.sessions / "calibration.json", cal.results, fitted)
+        self._dispatch(self._apply_pointer(self.paths.pointer_json))
+        return {"ok": True, "fitted": fitted}
+
+    def request_panel_url(self, url: str) -> None:
+        self._panel_url = url
+        self._panel_requested = True
+
     def request_panel(self) -> None:
         """Ask for the control panel window. Thread safe by design.
 
@@ -353,9 +418,13 @@ class Runtime:
         """
         self._panel_requested = True
 
-    def take_panel_request(self) -> bool:
-        requested, self._panel_requested = self._panel_requested, False
-        return requested
+    def take_panel_request(self) -> str | bool:
+        """Returns the url to show, True for the default panel, or False."""
+        if not self._panel_requested:
+            return False
+        self._panel_requested = False
+        url, self._panel_url = self._panel_url, None
+        return url or True
 
     def set_appearance(self, value: str) -> bool:
         """Persist the chosen appearance and tell the phone at once.

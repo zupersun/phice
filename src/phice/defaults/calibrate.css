@@ -1,0 +1,104 @@
+/* Phice calibration. Edit freely: the window reloads it live, like every other
+   Phice surface. Nothing here is compiled into the app.
+
+   The page publishes only numbers -- where the target is, how far through the
+   run you are -- and this file decides entirely what that looks like. */
+:root {
+  --bg: #0b0f14;
+  --fg: #e8eef5;
+  --dim: #7b8a9c;
+  --target: #3ea6ff;
+  --target-hit: #30d158;
+  --ring: rgba(62, 166, 255, 0.22);
+  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #eef2f6;
+  --fg: #161d25;
+  --dim: #5c6b7a;
+  --target: #007aff;
+  --target-hit: #34c759;
+  --ring: rgba(0, 122, 255, 0.18);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--font);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The target. Positioned from --tx/--ty, which the script sets as plain
+   fractions of the window; the size, colour and pulse are decided here. */
+#target {
+  position: fixed;
+  left: calc(var(--tx, 0.5) * 100%);
+  top: calc(var(--ty, 0.5) * 100%);
+  width: calc(var(--tr, 40) * 2px);
+  height: calc(var(--tr, 40) * 2px);
+  margin: calc(var(--tr, 40) * -1px) 0 0 calc(var(--tr, 40) * -1px);
+  border-radius: 50%;
+  background: var(--ring);
+  border: 2px solid var(--target);
+  transition: left 160ms ease-out, top 160ms ease-out,
+              background 140ms linear, border-color 140ms linear;
+}
+#target::after {
+  content: "";
+  position: absolute;
+  inset: 38%;
+  border-radius: 50%;
+  background: var(--target);
+  transition: background 140ms linear, transform 180ms ease-out;
+}
+/* Inside the target, waiting out the dwell. */
+body[data-inside="1"] #target { border-color: var(--target-hit); }
+body[data-inside="1"] #target::after {
+  background: var(--target-hit);
+  transform: scale(1.25);
+}
+/* Holding still is a different task: no chasing, so no bullseye. */
+body[data-kind="still"] #target::after { transform: scale(0.45); }
+
+#hud {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  padding: 18px 22px calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(to top, var(--bg), transparent);
+}
+#task { font-size: 15px; font-weight: 600; }
+#hint { color: var(--dim); flex: 1; }
+#bar { height: 3px; border-radius: 999px; background: var(--ring); width: 180px; }
+#bar > i {
+  display: block; height: 100%; border-radius: 999px; background: var(--target);
+  width: calc(var(--progress, 0) * 100%);
+  transition: width 200ms ease-out;
+}
+
+#done { position: fixed; inset: 0; display: none; place-content: center; padding: 40px; }
+body[data-done="1"] #done { display: grid; }
+body[data-done="1"] #target, body[data-done="1"] #hud { display: none; }
+#done h1 { font-size: 22px; margin: 0 0 4px; }
+#done p { color: var(--dim); margin: 0 0 18px; }
+#results {
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dim);
+  white-space: pre-wrap;
+  margin-bottom: 20px;
+}
+button {
+  font: inherit; font-size: 14px; font-weight: 600;
+  background: var(--target); color: var(--bg);
+  border: 0; border-radius: 11px; padding: 11px 20px; margin-right: 8px;
+}
+button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--dim); }
