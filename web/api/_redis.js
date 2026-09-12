@@ -4,17 +4,32 @@
 // provides Redis. Talking to its REST endpoint with fetch avoids an SDK, an
 // install step, and a dependency that gets renamed again in a year. The env var
 // names differ depending on how the integration was connected, so accept either.
-const BASE = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+// The integration lets you choose a prefix, so the names are not fixed. Rather
+// than guess, find the pair by shape: a *_REST_API_URL and its matching token.
+function discover() {
+  const env = process.env;
+  for (const key of Object.keys(env)) {
+    if (!key.endsWith("_REST_API_URL") || !env[key]) continue;
+    const token = env[key.replace(/_URL$/, "_TOKEN")];
+    if (token) return { base: env[key], token };
+  }
+  // Upstash's own naming, if the integration used it verbatim.
+  if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
+    return { base: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN };
+  }
+  return null;
+}
+
+const CONN = discover();
 
 export function configured() {
-  return Boolean(BASE && TOKEN);
+  return CONN !== null;
 }
 
 async function command(args) {
-  const res = await fetch(BASE, {
+  const res = await fetch(CONN.base, {
     method: "POST",
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${CONN.token}`, "Content-Type": "application/json" },
     body: JSON.stringify(args),
   });
   if (!res.ok) throw new Error(`redis ${res.status}`);
