@@ -46,7 +46,7 @@ app = BUNDLE(
     coll,
     name="Phice.app",
     icon=None,
-    bundle_identifier="com.phice.app",   # stable: the Accessibility grant keys on this
+    bundle_identifier="com.phice.app",   # part of the designated requirement; never change it
     info_plist={
         "LSUIElement": True,             # menu bar only, no Dock icon
         "CFBundleName": "Phice",

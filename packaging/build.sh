@@ -14,6 +14,21 @@ uv run pyinstaller packaging/phice.spec --noconfirm --log-level WARN
 
 test -d dist/Phice.app || { echo "build produced no bundle"; exit 1; }
 
+IDENTITY="${PHICE_SIGN_IDENTITY:-Phice Self Signed}"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  echo "==> signing with '$IDENTITY'"
+  # Without a stable signature the designated requirement is a bare cdhash that
+  # changes every build, and macOS silently drops the Accessibility grant.
+  codesign --force --sign "$IDENTITY" --timestamp=none dist/Phice.app
+  codesign --verify --deep --strict dist/Phice.app \
+    || { echo "signature failed to verify"; exit 1; }
+else
+  echo "==> WARNING: no signing identity '$IDENTITY'; bundle will be ad-hoc signed."
+  echo "    Every rebuild will then invalidate the Accessibility grant, while the"
+  echo "    stale entry still shows Phice switched on. Fix with:"
+  echo "      ./packaging/create-signing-identity.sh"
+fi
+
 echo "==> verifying the bundle can actually resolve its resources"
 # Runs the real binary rather than asserting a PyInstaller layout: resource_dir()
 # reads sys._MEIPASS, not a fixed path, so this is immune to layout changes and
