@@ -951,7 +951,11 @@ Expected: `code XXXXXX -> v=0 roundtrip`
 ### Task 6: The hosted phone page
 
 **Files:**
-- Create: `web/index.html`, `web/app.js`
+- Create: `web/app/index.html`, `web/app/app.js`
+
+NOTE: the client lives at `web/app/`, not the deployment root. `web/index.html` is a
+stub owned by the landing-and-distribution plan. The script tag is therefore
+`<script src="/app/app.js">`; the `/api/...` calls are absolute and unaffected.
 
 A generic shell. It contains **no colours, sizes or labels** — the entire design
 arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
@@ -1015,7 +1019,7 @@ arrives from the Mac over the data channel, exactly as `CLAUDE.md` requires.
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/app/app.js"></script>
 </body>
 ```
 
