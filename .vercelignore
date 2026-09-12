@@ -1,0 +1,6 @@
+# Belt and braces. The deployment root should be `web/` (set in the Vercel
+# project settings), but if it is ever pointed at the repository root again this
+# stops the source tree being served as a public website.
+*
+!web
+!web/**
