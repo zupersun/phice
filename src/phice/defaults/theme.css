@@ -14,15 +14,15 @@
   --accent: #3ea6ff;
   --danger: #ff5a5f;
 
-  --btn-bg: #161c24;
-  --btn-bg-pressed: #22303f;
+  --btn-bg: #1c2530;
+  --btn-bg-pressed: #2c3d4f;
   --btn-fg: #9fb3c8;
-  --btn-border: 1px solid #232c37;
+  --btn-border: 1px solid #38485a;
   --btn-radius: 22px;
-  --btn-shadow: 0 1px 0 #1f2937 inset;
+  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #2a3644 inset;
 
-  --scroll-bg: #10161d;
-  --scroll-thumb: #2b3846;
+  --scroll-bg: #141c25;
+  --scroll-thumb: #46596d;
   --scroll-thumb-active: #3ea6ff;
   --scroll-thumb-w: 4px;
   --scroll-thumb-h: 34%;
