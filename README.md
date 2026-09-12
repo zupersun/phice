@@ -18,25 +18,44 @@ off after a timeout, and off when you lay the phone flat.
 
 ## Install on the Mac (once)
 
+Download `Phice.app` and drag it to **Applications**. It is not notarized, so the
+first launch needs **System Settings › Privacy & Security › Open Anyway** (on
+macOS 15+ right-click → Open no longer works).
+
+It lives in the menu bar — no Dock icon, no window. Grant it Accessibility, which
+is what lets it move the cursor:
+
 ```bash
-git clone https://github.com/zupersun/phice.git
-cd phice
-uv sync
-uv run phice install     # login agent, starts immediately
-uv run phice grant       # ask macOS for Accessibility, then switch it on
-uv run phice install     # restart so the permission takes effect
+/Applications/Phice.app/Contents/MacOS/Phice grant
 ```
 
-`grant` prompts from the running agent, which is what makes macOS list the right
-binary — prompting from a terminal would add your terminal instead. Turn the new
-entry on in **Privacy & Security › Accessibility**.
+Approve the dialog, switch **Phice** on in **Privacy & Security › Accessibility**,
+then start it at login:
 
-A menu bar icon should appear. If it doesn't, that's cosmetic: macOS adds new status
-items to the left of existing ones, and on a notched Mac with a full menu bar they
-land behind the notch. Everything still works, and
+```bash
+/Applications/Phice.app/Contents/MacOS/Phice install
+```
+
+Remove it with `… Phice uninstall`, then drag the app to the Trash.
+
+If the menu bar icon never appears, that is cosmetic: macOS adds new status items
+to the left of existing ones, and on a notched Mac with a full menu bar they land
+behind the notch. Everything still works —
 `curl -s http://127.0.0.1:8080/debug/cursor` shows the full status.
 
-To remove it: `uv run phice uninstall`.
+### Building it yourself
+
+```bash
+git clone https://github.com/zupersun/phice.git
+cd phice && uv sync
+./packaging/create-signing-identity.sh   # once: stable signing identity
+./packaging/build.sh                     # produces dist/Phice.app
+```
+
+The signing step matters. Without it the bundle is ad-hoc signed, and macOS then
+ties your Accessibility permission to a hash that changes on every build — so each
+rebuild silently revokes it while the entry still shows as switched on. Currently
+arm64 only.
 
 ## Connect your phone
 

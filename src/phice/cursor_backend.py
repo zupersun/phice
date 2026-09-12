@@ -5,9 +5,12 @@ display, y grows downward.
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
+
+log = logging.getLogger("phice.cursor")
 
 Button = Literal["left", "right"]
 
@@ -194,6 +197,15 @@ def accessibility_trusted(prompt: bool = False) -> bool:
             AXIsProcessTrustedWithOptions,
             kAXTrustedCheckOptionPrompt,
         )
+    except ImportError:  # pragma: no cover - only happens in a mis-built bundle
+        # Do not report this as "not granted": that is indistinguishable from the
+        # user simply not having approved it, and sends them to System Settings to
+        # fix a packaging bug they cannot see.
+        log.error("ApplicationServices is missing from this build; the Accessibility "
+                  "state cannot be read. The cursor may still work.")
+        return False
+    try:
         return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: prompt}))
     except Exception:
+        log.warning("could not query Accessibility trust", exc_info=True)
         return False

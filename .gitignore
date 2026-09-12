@@ -6,6 +6,10 @@ __pycache__/
 *.bak
 .DS_Store
 
+# PyInstaller build output
+/build/
+/dist/
+
 # agent tooling state, regenerated every session
 .claude-flow/
 .claude/

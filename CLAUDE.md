@@ -67,26 +67,42 @@ plain HTTP and probes the TLS port, which separates the first from the others.
 
 ## macOS integration
 
-Two rough edges, both caused by the same thing: the app has no macOS identity. It
-runs as a bare `python3.13` out of a uv-managed venv, not an app bundle.
+The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 
+- **Packaged resources come from `paths.resource_dir()`**, which returns `sys._MEIPASS`
+  when frozen. `__file__` does not work inside a bundle. `build.sh` proves this by
+  running the built binary against a temp config dir rather than checking that files
+  exist at a guessed path — PyInstaller's macOS layout has moved between versions, and
+  a path check passed a bundle that was missing `defaults/assets/` and crashed on first
+  launch.
+- **The Accessibility grant keys on the designated requirement, not the bundle id alone.**
+  Signed with the self-signed identity it is
+  `identifier "com.phice.app" and certificate root H"..."` — stable across rebuilds,
+  verified by building twice and diffing. Ad-hoc signed it is a bare cdhash that changes
+  every build, so each rebuild silently drops the permission while the stale entry still
+  shows Phice switched on. Never change `CFBundleIdentifier`, and **never lose the
+  certificate**: `./packaging/create-signing-identity.sh` creates it, and once shipped
+  every user's grant is bound to it. Back it up with
+  `security export -k login.keychain-db -t identities -f pkcs12 -o phice-id.p12`.
+- **This is not a Developer ID.** Downloaded copies still hit Gatekeeper
+  ("unidentified developer"); on macOS 15+ users must use System Settings ›
+  Privacy & Security › **Open Anyway**, since right-click → Open no longer works. Only
+  a paid Developer ID plus notarization removes that. Signing fixes updates, not first
+  launch.
+- **The launch agent runs the bundle executable directly when frozen.** `-m phice` would
+  be passed to the app as an argument, not understood as a module. `--config-dir` is a
+  top-level argparse option and must precede `run`; `tests/test_cli_agent.py` feeds the
+  generated argv through the real parser, because asserting its *shape* let a
+  regression through that exits with `SystemExit(2)` and no menu bar icon.
 - **`accessibility` gates nothing** — it is only reported to the phone, so the cursor can
   move while the status says otherwise. The runtime polls it in `_status_loop`; do not
   move that back to the menu bar, which may never appear.
-- **Accessibility** must be granted to the real interpreter,
-  `~/.local/share/uv/python/cpython-*/bin/python3.13`, not to `phice`. It is in a
-  hidden directory, so `open` that folder in Finder and drag the binary into
-  System Settings rather than fighting the file picker. Re-adding an entry that is
-  already listed does nothing; remove it with **−** first.
-  Running the binary from a terminal reports `AXIsProcessTrusted() == True` because
-  it inherits the terminal's grant — that tells you nothing about the launch agent.
 - **The menu bar icon may be invisible.** macOS adds new status items to the left of
   existing ones; on a notched Mac with a full menu bar they land behind the notch.
-  Never rely on the menu bar as the only way to see state — that is why the debug
-  hook above reports the full status.
-
-A minimal `Phice.app` bundle would fix both: a real name and icon in the
-Accessibility list, and a proper status item. Not built yet.
+  Never rely on the menu bar as the only way to see state — that is why the debug hook
+  reports the full status.
+- **The bundle is arm64-only.** uv's CPython builds are per-arch, so `universal2` is not
+  available; `build.sh` prints the architecture it produced.
 
 ## Architecture
 

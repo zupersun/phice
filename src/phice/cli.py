@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import time
@@ -152,28 +153,29 @@ def cmd_grant(args) -> int:
     return 1
 
 
+def _program_arguments(python: str, config_dir: Path) -> list[str]:
+    """A frozen bundle is its own interpreter and takes no -m.
+
+    --config-dir is a top-level argparse option, so it must precede `run`.
+    """
+    head = [python] if getattr(sys, "frozen", False) else [python, "-m", "phice"]
+    return [*head, "--config-dir", str(config_dir), "run"]
+
+
 def _plist(python: str, config_dir: Path, logs: Path) -> str:
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>{LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>{python}</string><string>-m</string><string>phice</string>
-    <string>--config-dir</string><string>{config_dir}</string>
-    <string>run</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><false/>
-  <key>ProcessType</key><string>Interactive</string>
-  <key>StandardOutPath</key><string>{logs / 'launchd.out.log'}</string>
-  <key>StandardErrorPath</key><string>{logs / 'launchd.err.log'}</string>
-  <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
-</dict>
-</plist>
-"""
+    """Built with plistlib rather than string interpolation: paths can contain
+    characters that are not XML-safe."""
+    plist = {
+        "Label": LABEL,
+        "ProgramArguments": _program_arguments(python, config_dir),
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "ProcessType": "Interactive",
+        "StandardOutPath": str(logs / "launchd.out.log"),
+        "StandardErrorPath": str(logs / "launchd.err.log"),
+        "EnvironmentVariables": {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+    }
+    return plistlib.dumps(plist).decode()
 
 
 def agent_plist_path() -> Path:

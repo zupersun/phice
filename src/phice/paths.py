@@ -3,12 +3,26 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "Phice"
-PACKAGE_DIR = Path(__file__).resolve().parent
+
+
+def resource_dir() -> Path:
+    """Directory holding packaged defaults/ and web/.
+
+    PyInstaller unpacks data files to sys._MEIPASS rather than leaving them
+    beside __file__, so the frozen bundle must be asked where they went.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parent
+
+
+PACKAGE_DIR = resource_dir()
 DEFAULTS_DIR = PACKAGE_DIR / "defaults"
 WEB_DIR = PACKAGE_DIR / "web"
 UI_FILES = ("layout.json", "theme.css")
