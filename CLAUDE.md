@@ -192,13 +192,13 @@ out of it. Check this before assuming a service is free or disposable.
 
 | Service | Plan | What breaks without it |
 |---|---|---|
-| **GitHub** (`zupersun/phice`) | free | nothing at runtime |
-| **Vercel** (`sun-dd2c/phice`) | Hobby, free, **non-commercial** | the phone page and pairing |
+| **GitHub** | free | nothing at runtime |
+| **Vercel** | Hobby tier is free but **non-commercial** | the phone page and pairing |
 | **Redis Cloud** (via Vercel marketplace) | free tier | pairing; the pointer keeps working once connected |
-| **Cloudflare Realtime TURN** | free tier, **1000 GB/month**, card on file | pairing across different networks |
+| **Cloudflare Realtime TURN** | free tier, **1000 GB/month** | pairing across different networks |
 | Apple Developer | **not used** | — downloads show "unidentified developer" |
 
-### The TURN relay is the only thing with a card attached
+### The TURN relay is the only metered dependency
 
 A relay is required whenever the phone and the Mac are on different networks
 behind NAT — a phone on cellular and a Mac on a campus network can each reach
@@ -212,8 +212,9 @@ wire, 60 Hz, charged in both directions:
 - ~7,600 hours inside the 1000 GB free tier
 - Nothing accrues while the pointer is off
 
-**Set a $0 spend cap in Cloudflare billing**, so exceeding the tier stops the
-service instead of generating a bill.
+Set a **$0 spend cap** in Cloudflare billing so exceeding the tier stops the
+service rather than generating a charge. Account and billing specifics are
+deliberately not recorded here: this file is public.
 
 ### To cancel it
 
