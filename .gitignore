@@ -16,3 +16,7 @@ __pycache__/
 
 # isolated worktrees for plan execution
 .worktrees/
+
+# web/ (Vercel project) build artifacts
+node_modules/
+.vercel/
