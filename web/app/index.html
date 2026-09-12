@@ -1,0 +1,58 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Phice">
+<title>Phice</title>
+<style id="theme">
+  /* Replaced wholesale by the theme pushed from the Mac. These few rules only
+     make the pairing screen legible before that arrives. */
+  html,body{height:100%;margin:0;background:#000;color:#e8eef5;
+            font:16px -apple-system,system-ui,sans-serif;
+            touch-action:none;-webkit-user-select:none;user-select:none}
+  .overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+           padding:24px;text-align:center}
+  body[data-state="pair"] #ov-pair,
+  body[data-state="connecting"] #ov-connecting,
+  body[data-state="failed"] #ov-failed,
+  body[data-state="start"] #ov-start{display:flex}
+  #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
+        background:#111a24;color:#e8eef5;border:1px solid #233; border-radius:12px;
+        padding:14px;text-transform:uppercase}
+  button{font:inherit;font-size:17px;padding:15px 32px;border:none;border-radius:13px;
+         background:#3ea6ff;color:#04121f;font-weight:700;margin-top:16px}
+  p{color:#6b7a8c;line-height:1.5}
+</style>
+<body data-state="pair">
+  <main id="pad" aria-label="Mouse controls"></main>
+
+  <div class="overlay" id="ov-pair">
+    <div>
+      <h1>Phice</h1>
+      <p>Enter the six-character code shown on your Mac.</p>
+      <input id="code" maxlength="6" autocapitalize="characters" autocomplete="off"
+             autocorrect="off" spellcheck="false" inputmode="text">
+      <button type="button" id="btn-pair">Connect</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-connecting"><div><h1>Connecting…</h1></div></div>
+
+  <div class="overlay" id="ov-start">
+    <div>
+      <h1>Connected</h1>
+      <p>Tap to allow motion access.</p>
+      <button type="button" id="btn-start">Start</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="ov-failed">
+    <div>
+      <h1>Could not connect</h1>
+      <p id="why"></p>
+      <button type="button" id="btn-retry">Try again</button>
+    </div>
+  </div>
+
+  <script src="/app/app.js"></script>
+</body>
