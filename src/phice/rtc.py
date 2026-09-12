@@ -103,7 +103,18 @@ class RTCTransport:
 
         await self.pc.setLocalDescription(await self.pc.createOffer())
         await gather_complete(self.pc)
-        return {"sdp": self.pc.localDescription.sdp, "type": self.pc.localDescription.type}
+        sdp = self.pc.localDescription.sdp
+        # Say what was actually gathered. "relay" missing means the phone can only
+        # be reached on a shared network, and that is worth knowing before a user
+        # discovers it by failing to connect.
+        kinds: dict[str, int] = {}
+        for line in sdp.splitlines():
+            if line.startswith("a=candidate"):
+                k = line.split()[7]
+                kinds[k] = kinds.get(k, 0) + 1
+        log.info("ICE candidates gathered: %s%s", kinds,
+                 "" if "relay" in kinds else "  <- NO RELAY: same-network only")
+        return {"sdp": sdp, "type": self.pc.localDescription.type}
 
     async def accept_answer(self, answer: dict[str, Any]) -> None:
         await self.pc.setRemoteDescription(

@@ -20,3 +20,5 @@ __pycache__/
 # web/ (Vercel project) build artifacts
 node_modules/
 .vercel/
+.vercel
+.env*
