@@ -22,9 +22,15 @@
   button{font:inherit;font-size:17px;padding:15px 32px;border:none;border-radius:13px;
          background:#3ea6ff;color:#04121f;font-weight:700;margin-top:16px}
   p{color:#6b7a8c;line-height:1.5}
+  #link-note{position:fixed;left:0;right:0;bottom:8px;text-align:center;
+             font-size:12px;color:#ffb340;margin:0}
+  body[data-link="unstable"] #link-note{display:block}
+  body:not([data-link="unstable"]) #link-note{display:none}
 </style>
 <body data-state="pair">
   <main id="pad" aria-label="Mouse controls"></main>
+
+  <p id="link-note" hidden>Connection unstable…</p>
 
   <div class="overlay" id="ov-pair">
     <div>

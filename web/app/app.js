@@ -59,7 +59,17 @@
 
     pc.addEventListener("datachannel", (ev) => wireChannel(ev.channel));
     pc.addEventListener("connectionstatechange", () => {
-      if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
+      const s = pc.connectionState;
+      // `disconnected` is transient: ICE dips into it routinely and recovers,
+      // more often over a relay where there is more jitter. Treating it as fatal
+      // tore down connections that were about to succeed. Only `failed` and
+      // `closed` are terminal.
+      if (s === "disconnected") {
+        el.body.dataset.link = "unstable";
+        return;
+      }
+      el.body.dataset.link = s === "connected" ? "ok" : "";
+      if (s === "failed" || s === "closed") {
         fail("The connection dropped. Check that Phice is running on your Mac.");
       }
     });
@@ -107,6 +117,7 @@
   function wireChannel(channel) {
     state.channel = channel;
     channel.addEventListener("open", () => {
+      el.body.dataset.link = "ok";
       // Pairing already happened through the signaling code, so this hello exists
       // only to tell the Mac what this phone can do. Haptics have been guessed at
       // twice; the Mac logs this instead.
