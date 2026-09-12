@@ -60,6 +60,21 @@ class SignalingClient:
 
     # ----- api --------------------------------------------------------------
 
+    async def fetch_ice_servers(self) -> list[dict] | None:
+        """The relay configuration both peers must share.
+
+        Returns None if the service cannot be reached, so the caller falls back
+        to its own default rather than failing to start. Mismatched ICE lists
+        gather candidates that cannot pair, so this is the single source.
+        """
+        try:
+            body = await asyncio.to_thread(self._get_sync, "/api/ice", "")
+        except SignalingError:
+            return None
+        if not body or not isinstance(body.get("iceServers"), list):
+            return None
+        return body["iceServers"]
+
     async def publish_offer(self, code: str, offer: dict) -> None:
         await asyncio.to_thread(self._post_sync, "/api/offer", {"code": code, **offer})
 

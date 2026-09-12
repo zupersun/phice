@@ -319,12 +319,24 @@ class Runtime:
         """
         client = SignalingClient(self.config.signaling_url)
         while True:
+            ice = self._ice_servers()
+            if ice is None:
+                # Take the relay from the signaling service so both peers get the
+                # same one. Credentials are short-lived and never stored here.
+                fetched = await client.fetch_ice_servers()
+                if fetched:
+                    ice = tuple(fetched)
+                    if any("turn:" in str(s.get("urls", "")) for s in fetched):
+                        log.info("using a relay from the signaling service")
+                    else:
+                        log.warning("no TURN relay available; this will only connect "
+                                    "when both devices are on the same network")
             self.rtc = RTCTransport(engine=self.engine,
                                     layout_json=self.paths.layout_json.read_text(),
                                     theme_css=self.paths.theme_css.read_text(),
                                     ice_servers=(self.rtc_ice_servers
                                                  if self.rtc_ice_servers is not None
-                                                 else self._ice_servers()))
+                                                 else ice))
             offer = await self.rtc.create_offer()
             code = new_pairing_code()
             try:

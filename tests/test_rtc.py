@@ -160,6 +160,9 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
         def __init__(self, *a, **kw):
             pass
 
+        async def fetch_ice_servers(self):
+            return None  # no relay in this test; loopback needs none
+
         async def publish_offer(self, code, offer):
             published["code"] = code
             published["offer"] = offer

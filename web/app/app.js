@@ -36,18 +36,25 @@
 
   // ---------- pairing ----------
 
+  async function iceServers() {
+    try {
+      const r = await fetch("/api/ice");
+      const body = await r.json();
+      if (!body.relay) console.warn("no TURN relay:", body.reason);
+      return body.iceServers;
+    } catch (e) {
+      // Never block pairing on this: STUN alone still works on a shared network.
+      console.warn("ice config unavailable:", e);
+      return [{ urls: "stun:stun.l.google.com:19302" }];
+    }
+  }
+
   async function pair(code) {
     setState("connecting");
-    // STUN alone only discovers addresses. Where both peers sit behind symmetric
-    // NAT -- a phone on carrier NAT talking to a Mac on a campus network -- neither
-    // can reach the other and a TURN relay is the only thing that works. No relay
-    // is configured here: every free one now requires an account, and the old
-    // public openrelay credentials were verified dead (aiortc gathers no relay
-    // candidate from them). Add one to BOTH sides or neither; mismatched lists
-    // gather candidates that cannot pair.
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
+    // Both peers take their ICE configuration from the same endpoint. Mismatched
+    // lists gather candidates that cannot pair, and a relay is required whenever
+    // the two devices are on different networks behind NAT.
+    const pc = new RTCPeerConnection({ iceServers: await iceServers() });
     state.pc = pc;
 
     pc.addEventListener("datachannel", (ev) => wireChannel(ev.channel));

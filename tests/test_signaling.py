@@ -98,3 +98,20 @@ async def test_wait_for_answer_returns_as_soon_as_it_appears(stub):
 def test_plain_http_is_refused_by_default():
     with pytest.raises(SignalingError, match="https"):
         SignalingClient("http://example.test")
+
+
+async def test_ice_servers_are_fetched_from_the_service(stub):
+    """Both peers must take their relay from one place: mismatched ICE lists
+    gather candidates that cannot pair."""
+    base, store = stub
+    c = SignalingClient(base, allow_insecure=True)
+    # The stub echoes whatever was POSTed under the matching path.
+    await c.publish_offer("ABC234", {"sdp": "x", "type": "offer"})
+    assert await c.fetch_ice_servers() is None  # stub serves no /api/ice
+
+
+async def test_missing_ice_endpoint_does_not_break_startup():
+    """A signaling service that cannot be reached must not stop the Mac starting;
+    it falls back rather than failing."""
+    c = SignalingClient("http://127.0.0.1:1", allow_insecure=True)
+    assert await c.fetch_ice_servers() is None
