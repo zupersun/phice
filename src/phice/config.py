@@ -99,6 +99,7 @@ class PointerConfig:
     tailscale_host: str = ""
     transport: str = "tls"
     signaling_url: str = "https://phice.vercel.app"
+    ice_servers: tuple = ()
     ui: UIConfig = field(default_factory=UIConfig)
 
     @property
@@ -130,6 +131,20 @@ class PointerConfig:
         transport = d.get("transport", "tls")
         if transport not in ("tls", "webrtc"):
             raise ConfigError("transport: expected 'tls' or 'webrtc'")
+        raw_ice = d.get("ice_servers", [])
+        if not isinstance(raw_ice, list) or len(raw_ice) > 8:
+            raise ConfigError("ice_servers: expected a list of at most 8 entries")
+        ice: list[dict] = []
+        for i, s in enumerate(raw_ice):
+            if not isinstance(s, dict) or not isinstance(s.get("urls"), str):
+                raise ConfigError(f"ice_servers[{i}]: expected an object with a urls string")
+            entry = {"urls": s["urls"]}
+            for k in ("username", "credential"):
+                if s.get(k) is not None:
+                    if not isinstance(s[k], str):
+                        raise ConfigError(f"ice_servers[{i}].{k}: expected a string")
+                    entry[k] = s[k]
+            ice.append(entry)
         signaling_url = d.get("signaling_url", "https://phice.vercel.app")
         if not isinstance(signaling_url, str) or not signaling_url.startswith("https://"):
             # Plain HTTP signaling would let anyone on the path swap the offer and
@@ -177,6 +192,7 @@ class PointerConfig:
             tailscale_host=ts_host,
             transport=transport,
             signaling_url=signaling_url,
+            ice_servers=tuple(ice),
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
         )
 

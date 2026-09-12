@@ -299,6 +299,16 @@ class Runtime:
 
     # ----- lifecycle --------------------------------------------------------
 
+    def _ice_servers(self) -> tuple | None:
+        """Configured ICE servers, or None to use the default STUN.
+
+        A relay matters when both peers sit behind symmetric NAT -- a phone on
+        carrier NAT talking to a Mac on a university network cannot hole-punch,
+        and STUN alone discovers addresses neither side can reach.
+        """
+        cfg = self.config.ice_servers
+        return tuple(cfg) if cfg else None
+
     async def start_webrtc(self) -> None:
         """Publish an offer under a short code and wait for a phone to answer.
 
@@ -312,7 +322,9 @@ class Runtime:
             self.rtc = RTCTransport(engine=self.engine,
                                     layout_json=self.paths.layout_json.read_text(),
                                     theme_css=self.paths.theme_css.read_text(),
-                                    ice_servers=self.rtc_ice_servers)
+                                    ice_servers=(self.rtc_ice_servers
+                                                 if self.rtc_ice_servers is not None
+                                                 else self._ice_servers()))
             offer = await self.rtc.create_offer()
             code = new_pairing_code()
             try:

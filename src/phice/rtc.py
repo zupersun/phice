@@ -69,12 +69,20 @@ class RTCTransport:
     DEFAULT_ICE_SERVERS = ("stun:stun.l.google.com:19302",)
 
     def __init__(self, engine: PointerEngine, layout_json: str, theme_css: str,
-                 ice_servers: tuple[str, ...] | None = None):
+                 ice_servers: tuple | None = None):
         self.engine = engine
         self.layout_json = layout_json
         self.theme_css = theme_css
-        urls = self.DEFAULT_ICE_SERVERS if ice_servers is None else ice_servers
-        config = RTCConfiguration(iceServers=[RTCIceServer(urls=u) for u in urls])
+        entries = self.DEFAULT_ICE_SERVERS if ice_servers is None else ice_servers
+        servers = []
+        for e in entries:
+            # A bare string is a STUN url; a dict may also carry TURN credentials.
+            if isinstance(e, str):
+                servers.append(RTCIceServer(urls=e))
+            else:
+                servers.append(RTCIceServer(urls=e["urls"], username=e.get("username"),
+                                            credential=e.get("credential")))
+        config = RTCConfiguration(iceServers=servers)
         self.pc = RTCPeerConnection(configuration=config)
         self.channel: RTCDataChannel | None = None
         self._tick: asyncio.Task | None = None

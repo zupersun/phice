@@ -38,8 +38,23 @@
 
   async function pair(code) {
     setState("connecting");
+    // STUN alone only discovers addresses. When both peers are behind symmetric
+    // NAT -- a phone on carrier NAT talking to a Mac on a campus network -- neither
+    // can reach the other, and a relay is the only thing that works. The Mac must
+    // be given the same list, or the two sides gather incompatible candidates.
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp",
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+      ],
     });
     state.pc = pc;
 
