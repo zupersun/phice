@@ -74,6 +74,7 @@ class PointerEngine:
         self._hold_started = 0.0
         self._rest_since: float | None = None
         self._pickup_since: float | None = None
+        self._woke_on: set[str] = set()
         self._pickup_armed = True
         self._f_yaw = OneEuroFilter()
         self._f_pitch = OneEuroFilter()
@@ -115,6 +116,7 @@ class PointerEngine:
         self._rest_since = None
         self._pickup_since = None
         self._pickup_armed = True
+        self._woke_on.clear()
         self._reset_motion()
         self._set_phase(Phase.OFF)
 
@@ -146,7 +148,7 @@ class PointerEngine:
             self._dispatch(role, kind, now)
         if self._phase in ACTIVE_PHASES:
             self._apply_motion(p, now)
-        if self._phase in MOTION_PHASES:
+        if self._phase in MOTION_PHASES and "scroll" not in self._woke_on:
             self._apply_scroll(p)
         self._update_rest(p, now)
         self.tick(now)
@@ -193,6 +195,18 @@ class PointerEngine:
         return events
 
     def _dispatch(self, role: str, kind: str, now: float) -> None:
+        # Waking on any button means you can point at the cursor, press anything,
+        # and start from there. The press is consumed: it would otherwise click
+        # whatever happens to be under the cursor, which the user never aimed at.
+        if (self._phase == Phase.OFF and self._enabled and self._cfg.wake_on_any_button
+                and role != "power"):
+            if kind == "press":
+                self._power_on(now)
+                self._woke_on.add(role)
+            return
+        if kind == "release" and role in self._woke_on:
+            self._woke_on.discard(role)
+            return
         if role == "power":
             if kind == "press":
                 self._toggle_power(now)

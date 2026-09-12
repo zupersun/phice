@@ -49,7 +49,7 @@ async def test_serves_page_and_assets_over_tls(rig, client_ssl):
         assert (await https_get(port, "/app.js", client_ssl))[0] == 200
         assert (await https_get(port, "/theme.css", client_ssl))[1].startswith("text/css")
         status, ctype, body = await https_get(port, "/layout.json", client_ssl)
-        assert status == 200 and json.loads(body)["buttons"][0]["role"] == "power"
+        assert status == 200 and json.loads(body)["buttons"][0]["role"] == "left"
         assert (await https_get(port, "/assets/logo.svg", client_ssl))[1] == "image/svg+xml"
         assert (await https_get(port, "/assets/../devices.json", client_ssl))[0] == 404
         assert (await https_get(port, "/nope", client_ssl))[0] == 404
@@ -106,18 +106,23 @@ async def test_end_to_end_power_on_and_move(rig, client_ssl):
         ws, _ = await pair(rig, port, client_ssl)
         seq = 0
 
+        held = {"left": 0, "right": 0, "scroll": 0}
+        counters = {"left": 0, "right": 0, "scroll": 0}
+
         async def send(alpha=0.0, **b):
             nonlocal seq
             seq += 1
-            buttons = {"left": 0, "right": 0, "scroll": 0, "power": 0}
-            buttons.update({k: int(v) for k, v in b.items()})
+            for key, val in b.items():
+                if int(val) and not held[key]:
+                    counters[key] += 1   # the page counts presses; the engine diffs them
+                held[key] = int(val)
             await ws.send(json.dumps({"t": "s", "seq": seq, "ts": seq / 60, "o": [alpha, 0, 0],
-                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": buttons,
-                                      "c": {"left": 0, "right": 0, "scroll": 0, "power": 0}, "sd": 0}))
+                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": dict(held),
+                                      "c": dict(counters), "sd": 0}))
 
         await send()
-        await send(power=True)
-        await send(power=False)
+        await send(left=True)    # wakes the pointer; consumed, not a click
+        await send(left=False)
         for _ in range(90):
             await send(alpha=350)
         await asyncio.sleep(0.2)
@@ -155,18 +160,23 @@ async def test_disconnect_releases_held_button(rig, client_ssl):
         ws, _ = await pair(rig, port, client_ssl)
         seq = 0
 
+        held = {"left": 0, "right": 0, "scroll": 0}
+        counters = {"left": 0, "right": 0, "scroll": 0}
+
         async def send(**b):
             nonlocal seq
             seq += 1
-            buttons = {"left": 0, "right": 0, "scroll": 0, "power": 0}
-            buttons.update({k: int(v) for k, v in b.items()})
+            for key, val in b.items():
+                if int(val) and not held[key]:
+                    counters[key] += 1   # the page counts presses; the engine diffs them
+                held[key] = int(val)
             await ws.send(json.dumps({"t": "s", "seq": seq, "ts": seq / 60, "o": [0, 0, 0],
-                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": buttons,
-                                      "c": {"left": 0, "right": 0, "scroll": 0, "power": 0}, "sd": 0}))
+                                      "rr": [10, 0, 0], "g": [0, 0, 9.8], "b": dict(held),
+                                      "c": dict(counters), "sd": 0}))
 
         await send()
-        await send(power=True)
-        await send(power=False)
+        await send(left=True)    # wakes the pointer; consumed, not a click
+        await send(left=False)
         await send(left=True)
         await asyncio.sleep(0.3)
         assert rig.cursor.held == {"left"}

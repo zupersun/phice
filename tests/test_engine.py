@@ -538,3 +538,61 @@ def test_expo_zero_is_exactly_linear():
     r.stream(5, alpha=0)
     r.stream(90, alpha=350)
     assert r.cursor.x == pytest.approx(700 + 250, abs=3)
+
+
+def _no_power_roles():
+    return {"left": "left", "right": "right", "scroll": "scroll"}
+
+
+def test_any_button_wakes_the_pointer_and_is_consumed():
+    """With no power button, the first press on anything arms the pointer and
+    anchors where the cursor already is. It must not also click: you would be
+    clicking whatever happens to be under the cursor."""
+    r = Rig(roles=_no_power_roles())
+    assert r.engine.phase == Phase.OFF
+    r.send(left=True)
+    assert r.engine.phase == Phase.ON
+    assert r.cursor.events == [], "the waking press must not click"
+    r.send(left=False)
+    assert r.cursor.events == [], "nor should its release"
+
+
+def test_a_press_after_waking_clicks_normally():
+    r = Rig(roles=_no_power_roles())
+    r.send(left=True)          # wakes
+    r.send(left=False)
+    r.tick(0.2)
+    r.send(left=True)          # now a real click
+    r.send(left=False)
+    assert [e.kind for e in r.cursor.events] == ["down", "up"]
+
+
+def test_scroll_also_wakes_it():
+    r = Rig(roles=_no_power_roles())
+    r.send(scroll=True, sd=-10)
+    assert r.engine.phase == Phase.ON
+    assert r.cursor.events == [], "the waking touch must not scroll"
+
+
+def test_waking_anchors_at_the_current_cursor_position():
+    """'Point at the cursor and press' only works if waking anchors there."""
+    r = Rig(roles=_no_power_roles(), cursor=FakeCursor(x=900, y=300))
+    r.send(alpha=40, left=True)
+    r.send(alpha=40, left=False)
+    r.stream(90, alpha=40)
+    assert (r.cursor.x, r.cursor.y) == (900, 300), "no jump on wake"
+
+
+def test_wake_on_any_button_can_be_disabled():
+    r = Rig(PointerConfig(wake_on_any_button=False), roles=_no_power_roles())
+    r.send(left=True)
+    assert r.engine.phase == Phase.OFF
+
+
+def test_power_button_still_works_when_present():
+    """Existing layouts that keep a power button must behave as before."""
+    r = Rig()
+    r.power()
+    assert r.engine.phase == Phase.ON
+    r.power()
+    assert r.engine.phase == Phase.OFF

@@ -1,9 +1,8 @@
 {
   "version": 1,
   "buttons": [
-    {"id": "power",  "role": "power",  "x": 32, "y": 2,  "w": 36, "h": 9,  "label": "POWER"},
-    {"id": "left",   "role": "left",   "x": 3,  "y": 13, "w": 42, "h": 48, "label": "L"},
-    {"id": "scroll", "role": "scroll", "x": 46, "y": 11, "w": 8,  "h": 52, "label": ""},
-    {"id": "right",  "role": "right",  "x": 55, "y": 13, "w": 42, "h": 48, "label": "R"}
+    {"id": "left",   "role": "left",   "x": 3,  "y": 4,  "w": 42, "h": 56, "label": "L"},
+    {"id": "scroll", "role": "scroll", "x": 46, "y": 2,  "w": 8,  "h": 60, "label": ""},
+    {"id": "right",  "role": "right",  "x": 55, "y": 4,  "w": 42, "h": 56, "label": "R"}
   ]
 }

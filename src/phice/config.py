@@ -86,6 +86,7 @@ class PointerConfig:
     scroll_gain: float = 1.5
     scroll_natural: bool = True
     auto_activate: bool = False
+    wake_on_any_button: bool = True
     auto_deactivate: bool = True
     pickup_ms: int = 300
     rest_seconds: float = 2.5
@@ -152,6 +153,7 @@ class PointerConfig:
             scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
             scroll_natural=_bool(d, "scroll_natural", True),
             auto_activate=_bool(d, "auto_activate", False),
+            wake_on_any_button=_bool(d, "wake_on_any_button", True),
             auto_deactivate=_bool(d, "auto_deactivate", True),
             pickup_ms=_int(d, "pickup_ms", 300, 0, 5000),
             rest_seconds=_num(d, "rest_seconds", 2.5, 0.1, 60.0),
@@ -250,8 +252,10 @@ def parse_layout(d: Any) -> Layout:
         if not isinstance(css_class, str) or not re.fullmatch(r"[A-Za-z0-9_ -]*", css_class):
             raise ConfigError(f"buttons[{i}].class: expected CSS class names")
         buttons.append(LayoutButton(bid, role, x, y, w, h, label, icon, css_class))
-    if role_count.get("power", 0) != 1:
-        raise ConfigError("layout needs exactly one button with role 'power'")
+    # A power button is optional: with wake_on_any_button the first press on any
+    # button arms the pointer. More than one would still be ambiguous.
+    if role_count.get("power", 0) > 1:
+        raise ConfigError("at most one button may have role 'power'")
     for r in SINGLETON_ROLES:
         if role_count.get(r, 0) > 1:
             raise ConfigError(f"at most one button may have role '{r}'")

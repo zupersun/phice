@@ -22,6 +22,7 @@
     retry: document.getElementById("btn-retry"),
     hapticTest: document.getElementById("btn-haptic-test"),
     haptic: document.getElementById("haptic"),
+    hapticLabel: document.getElementById("haptic-label"),
   };
 
   const state = {
@@ -54,7 +55,10 @@
     if (!state.haptics) return;
     // Safari has no vibration API. Toggling a native switch control produces a
     // real haptic on iOS 17.4+. Harmless everywhere else.
-    try { el.haptic.click(); } catch (_) { /* ignore */ }
+    // iOS fires the system haptic when a `switch` control toggles, but only via
+    // the LABEL and only if the control is actually rendered -- opacity:0 or
+    // display:none silently produce no haptic at all.
+    try { (el.hapticLabel || el.haptic).click(); } catch (_) { /* ignore */ }
   }
 
   function num(v) { return typeof v === "number" && isFinite(v) ? v : 0; }

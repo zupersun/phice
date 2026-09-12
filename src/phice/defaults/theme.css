@@ -162,4 +162,8 @@ body[data-state="nopermission"] #ov-denied { display: flex; }
 }
 body[data-state="disconnected"] #banner { display: block; }
 
-#haptic-label { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+/* The haptic switch must really be rendered for iOS to fire the tick, so it is
+   made imperceptible rather than hidden. opacity:0, visibility:hidden and
+   display:none all silently disable it. */
+#haptic-label { position: fixed; bottom: 0; left: 0; width: 18px; height: 18px;
+  opacity: 0.002; pointer-events: none; z-index: -1; }

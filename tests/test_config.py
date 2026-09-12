@@ -48,9 +48,10 @@ def test_unreadable_file_raises(tmp_path):
 
 
 def test_default_layout_parses():
+    """No power button: the pointer wakes on the first press of any button."""
     layout = load_layout(DEFAULTS_DIR / "layout.json")
-    assert layout.roles() == {"power": "power", "left": "left", "scroll": "scroll", "right": "right"}
-    assert layout.to_dict()["buttons"][0]["label"] == "POWER"
+    assert layout.roles() == {"left": "left", "scroll": "scroll", "right": "right"}
+    assert layout.to_dict()["buttons"][0]["label"] == "L"
 
 
 def _layout(buttons):
@@ -70,7 +71,6 @@ def _btn(**kw):
     [_btn(x=95, w=10)],
     [_btn(), _btn(id="p2")],
     [_btn(), _btn(id="a", role="left"), _btn(id="b", role="left")],
-    [_btn(id="left", role="left")],
     [_btn(icon="../secret.svg")],
 ])
 def test_layout_validation(buttons):
@@ -140,3 +140,15 @@ def test_tailscale_host_is_remembered():
     assert cfg.cert_mode == "tailscale" and cfg.tailscale_host == "mac.tail1234.ts.net"
     with pytest.raises(ConfigError):
         PointerConfig.from_dict({"tailscale_host": 123})
+
+
+def test_layout_no_longer_requires_a_power_button():
+    """The pointer wakes on any button, so a power button is optional."""
+    layout = parse_layout(_layout([_btn(id="left", role="left"),
+                                   _btn(id="right", role="right", x=50)]))
+    assert "power" not in layout.roles().values()
+
+
+def test_layout_still_rejects_two_power_buttons():
+    with pytest.raises(ConfigError):
+        parse_layout(_layout([_btn(), _btn(id="p2", role="power", x=50)]))
