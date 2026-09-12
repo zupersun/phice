@@ -1,3 +1,0 @@
-The Vercel deployment root. Real contents arrive on the feat/rtc-web branch;
-this file exists so the directory is selectable in Vercel's project setup before
-those land.

@@ -1,0 +1,8 @@
+{
+  "name": "phice-web",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "@vercel/kv": "^3.0.0"
+  }
+}
