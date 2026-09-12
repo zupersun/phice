@@ -1,14 +1,17 @@
-// Reports whether storage is wired up and what the deployment can see.
-// Names only, never values: this endpoint is public.
-import { configured } from "./_redis.js";
+// Reports whether storage is wired up AND whether it actually answers.
+// Never exposes the token; the host is reduced to its shape.
+import { configured, hostShape, ping } from "./_redis.js";
 
-export default function handler(req, res) {
-  const all = Object.keys(process.env).sort();
+export default async function handler(req, res) {
+  const candidates = Object.keys(process.env)
+    .filter((k) => /REDIS|KV_|UPSTASH|REST_API|DATABASE|STORAGE/i.test(k))
+    .sort();
+  const result = configured() ? await ping() : { ok: false, error: "no credentials found" };
   res.status(200).json({
-    storage: configured() ? "connected" : "missing",
-    // Anything that looks like it came from a database integration.
-    candidates: all.filter((k) => /REDIS|KV_|UPSTASH|REST_API|DATABASE|STORAGE/i.test(k)),
-    // Everything else, so a wrong prefix is visible rather than invisible.
-    env_names: all.filter((k) => !/^(npm_|_$)/.test(k)),
+    storage: configured() ? "credentials found" : "missing",
+    reachable: result.ok,
+    detail: result.ok ? result.reply : result.error,
+    host: hostShape(),
+    candidates,
   });
 }

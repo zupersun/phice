@@ -51,10 +51,36 @@ async function command(args) {
     headers: { Authorization: `Bearer ${CONN.token}`, "Content-Type": "application/json" },
     body: JSON.stringify(args),
   });
-  if (!res.ok) throw new Error(`redis ${res.status}`);
+  if (!res.ok) {
+    // Carry enough detail to diagnose without ever including the token.
+    const text = (await res.text().catch(() => "")).slice(0, 200);
+    throw new Error(`redis HTTP ${res.status}: ${text}`);
+  }
   const body = await res.json();
-  if (body.error) throw new Error(body.error);
+  if (body.error) throw new Error(`redis: ${body.error}`);
   return body.result;
+}
+
+/** Host shape only, for diagnostics. Never the token. */
+export function hostShape() {
+  if (!CONN) return null;
+  try {
+    const h = new URL(CONN.base).hostname;
+    const parts = h.split(".");
+    return parts.length > 2 ? `*.${parts.slice(1).join(".")}` : h;
+  } catch {
+    return "unparseable";
+  }
+}
+
+/** Round-trip the connection so a failure is visible rather than a blank 500. */
+export async function ping() {
+  try {
+    const r = await command(["PING"]);
+    return { ok: true, reply: String(r) };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e).slice(0, 300) };
+  }
 }
 
 /** Store a JSON value under `key`, expiring after `seconds`. */
