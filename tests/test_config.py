@@ -154,3 +154,24 @@ def test_layout_no_longer_requires_a_power_button():
 def test_layout_still_rejects_two_power_buttons():
     with pytest.raises(ConfigError):
         parse_layout(_layout([_btn(), _btn(id="p2", role="power", x=50)]))
+
+
+def test_transport_settings():
+    cfg = PointerConfig.from_dict({})
+    assert cfg.transport == "tls"           # unchanged default: nothing breaks yet
+    assert cfg.signaling_url == "https://phice.vercel.app"
+
+    cfg = PointerConfig.from_dict({"transport": "webrtc",
+                                   "signaling_url": "https://example.test"})
+    assert cfg.transport == "webrtc" and cfg.signaling_url == "https://example.test"
+
+
+@pytest.mark.parametrize("bad", [
+    {"transport": "carrier-pigeon"},
+    {"signaling_url": "ftp://example.test"},
+    {"signaling_url": "http://example.test"},   # signaling must be HTTPS
+    {"signaling_url": 42},
+])
+def test_rejects_bad_transport_settings(bad):
+    with pytest.raises(ConfigError):
+        PointerConfig.from_dict(bad)

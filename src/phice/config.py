@@ -97,6 +97,8 @@ class PointerConfig:
     timeout_ms: int = 500
     cert_mode: str = "auto"
     tailscale_host: str = ""
+    transport: str = "tls"
+    signaling_url: str = "https://phice.vercel.app"
     ui: UIConfig = field(default_factory=UIConfig)
 
     @property
@@ -125,6 +127,14 @@ class PointerConfig:
         mapping = d.get("mapping", "absolute")
         if mapping not in ("absolute", "relative"):
             raise ConfigError("mapping: expected 'absolute' or 'relative'")
+        transport = d.get("transport", "tls")
+        if transport not in ("tls", "webrtc"):
+            raise ConfigError("transport: expected 'tls' or 'webrtc'")
+        signaling_url = d.get("signaling_url", "https://phice.vercel.app")
+        if not isinstance(signaling_url, str) or not signaling_url.startswith("https://"):
+            # Plain HTTP signaling would let anyone on the path swap the offer and
+            # take over the pairing.
+            raise ConfigError("signaling_url: expected an https:// URL")
         return cls(
             version=_int(d, "version", 1, 1, 1),
             gain_x_px_per_deg=_num(d, "gain_x_px_per_deg", 25.0, 0.1, 500.0),
@@ -165,6 +175,8 @@ class PointerConfig:
             timeout_ms=_int(d, "timeout_ms", 500, 100, 10000),
             cert_mode=cert_mode,
             tailscale_host=ts_host,
+            transport=transport,
+            signaling_url=signaling_url,
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake),
         )
 

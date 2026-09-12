@@ -36,6 +36,8 @@
   "idle_hz_when_auto_activate": 10,
   "timeout_ms": 500,
   "cert_mode": "auto",
+  "transport": "tls",
+  "signaling_url": "https://phice.vercel.app",
   "ui": {
     "haptics": true,
     "keep_awake": "always"
