@@ -75,13 +75,14 @@ class PointerConfig:
     expo: float = 1.2
     expo_ref_deg: float = 18.0
     expo_max: float = 4.0
+    edge_slack_px: float = 24.0
     one_euro: OneEuroConfig = field(default_factory=OneEuroConfig)
     deadzone_dps: float = 0.5
     accel: AccelConfig = field(default_factory=AccelConfig)
     freeze_ms_on_touch: int = 120
     freeze_ms_on_release: int = 60
     chord_window_ms: int = 50
-    recenter_hold_ms: int = 1000
+    recenter_hold_ms: int = 650
     double_click_s: float = 0.5
     scroll_gain: float = 1.5
     scroll_natural: bool = False
@@ -133,6 +134,7 @@ class PointerConfig:
             expo=_num(d, "expo", 1.2, 0.0, 10.0),
             expo_ref_deg=_num(d, "expo_ref_deg", 18.0, 1.0, 90.0),
             expo_max=_num(d, "expo_max", 4.0, 1.0, 20.0),
+            edge_slack_px=_num(d, "edge_slack_px", 24.0, 0.0, 2000.0),
             one_euro=OneEuroConfig(
                 min_cutoff=_num(oe, "min_cutoff", 1.0, 0.01, 100.0),
                 beta=_num(oe, "beta", 0.02, 0.0, 10.0),
@@ -148,7 +150,7 @@ class PointerConfig:
             freeze_ms_on_touch=_int(d, "freeze_ms_on_touch", 120, 0, 2000),
             freeze_ms_on_release=_int(d, "freeze_ms_on_release", 60, 0, 2000),
             chord_window_ms=_int(d, "chord_window_ms", 50, 0, 500),
-            recenter_hold_ms=_int(d, "recenter_hold_ms", 1000, 100, 10000),
+            recenter_hold_ms=_int(d, "recenter_hold_ms", 650, 100, 10000),
             double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
             scroll_gain=_num(d, "scroll_gain", 1.5, 0.01, 50.0),
             scroll_natural=_bool(d, "scroll_natural", False),

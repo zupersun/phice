@@ -414,7 +414,31 @@ class PointerEngine:
         dy = -self._curve(pitch - self._anchor[1]) * self._cfg.gain_y_px_per_deg
         if self._cfg.invert_y:
             dy = -dy
-        self._move_to(self._anchor_pos[0] + dx, self._anchor_pos[1] + dy)
+        self._move_to(*self._absorb_overshoot(self._anchor_pos[0] + dx,
+                                              self._anchor_pos[1] + dy))
+
+    def _absorb_overshoot(self, tx: float, ty: float) -> tuple[float, float]:
+        """Stop aim past a screen edge accumulating without bound.
+
+        Absolute mapping parks the cursor at the edge while you aim beyond it, and
+        that is wanted -- but the discarded overshoot is unbounded, so aiming well
+        off-screen meant un-aiming nearly all of it before the cursor would move
+        again. The anchor absorbs everything past `edge_slack_px`, leaving a small
+        deliberate amount of stick and no more.
+        """
+        bx, by = self._backend.get_position()
+        displays = self._backend.displays()
+        current = display_containing(displays, bx, by)
+        cx, cy = clamp_to_displays(displays, tx, ty, current)
+        slack = self._cfg.edge_slack_px
+        ax, ay = self._anchor_pos
+        ex, ey = tx - cx, ty - cy
+        if abs(ex) > slack:
+            ax -= ex - math.copysign(slack, ex)
+        if abs(ey) > slack:
+            ay -= ey - math.copysign(slack, ey)
+        self._anchor_pos = (ax, ay)
+        return cx, cy
 
     def _curve(self, degrees: float) -> float:
         """Expo: amplify large offsets from the anchor, leave small ones alone.

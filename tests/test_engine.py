@@ -440,25 +440,26 @@ def test_change_callback_fires_on_phase_change():
     assert seen == [Phase.ON, Phase.RECENTER_HOLD, Phase.OFF]
 
 
-def test_absolute_edge_clamp_holds_until_aim_returns():
-    """Absolute mapping parks the cursor at the edge while you aim past it, and
-    brings it back when your aim comes back -- the Wii property: the cursor is a
-    function of where you point, not of how far you have turned."""
-    r = Rig(cursor=FakeCursor(x=1435, y=100))
+def test_absolute_edge_clamp_parks_then_returns():
+    """Parks at the edge while you aim past it, and comes back when you aim back.
+    Overshoot beyond edge_slack_px is absorbed, so the return is prompt rather
+    than requiring you to un-aim the whole excursion."""
+    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=1435, y=100))
     r.power()
     r.stream(5, alpha=0)
-    r.stream(60, alpha=350)  # +10 deg -> 1685, clamped
+    r.stream(60, alpha=350)  # +10 deg -> 1685, clamped to the edge
     assert r.cursor.x == 1439
-    r.stream(60, alpha=355)  # +5 deg -> 1560, still past the edge: stays parked
-    assert r.cursor.x == 1439
-    r.stream(90, alpha=0)  # aim back at the anchor -> cursor returns to it
-    assert r.cursor.x == pytest.approx(1435, abs=3)
+    r.stream(90, alpha=0)  # aim back -> cursor comes off the edge
+    assert r.cursor.x < 1439
 
 
 def test_absolute_aim_and_cursor_do_not_drift_apart():
     """Return to the same aim and the cursor returns to the same pixel, however
     much turning happened in between. Relative integration cannot promise this."""
-    r = Rig(cursor=FakeCursor(x=700, y=500))
+    # A display large enough that the sweep never reaches an edge: clamping is a
+    # separate behaviour with its own tests.
+    r = Rig(cursor=FakeCursor(x=4000, y=2000,
+                              display_list=[Rect(0, 0, 8000, 4000)]))
     r.power()
     r.stream(90, alpha=0)
     home = (r.cursor.x, r.cursor.y)
@@ -644,3 +645,42 @@ def test_power_while_off_turns_it_on():
     assert r.engine.phase == Phase.ON
     r.send(power=False)
     assert r.engine.phase == Phase.ON, "the release must not immediately toggle it off"
+
+
+def test_edge_overshoot_is_bounded_so_the_cursor_peels_off_quickly():
+    """Absolute mapping parks at the edge while you aim past it, but the discarded
+    overshoot must not accumulate: aiming far off-screen used to mean un-aiming
+    almost all of it before the cursor would move at all."""
+    r = Rig(cursor=FakeCursor(x=1435, y=400))
+    r.send(left=True)
+    r.send(left=False)
+    r.stream(30, alpha=0)
+    r.stream(120, alpha=300)     # 60 degrees right: enormously past the edge
+    assert r.cursor.x == 1439, "parked at the edge"
+    r.cursor.clear()
+    # Turn back just a few degrees. With bounded overshoot this must move.
+    r.stream(60, alpha=355)
+    assert r.cursor.x < 1439, "cursor should peel off the edge almost immediately"
+
+
+def test_a_little_edge_stick_remains():
+    """Some stick is wanted: a hair of overshoot should not instantly unstick."""
+    r = Rig(PointerConfig(edge_slack_px=24.0), cursor=FakeCursor(x=1435, y=400))
+    r.send(left=True)
+    r.send(left=False)
+    r.stream(30, alpha=0)
+    r.stream(90, alpha=358)      # 2 degrees right: just past the edge
+    assert r.cursor.x == 1439
+    r.cursor.clear()
+    r.stream(5, alpha=357.9)     # a hair back: still inside the slack
+    assert r.cursor.x == 1439, "a tiny bit of stick is intentional"
+
+
+def test_edge_slack_does_not_affect_the_interior():
+    """Nothing about the slack may perturb normal aiming away from an edge."""
+    r = Rig(PointerConfig(expo=0.0), cursor=FakeCursor(x=700, y=500))
+    r.send(left=True)
+    r.send(left=False)
+    r.stream(5, alpha=0)
+    r.stream(90, alpha=350)
+    assert r.cursor.x == pytest.approx(700 + 250, abs=3)

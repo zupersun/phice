@@ -7,6 +7,7 @@
   "expo": 1.2,
   "expo_ref_deg": 18.0,
   "expo_max": 4.0,
+  "edge_slack_px": 24.0,
   "one_euro": {
     "min_cutoff": 1.0,
     "beta": 0.02,
@@ -22,7 +23,7 @@
   "freeze_ms_on_touch": 120,
   "freeze_ms_on_release": 60,
   "chord_window_ms": 50,
-  "recenter_hold_ms": 1000,
+  "recenter_hold_ms": 650,
   "double_click_s": 0.5,
   "scroll_gain": 1.5,
   "scroll_natural": false,
