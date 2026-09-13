@@ -22,3 +22,6 @@ node_modules/
 .vercel/
 .vercel
 .env*
+
+# visual brainstorming session files
+.superpowers/
