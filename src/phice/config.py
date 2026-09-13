@@ -71,9 +71,11 @@ class UIConfig:
     #: "dark" | "light". Chosen on the Mac and pushed to the phone, so both
     #: surfaces match without the phone needing a setting of its own.
     appearance: str = "dark"
-    #: Which preset in layouts/ is active, by filename stem. Empty means use
-    #: layout.json, which is what every install before this had.
-    layout: str = ""
+    #: Which preset in layouts/ is active, by filename stem. Ships as the two
+    #: handed layout and remembers whatever is chosen after that, since it is
+    #: written here. Empty still means "use layout.json", which is what every
+    #: install predating presets had.
+    layout: str = "standard"
 
 
 @dataclass(frozen=True)
@@ -149,7 +151,7 @@ class PointerConfig:
         keep_awake = ui.get("keep_awake", "always")
         if keep_awake not in ("always", "on_only"):
             raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
-        layout_name = ui.get("layout", "")
+        layout_name = ui.get("layout", "standard")
         if not isinstance(layout_name, str) or "/" in layout_name or ".." in layout_name:
             raise ConfigError("ui.layout: expected a plain preset name")
         appearance = ui.get("appearance", "dark")

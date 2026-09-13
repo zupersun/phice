@@ -41,7 +41,8 @@
   "ui": {
     "haptics": true,
     "keep_awake": "always",
-    "appearance": "dark"
+    "appearance": "dark",
+    "layout": "standard"
   },
   "scroll_deadzone": 0.035,
   "scroll_rate_px_per_s": 2400.0,

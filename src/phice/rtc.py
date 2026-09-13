@@ -102,6 +102,7 @@ class RTCTransport:
         self.client_caps = ""
         self.client_stale = False
         self.hz = 0.0
+        self._last_phase = "disconnected"
 
     # ----- signaling --------------------------------------------------------
 
@@ -257,6 +258,13 @@ class RTCTransport:
         Called on every engine change, so it must be cheap and must never raise:
         the engine calls it from inside its own state transitions.
         """
+        # Exact transitions, not samples. The status poll runs every half second,
+        # so a hold that completes and restarts inside one tick is invisible to
+        # it -- which is the window a double flash would hide in.
+        phase = self.engine.phase.value
+        if phase != self._last_phase:
+            log.info("phase %s -> %s", self._last_phase, phase)
+            self._last_phase = phase
         ch = self.ctl
         if ch is None or ch.readyState != "open":
             return

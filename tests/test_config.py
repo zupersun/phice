@@ -231,3 +231,25 @@ def test_ui_layout_rejects_a_path_instead_of_a_name(tmp_path):
     p.write_text(json.dumps({"ui": {"layout": "../../etc/passwd"}}))
     with pytest.raises(ConfigError):
         load_pointer_config(p)
+
+
+def test_the_shipped_layout_is_two_handed_and_a_choice_is_remembered(tmp_path):
+    """Ships as two hands for anyone new, and whatever is chosen after that
+    persists, because it is written into pointer.json rather than held in
+    memory."""
+    import json
+
+    from phice.config import PointerConfig, load_pointer_config
+
+    assert PointerConfig().ui.layout == "standard"
+
+    p = tmp_path / "pointer.json"
+    p.write_text(json.dumps({}))
+    assert load_pointer_config(p).ui.layout == "standard", "absent means two hands"
+
+    p.write_text(json.dumps({"ui": {"layout": "one-handed"}}))
+    assert load_pointer_config(p).ui.layout == "one-handed", "a choice is honoured"
+
+    # Empty still means layout.json, for installs that predate presets.
+    p.write_text(json.dumps({"ui": {"layout": ""}}))
+    assert load_pointer_config(p).ui.layout == ""
