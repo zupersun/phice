@@ -112,6 +112,7 @@ class Runtime:
                                  panel_css=lambda: self.paths.panel_css.read_bytes(),
                                  new_code=self.new_pair_code,
                                  set_appearance=self.set_appearance,
+                                 set_layout=self.set_layout,
                                  request_panel=self.request_panel,
                                  calibrate_html=lambda: CALIBRATE_HTML.encode(),
                                  calibrate_css=lambda: self.paths.calibrate_css.read_bytes(),
@@ -134,7 +135,15 @@ class Runtime:
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
-        self._watcher = FileWatcher([paths.pointer_json, paths.layout_json, paths.theme_css])
+        self._watcher = FileWatcher(self._watched())
+
+    def _watched(self) -> list[Path]:
+        """Editing the active preset must reload it, not only layout.json."""
+        files = [self.paths.pointer_json, self.paths.layout_json, self.paths.theme_css]
+        active = self.active_layout_path()
+        if active not in files:
+            files.append(active)
+        return files
 
     # ----- config -----------------------------------------------------------
 
@@ -145,12 +154,37 @@ class Runtime:
             log.error("pointer.json invalid, using defaults: %s", e)
             return PointerConfig()
 
+    def active_layout_path(self) -> Path:
+        """Which layout file is in force.
+
+        A named preset wins; anything else falls back to layout.json, which is
+        what every install before presets existed had. A layout that fails to
+        load would leave the phone with no buttons at all -- indistinguishable
+        from a broken app -- so falling back is always better than failing.
+        """
+        name = self.config.ui.layout
+        if not name:
+            return self.paths.layout_json
+        preset = self.paths.layouts / f"{name}.json"
+        if preset.exists():
+            return preset
+        log.error("ui.layout names %r but %s does not exist; using layout.json",
+                  name, preset)
+        return self.paths.layout_json
+
     def _load_layout_or_default(self):
         from .config import parse_layout
+        chosen = self.active_layout_path()
         try:
-            return load_layout(self.paths.layout_json)
+            return load_layout(chosen)
         except ConfigError as e:
-            log.error("layout.json invalid, using defaults: %s", e)
+            log.error("%s invalid: %s", chosen.name, e)
+            if chosen != self.paths.layout_json:
+                try:
+                    return load_layout(self.paths.layout_json)
+                except ConfigError:
+                    pass
+            log.error("using the built-in layout")
             return parse_layout({"version": 1, "buttons": [
                 {"id": "power", "role": "power", "x": 32, "y": 3, "w": 36, "h": 9, "label": "POWER"},
                 {"id": "left", "role": "left", "x": 3, "y": 50, "w": 42, "h": 46, "label": "L"},
@@ -167,8 +201,8 @@ class Runtime:
             for path in changed:
                 if path == self.paths.pointer_json:
                     await self._apply_pointer(path)
-                elif path == self.paths.layout_json:
-                    await self._apply_layout(path)
+                elif path == self.paths.layout_json or path.parent == self.paths.layouts:
+                    await self._apply_layout(self.active_layout_path())
                 elif path == self.paths.theme_css:
                     await self._apply_theme(path)
 
@@ -184,6 +218,10 @@ class Runtime:
         self.engine.set_config(cfg)
         self.status.update(error="")
         log.info("pointer.json reloaded")
+        # ui.layout may have changed, which changes both the layout in force and
+        # which file we should be watching.
+        await self._apply_layout(self.active_layout_path())
+        self._watcher = FileWatcher(self._watched())
         await self.server._send_state()
         if self.rtc:
             # Editing config while on the WebRTC transport used to reach the
@@ -255,6 +293,8 @@ class Runtime:
                                     if self.rtc.channel else "none"),
                         "state": self.rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
+        d["layout"] = self.config.ui.layout or "custom"
+        d["layouts"] = sorted(p.stem for p in self.paths.layouts.glob("*.json"))
         d["calibrated"] = self._calibrated_when()
         # Both halves of the comparison, not just its verdict: a check that
         # quietly disables itself because one side is empty is worse than no
@@ -430,6 +470,19 @@ class Runtime:
         self._panel_requested = False
         url, self._panel_url = self._panel_url, None
         return url or True
+
+    def set_layout(self, value: str) -> bool:
+        """Choose a layout preset by name, or "" to go back to layout.json."""
+        if "/" in value or ".." in value:
+            return False
+        if value and not (self.paths.layouts / f"{value}.json").exists():
+            return False
+        path = self.paths.pointer_json
+        data = json.loads(path.read_text())
+        data.setdefault("ui", {})["layout"] = value
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        self._dispatch(self._apply_pointer(path))
+        return True
 
     def set_appearance(self, value: str) -> bool:
         """Persist the chosen appearance and tell the phone at once.

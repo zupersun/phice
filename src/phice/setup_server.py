@@ -30,6 +30,7 @@ class SetupServer:
                  panel_css: Callable[[], bytes] | None = None,
                  new_code: Callable[[], None] | None = None,
                  set_appearance: Callable[[str], bool] | None = None,
+                 set_layout: Callable[[str], bool] | None = None,
                  request_panel: Callable[[], None] | None = None,
                  calibrate_html: Callable[[], bytes] | None = None,
                  calibrate_css: Callable[[], bytes] | None = None,
@@ -47,6 +48,7 @@ class SetupServer:
         self._panel_css = panel_css
         self._new_code = new_code
         self._set_appearance = set_appearance
+        self._set_layout = set_layout
         self._request_panel = request_panel
         self._calibrate_html = calibrate_html
         self._calibrate_css = calibrate_css
@@ -127,6 +129,13 @@ class SetupServer:
                     # exactly like the phone's theme.
                     css = outer._panel_css() if outer._panel_css else b""
                     self._send(200, css, "text/css; charset=utf-8")
+                elif (path.startswith("/debug/layout") and outer._set_layout
+                      and self._is_local()):
+                    value = parse_qs(urlparse(self.path).query).get("v", [""])[0]
+                    ok = outer._set_layout(value)
+                    self._send(200 if ok else 400,
+                               json.dumps({"ok": ok, "layout": value}).encode(),
+                               "application/json")
                 elif (path.startswith("/debug/appearance") and outer._set_appearance
                       and self._is_local()):
                     value = parse_qs(urlparse(self.path).query).get("v", [""])[0]

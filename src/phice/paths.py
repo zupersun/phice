@@ -64,6 +64,8 @@ class Paths:
     @property
     def panel_css(self) -> Path: return self.root / "panel.css"
     @property
+    def layouts(self) -> Path: return self.root / "layouts"
+    @property
     def calibrate_css(self) -> Path: return self.root / "calibrate.css"
     @property
     def assets(self) -> Path: return self.root / "assets"
@@ -84,6 +86,13 @@ class Paths:
             dst = self.root / name
             if not dst.exists():
                 shutil.copy(DEFAULTS_DIR / name, dst)
+        # Presets are seeded like every other user-owned file: copied if absent,
+        # never overwritten, so an edited one survives switching away and back.
+        self.layouts.mkdir(parents=True, exist_ok=True)
+        for preset in sorted((DEFAULTS_DIR / "layouts").glob("*.json")):
+            dst = self.layouts / preset.name
+            if not dst.exists():
+                shutil.copy(preset, dst)
         if not self.assets.exists():
             shutil.copytree(DEFAULTS_DIR / "assets", self.assets)
         from .icons import write_defaults

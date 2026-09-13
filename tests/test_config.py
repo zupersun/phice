@@ -175,3 +175,51 @@ def test_transport_settings():
 def test_rejects_bad_transport_settings(bad):
     with pytest.raises(ConfigError):
         PointerConfig.from_dict(bad)
+
+
+def test_both_shipped_layouts_are_valid(tmp_path):
+    """A layout that fails to load leaves the phone with no buttons at all, which
+    is indistinguishable from a broken app."""
+    from phice.config import load_layout
+    from phice.paths import DEFAULTS_DIR
+
+    presets = sorted((DEFAULTS_DIR / "layouts").glob("*.json"))
+    assert {p.stem for p in presets} == {"standard", "one-handed"}
+    for preset in presets:
+        layout = load_layout(preset)
+        assert set(layout.roles().values()) == {"left", "right", "scroll", "power"}
+
+
+def test_one_handed_puts_the_pads_in_thumb_reach_and_power_out_of_it():
+    """Pinned as numbers: the whole point of the layout is where things are, and
+    a later tidy-up should not be able to undo it quietly."""
+    from phice.config import load_layout
+    from phice.paths import DEFAULTS_DIR
+
+    buttons = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
+    assert buttons["power"].y + buttons["power"].h < 15, "power must sit at the top"
+    for name in ("left", "right", "scroll"):
+        assert buttons[name].y >= 40, f"{name} must start in the lower half"
+    # Symmetric, so it works in either hand and needs no handedness setting.
+    assert buttons["left"].x == 100 - (buttons["right"].x + buttons["right"].w)
+
+
+def test_the_standard_power_button_sits_lower_than_it_used_to():
+    from phice.config import load_layout
+    from phice.paths import DEFAULTS_DIR
+
+    buttons = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
+    assert buttons["power"].y >= 76, "power moved down, away from the pads"
+
+
+def test_ui_layout_rejects_a_path_instead_of_a_name(tmp_path):
+    """It names a file in layouts/; anything with a separator is not a name."""
+    import json
+
+    import pytest
+
+    from phice.config import ConfigError, load_pointer_config
+    p = tmp_path / "pointer.json"
+    p.write_text(json.dumps({"ui": {"layout": "../../etc/passwd"}}))
+    with pytest.raises(ConfigError):
+        load_pointer_config(p)

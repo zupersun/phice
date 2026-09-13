@@ -98,6 +98,20 @@ try {
 </div>
 
 <div class="card">
+  <b>Grip</b>
+  <p class="lede">One-handed moves the buttons into thumb reach and puts power at
+     the top, out of the way of an accidental press.</p>
+  <div class="seg" id="grip" role="radiogroup" aria-label="Layout" tabindex="0">
+    <span class="knob" aria-hidden="true"></span>
+    <span class="stop" role="radio" data-v="standard" aria-label="Two hands"></span>
+    <span class="stop" role="radio" data-v="one-handed" aria-label="One hand"></span>
+  </div>
+  <div class="seg-labels" aria-hidden="true">
+    <span>Two hands</span><span>One hand</span>
+  </div>
+</div>
+
+<div class="card">
   <b>Pointer feel</b>
   <p class="lede">Point the phone at a few dots and Phice measures how much of
      your screen one degree of wrist actually covers. Under a minute, no cursor
@@ -135,6 +149,8 @@ async function refresh() {
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
     document.getElementById("stale").hidden = !d.client_stale;
+    // Never move the knob under a finger that is dragging it.
+    if (!gripDragging && d.layout && d.layout !== grip.dataset.v) applyGrip(d.layout);
     document.getElementById("calibrated").textContent =
       d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
@@ -151,6 +167,46 @@ document.getElementById("newcode").onclick = async () => {
 document.getElementById("grant").onclick = async () => {
   await fetch("/debug/grant"); refresh();
 };
+// The grip switch, same contract as appearance: the script sets an attribute and
+// posts the choice; what that looks like is decided in panel.css.
+const GRIPS = ["standard", "one-handed"];
+const grip = document.getElementById("grip");
+let gripDragging = false;
+
+function applyGrip(name) {
+  grip.dataset.v = name;
+  for (const s of grip.querySelectorAll(".stop")) {
+    s.setAttribute("aria-checked", String(s.dataset.v === name));
+  }
+}
+function gripIndexAt(clientX) {
+  const r = grip.getBoundingClientRect();
+  if (!r.width) return 0;
+  return Math.min(1, Math.max(0, ((clientX - r.left) / r.width) * 2 - 0.5));
+}
+async function chooseGrip(name) {
+  applyGrip(name);
+  try { await fetch("/debug/layout?v=" + name); } catch (e) { /* the poll retries */ }
+}
+grip.addEventListener("pointerdown", (ev) => {
+  gripDragging = true;
+  grip.dataset.dragging = "1";
+  grip.setPointerCapture(ev.pointerId);
+  grip.style.setProperty("--knob-drag", gripIndexAt(ev.clientX).toFixed(3));
+});
+grip.addEventListener("pointermove", (ev) => {
+  if (gripDragging) grip.style.setProperty("--knob-drag", gripIndexAt(ev.clientX).toFixed(3));
+});
+const endGrip = (ev) => {
+  if (!gripDragging) return;
+  gripDragging = false;
+  delete grip.dataset.dragging;
+  grip.style.removeProperty("--knob-drag");
+  chooseGrip(GRIPS[Math.round(gripIndexAt(ev.clientX))]);
+};
+grip.addEventListener("pointerup", endGrip);
+grip.addEventListener("pointercancel", endGrip);
+
 document.getElementById("calibrate").onclick = async () => {
   // The calibration screen handles pairing itself, so this needs no phone yet.
   await fetch("/calibrate/start");

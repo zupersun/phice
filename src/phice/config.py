@@ -71,6 +71,9 @@ class UIConfig:
     #: "dark" | "light". Chosen on the Mac and pushed to the phone, so both
     #: surfaces match without the phone needing a setting of its own.
     appearance: str = "dark"
+    #: Which preset in layouts/ is active, by filename stem. Empty means use
+    #: layout.json, which is what every install before this had.
+    layout: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,6 +145,9 @@ class PointerConfig:
         keep_awake = ui.get("keep_awake", "always")
         if keep_awake not in ("always", "on_only"):
             raise ConfigError("ui.keep_awake: expected 'always' or 'on_only'")
+        layout_name = ui.get("layout", "")
+        if not isinstance(layout_name, str) or "/" in layout_name or ".." in layout_name:
+            raise ConfigError("ui.layout: expected a plain preset name")
         appearance = ui.get("appearance", "dark")
         if appearance == "system":
             appearance = "dark"   # the setting was dropped; do not reject old config
@@ -227,7 +233,7 @@ class PointerConfig:
             signaling_url=signaling_url,
             ice_servers=tuple(ice),
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake,
-                        appearance=appearance),
+                        appearance=appearance, layout=layout_name),
         )
 
 

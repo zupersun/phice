@@ -423,3 +423,65 @@ async def test_the_theme_goes_over_the_reliable_channel(transport):
         await phone.close()
         await transport.close()
         assert labels is not None
+
+
+async def test_the_active_layout_follows_ui_layout_and_falls_back_safely(tmp_path):
+    """A named preset wins; a missing one falls back rather than leaving the
+    phone with no buttons, which looks exactly like a broken app."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    cfg = paths.pointer_json
+
+    def reload(layout_name):
+        d = _json.loads(cfg.read_text())
+        d.setdefault("ui", {})["layout"] = layout_name
+        cfg.write_text(_json.dumps(d))
+        return Runtime(paths, FakeCursor(), 0, 0)
+
+    assert reload("").active_layout_path() == paths.layout_json
+    assert reload("one-handed").active_layout_path() == paths.layouts / "one-handed.json"
+    assert reload("standard").active_layout_path() == paths.layouts / "standard.json"
+    # Named but absent: fall back, do not fail.
+    assert reload("does-not-exist").active_layout_path() == paths.layout_json
+
+
+async def test_switching_grip_reloads_the_layout_the_phone_is_using(tmp_path):
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    assert rt.set_layout("one-handed") is True
+    rt = Runtime(paths, FakeCursor(), 0, 0)      # as a restart would see it
+    power = next(b for b in rt.layout.buttons if b.role == "power")
+    assert power.y < 15, "one-handed puts power at the top"
+    assert rt.set_layout("../escape") is False, "a path is not a preset name"
+    assert rt.set_layout("nonsense") is False, "an unknown preset is refused"
+
+
+async def test_an_edited_preset_survives_switching_away_and_back(tmp_path):
+    """The presets are separate files and switching only changes a name, so this
+    falls out of the design -- but it is the reason the design is that way."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    preset = paths.layouts / "one-handed.json"
+    edited = _json.loads(preset.read_text())
+    edited["buttons"][0]["x"] = 11
+    preset.write_text(_json.dumps(edited))
+
+    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt.set_layout("one-handed")
+    rt.set_layout("standard")
+    rt.set_layout("one-handed")
+    assert _json.loads(preset.read_text())["buttons"][0]["x"] == 11

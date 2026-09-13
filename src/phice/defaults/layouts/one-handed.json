@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "buttons": [
+    {"id": "power",  "role": "power",  "x": 42, "y": 4,  "w": 16, "h": 6,  "label": ""},
+    {"id": "left",   "role": "left",   "x": 3,  "y": 40, "w": 42, "h": 56, "label": ""},
+    {"id": "scroll", "role": "scroll", "x": 46, "y": 40, "w": 8,  "h": 56, "label": ""},
+    {"id": "right",  "role": "right",  "x": 55, "y": 40, "w": 42, "h": 56, "label": ""}
+  ]
+}
