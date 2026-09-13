@@ -650,7 +650,9 @@ def test_power_hold_recenters_without_turning_off():
 
 
 def test_power_hold_reports_progress_for_the_animation():
-    r = Rig(tuned())
+    # Pins its own hold duration: this is about the shape of the progress curve,
+    # not about how long the product decides a hold should be.
+    r = Rig(tuned(recenter_hold_ms=1000))
     r.send(left=True)
     r.send(left=False)
     assert r.engine.recenter_progress() == 0.0
@@ -786,3 +788,31 @@ def test_that_snap_can_be_turned_off():
     r = Rig(tuned(recenter_on_power_on=False), cursor=cursor)
     r.power()
     assert (cursor.x, cursor.y) == (20.0, 880.0)
+
+
+def test_a_hold_just_past_the_threshold_recenters_rather_than_switching_off():
+    """The gesture people actually make. Holds land around half a second, and a
+    threshold they cannot reach turns every attempt into a tap -- which switches
+    the pointer off, the opposite of what they asked for."""
+    cursor = FakeCursor(x=100.0, y=100.0, display_list=[Rect(0, 0, 1440, 900)])
+    r = Rig(tuned(), cursor=cursor)
+    r.power()
+    r.stream(20, alpha=340)                       # move away from the middle
+    held_for = PointerConfig().recenter_hold_ms / 1000.0
+    r.send(power=True)
+    r.stream(int((held_for + 0.05) / DT), power=True)
+    assert r.engine.phase is Phase.RECENTER_HELD, "the hold must complete"
+    r.send(power=False)
+    assert r.engine.phase is Phase.ON, "releasing after a completed hold keeps the pointer on"
+    assert (cursor.x, cursor.y) == (720.0, 450.0), "and the cursor is back in the middle"
+
+
+def test_a_short_tap_still_switches_off():
+    """The other half of the gesture must keep working: the two are told apart
+    by duration alone, so moving the threshold cannot blur them."""
+    r = Rig(tuned())
+    r.power()
+    r.send(power=True)
+    r.stream(6, power=True)                       # ~100ms, well under the threshold
+    r.send(power=False)
+    assert r.engine.phase is Phase.OFF

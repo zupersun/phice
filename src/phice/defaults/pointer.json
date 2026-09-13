@@ -23,7 +23,7 @@
   "freeze_ms_on_touch": 120,
   "freeze_ms_on_release": 60,
   "chord_window_ms": 50,
-  "recenter_hold_ms": 650,
+  "recenter_hold_ms": 450,
   "double_click_s": 0.5,
   "scroll_gain": 0.0,
   "scroll_natural": false,
