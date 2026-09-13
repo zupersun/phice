@@ -59,6 +59,47 @@
     if (remembered) setAppearance(remembered);
   } catch (_) { /* falls back to the system appearance */ }
 
+  // ---------- transport ----------
+  //
+  // One client, two ways in. Served from the Mac it opens a WebSocket straight
+  // back to it; served from the hosted page it pairs by code and opens a WebRTC
+  // data channel. The wire protocol is identical, so only the connecting
+  // differs -- and keeping it to this one seam is what stopped the two clients
+  // from drifting apart, which they had.
+
+  async function localTransport() {
+    // Only the Mac answers this. Vercel 404s, which means "pair by code".
+    try {
+      const r = await fetch("/transport", { cache: "no-store" });
+      if (!r.ok) return null;
+      return (await r.json()).transport === "ws";
+    } catch (e) { return null; }
+  }
+
+  function openSocket() {
+    setScreen("connecting");
+    const ws = new WebSocket(`wss://${location.host}/ws`);
+    const params = new URLSearchParams(location.search);
+    ws.addEventListener("open", () => {
+      const hello = { t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() };
+      // A one-shot pairing token from the setup QR, or the device token this
+      // phone was given the first time it paired.
+      const saved = localStorage.getItem("phice.token");
+      if (params.get("pair")) hello.pair = params.get("pair");
+      else if (saved) hello.token = saved;
+      ws.send(JSON.stringify(hello));
+      adopt({
+        send: (text) => ws.send(text),
+        close: () => ws.close(),
+        get open() { return ws.readyState === WebSocket.OPEN; },
+      });
+    });
+    ws.addEventListener("message", (ev) => handleMessage(ev.data));
+    ws.addEventListener("close", () => fail("The Mac closed the connection."));
+    ws.addEventListener("error", () =>
+      fail("Could not reach your Mac. Check that Phice is running and you are on the same network."));
+  }
+
   // ---------- pairing ----------
 
   async function iceServers() {
@@ -139,24 +180,39 @@
 
   // ---------- channel ----------
 
+  function adopt(transport) {
+    state.channel = transport;
+    el.body.dataset.link = "ok";
+    setScreen("start");
+  }
+
+  function handleMessage(data) {
+    let msg;
+    try { msg = JSON.parse(data); } catch { return; }
+    if (msg.t === "layout") renderLayout(msg);
+    else if (msg.t === "theme") el.theme.textContent = msg.css;
+    else if (msg.t === "state") applyState(msg);
+    else if (msg.t === "welcome" && msg.device_token) {
+      // Given once, on the first pairing, so this phone can reconnect later
+      // without another trip to the setup page.
+      try { localStorage.setItem("phice.token", msg.device_token); } catch (_) { /* ignore */ }
+    }
+  }
+
   function wireChannel(channel) {
-    state.channel = channel;
     channel.addEventListener("open", () => {
-      el.body.dataset.link = "ok";
       // Pairing already happened through the signaling code, so this hello exists
       // only to tell the Mac what this phone can do. Haptics have been guessed at
       // twice; the Mac logs this instead.
       channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
-      setScreen("start");
+      adopt({
+        send: (text) => channel.send(text),
+        close: () => channel.close(),
+        get open() { return channel.readyState === "open"; },
+      });
     });
     channel.addEventListener("close", () => fail("The Mac closed the connection."));
-    channel.addEventListener("message", (ev) => {
-      let msg;
-      try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.t === "layout") renderLayout(msg);
-      else if (msg.t === "theme") el.theme.textContent = msg.css;
-      else if (msg.t === "state") applyState(msg);
-    });
+    channel.addEventListener("message", (ev) => handleMessage(ev.data));
   }
 
   function applyState(msg) {
@@ -295,7 +351,7 @@
     state.perm = (asks.length === 0 ? "no-prompt-api" : results.map((r, i) =>
       (i === 0 ? "orient=" : "motion=") +
       (r.status === "rejected" ? "threw:" + (r.reason && r.reason.name) : r.value)).join(","));
-    if (state.channel && state.channel.readyState === "open") {
+    if (state.channel && state.channel.open) {
       state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
                                           caps: hapticCaps() + "," + state.perm }));
     }
@@ -326,7 +382,7 @@
       if (state.orientation) return;
       clearInterval(state.timer);
       state.timer = null;
-      if (state.channel && state.channel.readyState === "open") {
+      if (state.channel && state.channel.open) {
         state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
                                             caps: "NO-MOTION," + state.perm }));
       }
@@ -374,7 +430,7 @@
 
   function send(force) {
     const ch = state.channel;
-    if (!ch || ch.readyState !== "open") return;
+    if (!ch || !ch.open) return;
     if (!force && !state.orientation) return;
     const b = {}, c = {};
     for (const [id] of state.buttons) {
@@ -410,4 +466,5 @@
 
   el.code.value = localStorage.getItem("phice.code") || "";
   setScreen("pair");
+  localTransport().then((isLocal) => { if (isLocal) openSocket(); });
 })();

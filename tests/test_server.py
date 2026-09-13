@@ -84,8 +84,10 @@ async def test_pairing_then_reconnect_with_device_token(rig, client_ssl):
     port = await start(rig)
     try:
         ws, device = await pair(rig, port, client_ssl)
-        msgs = [json.loads(await ws.recv()) for _ in range(2)]
-        assert {m["t"] for m in msgs} == {"layout", "state"}
+        # The stylesheet now arrives on this transport too: one phone client
+        # serves both, so it must learn the same things either way.
+        msgs = [json.loads(await ws.recv()) for _ in range(3)]
+        assert {m["t"] for m in msgs} == {"layout", "theme", "state"}
         state = next(m for m in msgs if m["t"] == "state")
         assert state["phase"] == "off" and state["idle_hz"] == 0
         await ws.close()

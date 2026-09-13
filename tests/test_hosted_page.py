@@ -49,3 +49,23 @@ def test_every_screen_the_script_selects_is_stylable(html, js):
              for ln in js.splitlines() if 'setScreen("' in ln}
     for name in named - {"live"}:   # "live" deliberately shows no overlay
         assert f'body[data-screen="{name}"]' in html, f"no rule for screen {name!r}"
+
+
+def test_the_mac_and_the_hosted_page_serve_the_same_client():
+    """There used to be two copies. They drifted: the Mac's lost light and dark,
+    haptics and the screen split, because every phone change had to be made
+    twice and one copy quietly missed out."""
+    packaged = Path(__file__).resolve().parents[1] / "src" / "phice" / "web"
+    assert packaged.is_symlink(), "the packaged client must not be a second copy"
+    assert packaged.resolve() == WEB.resolve()
+
+
+def test_the_client_chooses_its_transport_rather_than_assuming_one(js):
+    """Served by the Mac it opens a socket; served by Vercel it pairs by code.
+    Only this seam may differ -- the wire protocol either side of it is one."""
+    assert 'fetch("/transport"' in js, "ask, do not guess which transport this is"
+    assert "new WebSocket(" in js and "RTCPeerConnection(" in js
+    # Nothing outside the seam may know which transport it got.
+    outside = [ln for ln in js.splitlines()
+               if "readyState" in ln and "get open()" not in ln]
+    assert not outside, f"transport details leaked out of the seam: {outside}"

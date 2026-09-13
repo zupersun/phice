@@ -31,7 +31,7 @@ from .protocol import (
     parse_client_message,
     pong_message,
     state_message,
-    theme_changed_message,
+    theme_message,
     welcome_message,
 )
 
@@ -118,6 +118,11 @@ class PhiceServer:
                 log.warning("rejecting websocket with origin %s", origin)
                 return _resp(HTTPStatus.FORBIDDEN, b"bad origin", "text/plain")
             return None  # let the upgrade proceed
+        if path == "/transport":
+            # The one page runs on both transports. Vercel has no such route, so
+            # a 404 there means "pair over WebRTC"; this answer means "the Mac is
+            # right here, open a socket to it".
+            return _resp(HTTPStatus.OK, b'{"transport":"ws"}', "application/json")
         if path in ("/", "/index.html"):
             return _resp(HTTPStatus.OK, (WEB_DIR / "index.html").read_bytes(),
                          "text/html; charset=utf-8")
@@ -178,6 +183,10 @@ class PhiceServer:
         st.engine.connected()
         st.engine.on_change = lambda: self._schedule_state()
         await conn.send(layout_message(st.layout.to_dict()))
+        # The same messages the WebRTC transport sends, in the same order. The
+        # phone client is one file serving both, so anything it learns on one
+        # transport it must learn on the other.
+        await conn.send(theme_message(st.paths.theme_css.read_text()))
         await self._send_state()
 
         bad = 0
@@ -252,9 +261,16 @@ class PhiceServer:
                 pass
 
     async def push_theme_changed(self) -> None:
+        """Push the stylesheet itself rather than a hint to re-fetch it.
+
+        The hint was a WebSocket-only idea: it works because the page can ask
+        this same server for /theme.css. The hosted page has no route back to
+        the Mac, so it is sent the CSS -- and one client cannot support two
+        different answers to "the theme changed"."""
         if self.state.client:
             try:
-                await self.state.client.send(theme_changed_message())
+                await self.state.client.send(
+                    theme_message(self.state.paths.theme_css.read_text()))
             except Exception:
                 pass
 
