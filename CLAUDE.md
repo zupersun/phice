@@ -265,7 +265,11 @@ everything else is unaffected.
 
 - Follow the user's global CLAUDE.md: no `Co-Authored-By` trailer unless
   `.claude/settings.json` sets `attribution.commit`.
-- Files under 500 lines; line length 104.
+- Files under 500 lines; line length 104. `engine.py` is the deliberate exception at
+  ~560: it is one state machine, and every cut through it (buttons from phases, motion
+  from freezing) needs so many callbacks back into the engine that the result is longer
+  and harder to follow than the file it replaced. Splitting the most load-bearing code
+  in the project to satisfy a line count is a bad trade. Everything else obeys the rule.
 - Write the failing test first, watch it fail, then implement.
 - Prefer editing existing files; do not add documentation files unless asked.
 - Tests assert behaviour, not implementation. When a test fails after a deliberate

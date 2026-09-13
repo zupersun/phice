@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .calibrate import Calibration, fit, write_session
+from . import calibrate, webrtc_session
 from .certs import (
     CertError,
     CertPaths,
@@ -36,12 +36,12 @@ from .config import (
 )
 from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
+from .pages import CALIBRATE_HTML
 from .pairing import PairingManager
 from .paths import Paths
 from .rtc import RTCTransport
 from .server import PhiceServer, ServerState
-from .setup_server import CALIBRATE_HTML, SetupServer
-from .signaling import SignalingClient, SignalingError, new_pairing_code
+from .setup_server import SetupServer
 
 log = logging.getLogger("phice")
 
@@ -120,12 +120,13 @@ class Runtime:
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
-        self._pair_code: str = ""
-        self._answer_wait: asyncio.Task | None = None
-        self._rotate = False   # distinguishes "new code" from shutdown
+        self.pairing = webrtc_session.Pairing()
         self._panel_requested = False
         self._panel_url: str | None = None
-        self.calibration: Calibration | None = None
+        self.calibration = calibrate.Runner(
+            paths, backend, self.engine,
+            show=lambda: self.request_panel_url(
+                f"http://127.0.0.1:{self.http_port}/calibrate"))
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -343,68 +344,19 @@ class Runtime:
 
     # ----- lifecycle --------------------------------------------------------
 
-    def _ice_servers(self) -> tuple | None:
-        """Configured ICE servers, or None to use the default STUN.
-
-        A relay matters when both peers sit behind symmetric NAT -- a phone on
-        carrier NAT talking to a Mac on a university network cannot hole-punch,
-        and STUN alone discovers addresses neither side can reach.
-        """
-        cfg = self.config.ice_servers
-        return tuple(cfg) if cfg else None
-
     # ----- calibration ------------------------------------------------------
 
     def start_calibration(self) -> dict:
-        """Begin a calibration run and show its window."""
-        rect = self.backend.displays()[0] if self.backend.displays() else None
-        width = int(rect.w) if rect else 1440
-        height = int(rect.h) if rect else 900
-        self.calibration = Calibration(width=width, height=height)
-        self.engine.on_look = self._calibration_sample
-        self.request_panel_url(f"http://127.0.0.1:{self.http_port}/calibrate")
-        return {"trials": len(self.calibration.plan), "width": width, "height": height}
-
-    def _calibration_sample(self, now: float, yaw: float, pitch: float) -> None:
-        cal = self.calibration
-        if cal is None or cal.finished:
-            return
-        pos = self.backend.get_position()
-        if cal.trial is not None and cal._current is None:
-            cal.begin(now, pos)
-        cal.observe(now, pos, yaw, pitch)
-        if cal.finished:
-            self.engine.on_look = None
+        return self.calibration.start()
 
     def calibration_state(self) -> dict:
-        cal = self.calibration
-        if cal is None:
-            return {"running": False}
-        state = dict(cal.state(), running=True)
-        if cal.finished:
-            state["fitted"] = fit(cal.results, json.loads(self.paths.pointer_json.read_text()))
-        return state
+        return self.calibration.state()
 
     def apply_calibration(self) -> dict:
-        """Write the fitted settings into pointer.json, keeping the evidence."""
-        cal = self.calibration
-        if cal is None or not cal.finished:
-            return {"ok": False, "error": "calibration has not finished"}
-        data = json.loads(self.paths.pointer_json.read_text())
-        fitted = fit(cal.results, data)
-        if "error" in fitted:
-            return {"ok": False, **fitted}
-        for key, value in fitted.items():
-            if key in ("samples", "evidence"):
-                continue
-            if key == "one_euro":
-                data.setdefault("one_euro", {}).update(value)
-            else:
-                data[key] = value
-        self.paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
-        write_session(self.paths.sessions / "calibration.json", cal.results, fitted)
-        self._dispatch(self._apply_pointer(self.paths.pointer_json))
-        return {"ok": True, "fitted": fitted}
+        out = self.calibration.apply()
+        if out.get("ok"):
+            self._dispatch(self._apply_pointer(self.paths.pointer_json))
+        return out
 
     def request_panel_url(self, url: str) -> None:
         self._panel_url = url
@@ -450,13 +402,13 @@ class Runtime:
         Cancelling the wait is what actually does it: the publish loop is parked
         in wait_for_answer, and closing the peer connection would not wake it.
         """
-        self._pair_code = ""
-        task = self._answer_wait
+        self.pairing.code = ""
+        task = self.pairing.waiter
         if task is not None and self._loop is not None and not self._loop.is_closed():
             # Only this path produces a cancellation, so only this path may mark
             # one as expected. Setting the flag unconditionally left it armed and
             # the loop then swallowed a real shutdown.
-            self._rotate = True
+            self.pairing.rotate = True
             self._loop.call_soon_threadsafe(task.cancel)
         elif self.rtc is not None:
             # Already paired: there is no wait to cancel, so end the session and
@@ -464,82 +416,13 @@ class Runtime:
             # dead for exactly the user who needs it -- one whose phone is stuck.
             self._dispatch(self.rtc.close())
 
-    async def start_webrtc(self) -> None:
-        """Publish an offer under a short code and wait for a phone to answer.
-
-        Loops: a pairing code is single use, so once a phone connects the next one
-        needs a fresh offer. No certificate is involved at any point -- WebRTC
-        verifies the peers by DTLS fingerprint, which is the whole reason this
-        transport exists.
-        """
-        client = SignalingClient(self.config.signaling_url)
-        while True:
-            ice = self._ice_servers()
-            if ice is None:
-                # Take the relay from the signaling service so both peers get the
-                # same one. Credentials are short-lived and never stored here.
-                fetched = await client.fetch_ice_servers()
-                if fetched:
-                    ice = tuple(fetched)
-                    if any("turn:" in str(s.get("urls", "")) for s in fetched):
-                        log.info("using a relay from the signaling service")
-                    else:
-                        log.warning("no TURN relay available; this will only connect "
-                                    "when both devices are on the same network")
-            self.rtc = RTCTransport(engine=self.engine,
-                                    layout_json=self.paths.layout_json.read_text(),
-                                    theme_css=self.paths.theme_css.read_text(),
-                                    accessibility=lambda: self.status.read()["accessibility"],
-                                    ice_servers=(self.rtc_ice_servers
-                                                 if self.rtc_ice_servers is not None
-                                                 else ice))
-            offer = await self.rtc.create_offer()
-            # Keep the same code for the life of the process and republish a fresh
-            # offer under it. Minting a new one after every disconnect meant the
-            # user had to walk back to the Mac each time -- and the page's
-            # remembered code was always the dead one.
-            code = self._pair_code or new_pairing_code()
-            self._pair_code = code
-            try:
-                await client.publish_offer(code, offer)
-            except SignalingError as e:
-                log.error("could not reach the pairing service: %s", e)
-                self.status.update(error=str(e))
-                await self.rtc.close()
-                await asyncio.sleep(10)
-                continue
-            self.status.update(pair_code=code, error="")
-            log.info("pairing code %s -- enter it at %s/app", code, self.config.signaling_url)
-            self._answer_wait = asyncio.ensure_future(client.wait_for_answer(code))
-            try:
-                answer = await self._answer_wait
-            except SignalingError:
-                await self.rtc.close()
-                continue            # the code expired unused; mint another
-            except asyncio.CancelledError:
-                # Two very different things arrive here: the panel asking for a
-                # new code, and this whole task being shut down. Swallowing both
-                # made the loop immortal -- the app could not quit and the test
-                # suite hung at random.
-                await self.rtc.close()
-                if not self._rotate:
-                    raise
-                self._rotate = False
-                continue
-            finally:
-                self._answer_wait = None
-                self._rotate = False   # never let a stale request eat a shutdown
-            await self.rtc.accept_answer(answer)
-            while self.rtc.pc.connectionState not in ("failed", "closed", "disconnected"):
-                await asyncio.sleep(1.0)
-            await self.rtc.close()
-
     async def _main(self) -> None:
         if self.config.transport == "webrtc":
             self.http_port = await asyncio.to_thread(self.setup.start)
             log.info("webrtc transport; pairing code at http://127.0.0.1:%d/pair",
                      self.http_port)
-            await asyncio.gather(self.start_webrtc(), self._watch_config(), self._status_loop())
+            await asyncio.gather(webrtc_session.run(self), self._watch_config(),
+                                 self._status_loop())
             return
         if self.config.cert_mode == "tailscale":
             # Prefer the name recorded by `phice tailscale`. The GUI app's CLI

@@ -5,6 +5,7 @@ import json
 import pytest
 from aiortc import RTCConfiguration, RTCPeerConnection, RTCSessionDescription
 
+from phice import webrtc_session
 from phice.config import PointerConfig
 from phice.cursor_backend import FakeCursor
 from phice.engine import PointerEngine
@@ -170,10 +171,10 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
         async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
             await asyncio.sleep(3600)  # never answers, in this test
 
-    monkeypatch.setattr("phice.runtime.SignalingClient", FakeSignaling)
+    monkeypatch.setattr("phice.webrtc_session.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0, 0)
     rt.rtc_ice_servers = ()  # loopback: no STUN round trip
-    task = asyncio.ensure_future(rt.start_webrtc())
+    task = asyncio.ensure_future(webrtc_session.run(rt))
     try:
         for _ in range(60):
             if "code" in published:
@@ -223,10 +224,10 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
             from phice.signaling import SignalingError
             raise SignalingError("timed out")
 
-    monkeypatch.setattr("phice.runtime.SignalingClient", FakeSignaling)
+    monkeypatch.setattr("phice.webrtc_session.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0, 0)
     rt.rtc_ice_servers = ()
-    task = asyncio.ensure_future(rt.start_webrtc())
+    task = asyncio.ensure_future(webrtc_session.run(rt))
     try:
         for _ in range(80):
             if len(codes) >= 2:
@@ -356,12 +357,12 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
             await gather_complete(phone)
             return {"sdp": phone.localDescription.sdp, "type": phone.localDescription.type}
 
-    import phice.runtime as runtime_mod
-    original, runtime_mod.SignalingClient = runtime_mod.SignalingClient, FakeSignaling
+    import phice.webrtc_session as session_mod
+    original, session_mod.SignalingClient = session_mod.SignalingClient, FakeSignaling
     rt = Runtime(paths, FakeCursor(), 0, 0)
     rt._loop = asyncio.get_running_loop()
     rt.rtc_ice_servers = ()
-    task = asyncio.ensure_future(rt.start_webrtc())
+    task = asyncio.ensure_future(webrtc_session.run(rt))
     try:
         for _ in range(100):
             if rt.rtc and rt.rtc.is_open:
@@ -377,7 +378,7 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
         assert len(codes) > 1, "no fresh offer was published"
         assert codes[1] != codes[0], "the code must actually change"
     finally:
-        runtime_mod.SignalingClient = original
+        session_mod.SignalingClient = original
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         for phone in phones:

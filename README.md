@@ -18,14 +18,14 @@ phone down and it turns itself off.
 iPhone (Safari)                          Mac (Phice.app)
 ────────────────                         ────────────────────────
 CoreMotion ──┐                           validate the packet
-touch      ──┼── JSON, 60 Hz ── wss ──►  decide what should happen
-             │                           post a Quartz cursor event
-             └─◄── layout + theme ──────  push config changes live
+touch      ──┼── JSON, 60 Hz ──────────► decide what should happen
+             │   WebRTC or WebSocket     post a Quartz cursor event
+             └─◄── layout + theme ─────── push config changes live
 ```
 
 Every pointer decision happens on the Mac, in a pure engine with no I/O, driven by
-an injected clock and a swappable cursor backend. That is why 174 tests run in under
-five seconds without a phone, a screen or a real cursor.
+an injected clock and a swappable cursor backend. That is why 225 tests run in
+about fifteen seconds without a phone, a screen or a real cursor.
 
 ---
 
@@ -35,8 +35,10 @@ Download `Phice.app` and drag it to **Applications**. It is not notarized, so th
 first launch needs **System Settings › Privacy & Security › Open Anyway** (on
 macOS 15+ right-click → Open no longer works).
 
-It lives in the menu bar — no Dock icon, no window. Grant it Accessibility, which
-is what lets it move the cursor:
+Opening it shows a small window with your pairing code, the link to open on the
+phone, and live status. Close it and Phice keeps running in the menu bar; **open
+the app again to bring the window back**. Grant it Accessibility, which is what
+lets it move the cursor:
 
 ```bash
 /Applications/Phice.app/Contents/MacOS/Phice grant
@@ -51,10 +53,11 @@ then start it at login:
 
 Remove it with `… Phice uninstall`, then drag the app to the Trash.
 
-If the menu bar icon never appears, that is cosmetic: macOS adds new status items
+If the menu bar icon never appears, that is macOS, not Phice: new status items go
 to the left of existing ones, and on a notched Mac with a full menu bar they land
-behind the notch. Everything still works —
-`curl -s http://127.0.0.1:8080/debug/cursor` shows the full status.
+behind the notch where nothing can click them. Opening the app again always brings
+the window back, and `curl -s http://127.0.0.1:8080/debug/cursor` prints the full
+status regardless.
 
 ### Building it yourself
 
@@ -72,16 +75,31 @@ arm64 only.
 
 ## Connect your phone
 
-Safari exposes motion sensors only to a secure page, and a secure page cannot open an
-insecure WebSocket — so TLS is not optional, and the phone has to trust the
-certificate. There are two ways to arrange that.
+Open **[phice.vercel.app/app](https://phice.vercel.app/app)** on the iPhone, type
+the six-character code from the Mac window, and tap **Start** to allow motion
+access. That is the whole setup: no profile to install, no certificate to trust,
+no account.
 
-### Tailscale — recommended
+The two devices then talk directly to each other over WebRTC, which verifies the
+peers by DTLS fingerprint — that is why no certificate is involved. It works
+across different networks, including the phone on cellular and the Mac behind a
+university or corporate firewall, because a relay carries the traffic when the two
+cannot reach each other directly.
 
-Your Mac gets a real, publicly trusted Let's Encrypt certificate, so there is
-**nothing to install on the phone** and no trust settings to find. It also works when
-the phone is on cellular or on a network that isolates clients from each other —
-university and corporate Wi-Fi usually do both.
+Use **Share › Add to Home Screen** and open it from there to run fullscreen with
+no Safari chrome. The code is remembered, so reconnecting is one tap.
+
+<details>
+<summary><b>Running it without the hosted page</b> — offline, or if you would rather
+not depend on a third party</summary>
+
+Phice can serve the page from your Mac instead. Safari exposes motion sensors only
+to a secure page, and a secure page cannot open an insecure WebSocket, so this path
+needs a certificate the phone trusts. Set `transport` to `"tls"` in `pointer.json`.
+
+**Tailscale — recommended.** Your Mac gets a real, publicly trusted Let's Encrypt
+certificate, so there is nothing to install on the phone, and it still works when
+the phone is on cellular.
 
 1. `brew install --cask tailscale`, open it, sign in.
 2. Enable HTTPS once for your tailnet:
@@ -91,10 +109,9 @@ university and corporate Wi-Fi usually do both.
 4. `uv run phice tailscale`
 5. Open `http://127.0.0.1:8080/setup` on the Mac and scan the QR code.
 
-### Local certificate — same Wi-Fi only
-
-No accounts, but the phone must install a certificate profile, and both devices must
-be on the same network with client-to-client traffic allowed.
+**Local certificate — same Wi-Fi only.** No accounts, but the phone must install a
+certificate profile, and both devices must be on the same network with
+client-to-client traffic allowed.
 
 1. Open `http://127.0.0.1:8080/setup` on the Mac. It shows two QR codes.
 2. Scan the **first**. Safari offers a configuration profile — allow it, then
@@ -105,16 +122,19 @@ be on the same network with client-to-client traffic allowed.
 4. Scan the **second** QR code. The page opens with no warning.
 
 If a QR does nothing, your network is blocking `.local` name lookups; the setup page
-prints an IP address form underneath for that case. If the page loads but stays
-black, open `http://<your-mac-ip>:8080/check` on the phone — it loads over plain HTTP
-and tells you whether the certificate is trusted.
+prints an IP address form underneath. If the page loads but stays black, open
+`http://<your-mac-ip>:8080/check` on the phone — it loads over plain HTTP and tells
+you whether the certificate is trusted.
 
-Either way, use **Share › Add to Home Screen** and open it from there to run
-fullscreen with no Safari chrome.
+Pairing is required either way: a pairing token is valid for ten minutes, single
+use, and redeeming it issues a long-lived device token the page keeps. Without it,
+nobody else can move your cursor.
 
-Pairing is required: a pairing token is valid for ten minutes, single use, and
-redeeming it issues a long-lived device token the page keeps. Without it, nobody else
-can move your cursor.
+It is the same page either way. The phone asks `/transport` which one it is on;
+your Mac answers, and the hosted page does not, so there is one client and one
+wire protocol behind both.
+
+</details>
 
 ## Daily use
 
@@ -154,6 +174,8 @@ kills the pointer mid-use.
 | `pointer.json` | All pointer feel and behaviour — the table below |
 | `layout.json` | Which buttons exist on the phone, where, how big, what they do |
 | `theme.css` | Every colour, size, font and radius on the phone page |
+| `panel.css` | The Mac window: palette, the appearance switch, layout |
+| `calibrate.css` | The calibration screen |
 | `assets/` | Logo, menu-bar icons, Home Screen icon, button icons |
 | `sessions/` | Recordings, for offline tuning |
 | `logs/phice.log` | What the app is doing |
@@ -182,7 +204,11 @@ whatever was there.
 | `chord_window_ms` | Two buttons pressed within this window count as a chord, not two clicks. |
 | `recenter_hold_ms` | How long to hold both buttons before the cursor snaps to centre. |
 | `double_click_s` | Maximum gap between taps still counted as a double click. |
-| `scroll_gain` | Pixels scrolled per unit of finger travel on the strip. |
+| `scroll_gain` | Displacement scrolling from raw finger travel. `0` by default: the strip is a rate control, and running both at once doubles the input. |
+| `scroll_deadzone` | Dead band either side of the strip's centre, so a resting finger does not creep. |
+| `scroll_min_px_per_s` | Floor speed for any deflection past the dead band, so a small nudge does something visible. |
+| `scroll_rate_px_per_s` | Speed at the very ends of the strip. |
+| `scroll_rate_expo` | How sharply speed grows with distance from the centre. Lower is more linear. |
 | `scroll_natural` | Scroll direction. Flip it if scrolling feels backwards. |
 | `auto_activate` | Turn the pointer on by itself when you pick the phone up. |
 | `auto_deactivate` | Turn the pointer off by itself when you set the phone down. |
@@ -192,10 +218,13 @@ whatever was there.
 | `rest_rate_dps` | How still counts as "resting". |
 | `idle_hz_when_auto_activate` | Packet rate the phone uses while idle and waiting to be picked up. |
 | `timeout_ms` | No packets for this long releases every button and powers off. |
+| `transport` | `webrtc` (default) pairs by code through the hosted page. `tls` serves the page from your Mac instead. |
+| `signaling_url` | Where the hosted page and its pairing letterbox live. |
 | `cert_mode` | `tailscale` for a publicly trusted tailnet certificate (recommended), `auto` for the built-in certificate authority, `external` if you supply your own `certs/server.{crt,key}`. |
 | `tailscale_host` | Set by `phice tailscale`. The MagicDNS name to serve on. |
 | `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter. `relative` integrates turn deltas like a trackpad in the air. |
-| `ui.haptics` | Haptic tick on button press. Best-effort; Safari has no vibration API. |
+| `ui.appearance` | `dark` or `light`, for the phone and the Mac window together. The switch in the Mac window writes this. |
+| `ui.haptics` | Haptic tick on button press. Best-effort — see the note under Daily use. |
 | `ui.keep_awake` | `always` or `on_only` — when to keep the phone screen awake. |
 
 ### `layout.json`
@@ -215,8 +244,31 @@ takes an `id`, a `role`, `x`/`y`/`w`/`h`, and optionally a `label`, an `icon` pa
 
 ## Tuning
 
-Tuning is the part that needs a person. Record once, then compare variants offline as
-often as you like without picking the phone up again:
+### Calibrate it
+
+Sensitivity is not describable in words, so do not try. **Calibrate pointer…** in
+the menu bar (or `uv run phice calibrate`) runs a two-minute target-tracking task
+and reads the settings off what you actually did.
+
+The core of it is arithmetic rather than search: put a target 400 px away, record
+that the phone turned 10° to reach it, and the gain that would have landed exactly
+on it is 40 px/deg. Four distances give the expo curve too, since expo is precisely
+how that ratio changes with distance, and horizontal and vertical are fitted
+separately because pitch and yaw do not feel alike in the hand. Two stillness
+trials measure hand tremor directly.
+
+Nothing changes until you press **Use these settings**, and every trial is saved
+next to the verdict in `sessions/calibration.json`.
+
+> Why not simply replay a recording against different settings and pick the best?
+> Because that assumes you would have moved identically under settings you never
+> experienced, and you would not — you correct against what the cursor is doing.
+> Only the filter is fitted that way here, where it is fair: filtering is
+> post-processing of an input that does not depend on the cursor.
+
+### By hand
+
+Record once, then compare variants offline as often as you like:
 
 1. Start **Record** from the menu bar icon, use the pointer for a minute, stop.
 2. Compare tuning variants against that recording:
@@ -254,23 +306,38 @@ Patterns: `still`, `roll`, `sweep`, `square`, `click`, `doubleclick`, `rightclic
 
 ## How it works
 
-The phone streams orientation and touch state at 60 Hz over a WebSocket. Every pointer
-decision — mapping, filtering, clicks, recentering, safety — happens on the Mac in a
-pure, unit-testable engine that drives a swappable cursor backend.
+The phone streams orientation and touch state at 60 Hz. Every pointer decision —
+mapping, filtering, clicks, recentering, safety — happens on the Mac in a pure,
+unit-testable engine that drives a swappable cursor backend.
+
+There is **one phone client**, `web/app/`, served both by Vercel and by your Mac
+(`src/phice/web` is a symlink to it). It asks `/transport` which way it arrived and
+opens either a WebRTC data channel or a WebSocket; everything either side of that
+seam is common. There used to be two copies, and they drifted — the Mac's quietly
+missed light and dark, haptics and the screen split, because every phone change had
+to be made twice.
 
 Roll cancels out algebraically rather than by approximation: the W3C rotation order
 applies gamma last about the very axis the aim vector is projected from, so rolling the
 phone is mathematically incapable of moving the cursor.
 
 ```
-orientation.py   Euler angles -> aim vector -> yaw/pitch (roll-invariant)
-filters.py       One Euro filter: smooth when still, responsive when fast
-protocol.py      wire format, validated at the system boundary
-engine.py        all pointer behaviour; pure, no I/O
+orientation.py     Euler angles -> aim vector -> yaw/pitch (roll-invariant)
+filters.py         One Euro filter: smooth when still, responsive when fast
+mapping.py         expo curve, yaw unwrapping, edge overshoot
+protocol.py        wire format, validated at the system boundary
+engine.py          all pointer behaviour; pure, no I/O
+calibrate.py       trials and the fit; pure, no display needed
 cursor_backend.py  Quartz event injection, plus a fake for tests
-server.py        TLS: page, assets, WebSocket, engine tick, recorder
-setup_server.py  plain HTTP: CA download and QR setup (loopback only)
+rtc.py             WebRTC data channel peer
+webrtc_session.py  publish an offer under a code, serve whoever answers
+server.py          TLS: page, assets, WebSocket, engine tick, recorder
+setup_server.py    loopback HTTP: the routes
+pages.py           the pages those routes serve
+window.py          the Mac control panel window
 ```
+
+Nothing in that list may point backwards up it.
 
 ## Licence
 

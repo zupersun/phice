@@ -124,6 +124,10 @@ class Calibration:
     def trial(self) -> Trial | None:
         return None if self.index >= len(self.plan) else self.plan[self.index]
 
+    @property
+    def in_trial(self) -> bool:
+        return self._current is not None
+
     def state(self) -> dict:
         """What the calibration window draws. Fractions, not pixels: the page
         does not need to know the display geometry, only where to put a dot."""
@@ -313,3 +317,71 @@ def write_session(path: Path, results: list[TrialResult], fitted: dict) -> None:
         ],
     }
     path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+class Runner:
+    """Owns a calibration run: the trials, the samples, and writing the result.
+
+    Kept out of the runtime because none of it is about serving a phone, and
+    because a run is entirely described by three things it borrows -- where the
+    config lives, what the cursor is doing, and the engine's raw look direction.
+    """
+
+    def __init__(self, paths, backend, engine, show):
+        self._paths = paths
+        self._backend = backend
+        self._engine = engine
+        self._show = show                    # open the calibration window
+        self.current: Calibration | None = None
+
+    def start(self) -> dict:
+        displays = self._backend.displays()
+        rect = displays[0] if displays else None
+        width, height = (int(rect.w), int(rect.h)) if rect else (1440, 900)
+        self.current = Calibration(width=width, height=height)
+        self._engine.on_look = self._sample
+        self._show()
+        return {"trials": len(self.current.plan), "width": width, "height": height}
+
+    def _sample(self, now: float, yaw: float, pitch: float) -> None:
+        cal = self.current
+        if cal is None or cal.finished:
+            return
+        pos = self._backend.get_position()
+        if cal.trial is not None and not cal.in_trial:
+            cal.begin(now, pos)
+        cal.observe(now, pos, yaw, pitch)
+        if cal.finished:
+            self._engine.on_look = None      # stop sampling the moment it ends
+
+    def _config(self) -> dict:
+        return json.loads(self._paths.pointer_json.read_text())
+
+    def state(self) -> dict:
+        cal = self.current
+        if cal is None:
+            return {"running": False}
+        state = dict(cal.state(), running=True)
+        if cal.finished:
+            state["fitted"] = fit(cal.results, self._config())
+        return state
+
+    def apply(self) -> dict:
+        """Write the fitted settings, and the trials that produced them."""
+        cal = self.current
+        if cal is None or not cal.finished:
+            return {"ok": False, "error": "calibration has not finished"}
+        data = self._config()
+        fitted = fit(cal.results, data)
+        if "error" in fitted:
+            return {"ok": False, **fitted}
+        for key, value in fitted.items():
+            if key in ("samples", "evidence"):
+                continue
+            if key == "one_euro":
+                data.setdefault("one_euro", {}).update(value)
+            else:
+                data[key] = value
+        self._paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
+        write_session(self._paths.sessions / "calibration.json", cal.results, fitted)
+        return {"ok": True, "fitted": fitted}

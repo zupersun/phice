@@ -5,8 +5,9 @@ import urllib.request
 import pytest
 
 from phice.certs import CertPaths, ca_der, ca_mobileconfig, ensure_ca
+from phice.pages import check_html, qr_svg, setup_html
 from phice.paths import DEFAULTS_DIR
-from phice.setup_server import SetupServer, check_html, qr_svg, setup_html
+from phice.setup_server import SetupServer
 
 
 @pytest.fixture
