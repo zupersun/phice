@@ -1,7 +1,12 @@
 // Drives the client through the sequence a real phone goes through, and asserts
 // the things whose absence has produced a black screen.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { load } from "./harness.mjs";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const IDS = ["pad", "code", "theme", "why", "haptic", "btn-pair", "btn-start",
              "btn-retry"];
@@ -89,6 +94,25 @@ check("an unknown message is ignored rather than throwing", () => {
 
 check("index.html provides every element the script looks up", () => {
   for (const id of IDS) assert.ok(app.nodes[id], `missing #${id}`);
+});
+
+check("the code box accepts only letters and digits", () => {
+  const code = app.nodes.code;
+  code.value = "ab-3 x!9z";
+  code.dispatch("input", {});
+  assert.equal(code.value, "AB3X9Z", `got ${code.value}`);
+  code.value = "ABCDEFGHIJ";
+  code.dispatch("input", {});
+  assert.equal(code.value.length, 6, "six characters, no more");
+});
+
+check("the page carries a floor under the design", () => {
+  const html = readFileSync(resolve(ROOT, "web/app/index.html"), "utf8");
+  assert.ok(html.includes('id="fallback"'), "no fallback stylesheet");
+  assert.ok(html.indexOf('id="fallback"') < html.indexOf('id="theme"'),
+            "the fallback must come first, so the Mac's theme still wins");
+  assert.match(html, /\.btn\{[^}]*background:/,
+               "the fallback must give buttons a background, or they are invisible");
 });
 
 if (failures.length) { console.error(`\n${failures.length} failed`); process.exit(1); }

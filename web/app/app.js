@@ -27,6 +27,7 @@
     scrollDelta: 0,
     scrollPos: null,   // where the finger is along the strip, 0..1
     pending: {},       // channels seen so far, until both have opened
+    pendingLogs: [],   // reports raised before there was anywhere to send them
     orientation: null,
     rate: [0, 0, 0],
     gravity: [0, 0, 9.8],
@@ -185,6 +186,7 @@
 
   function adopt(transport) {
     state.channel = transport;
+    setTimeout(() => report("client v7 connected"), 0);   // flushes anything queued
     el.body.dataset.link = "ok";
     setScreen("start");
   }
@@ -193,9 +195,12 @@
   // is a page nobody can debug. Anything that goes wrong goes back over the
   // control channel and into the Mac's log.
   function report(what) {
+    state.pendingLogs.push(String(what));
     try {
       if (state.channel && state.channel.open) {
-        state.channel.sendControl(JSON.stringify({ t: "log", msg: String(what) }));
+        for (const msg of state.pendingLogs.splice(0)) {
+          state.channel.sendControl(JSON.stringify({ t: "log", msg }));
+        }
       }
     } catch (_) { /* never let reporting a fault cause one */ }
   }
@@ -516,9 +521,14 @@
 
   // ---------- wiring ----------
 
+  el.code.addEventListener("input", () => {
+    const clean = el.code.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    if (clean !== el.code.value) el.code.value = clean;
+  });
+
   document.getElementById("btn-pair").addEventListener("click", () => {
-    const code = (el.code.value || "").toUpperCase().trim();
-    if (!/^[A-Z2-9]{6}$/.test(code)) { el.code.focus(); return; }
+    const code = (el.code.value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (code.length !== 6) { el.code.focus(); return; }
     localStorage.setItem("phice.code", code);
     pair(code).catch((e) => fail(String(e)));
   });

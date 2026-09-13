@@ -5,8 +5,22 @@
 <meta name="apple-mobile-web-app-title" content="Phice">
 <title>Phice</title>
 
-<!-- The Mac's theme, pushed over the data channel and replaced wholesale. It
-     styles the pad and nothing else. -->
+<!-- A floor under the design. Comes first, so every rule the Mac's theme
+     defines still overrides it. Its only job is that the pad is never invisible:
+     all styling used to come from the Mac, so a theme that had not arrived (or
+     never arrived) left real, working buttons painted black on black with
+     nothing on screen to say why. -->
+<style id="fallback">
+  #pad{position:relative;height:calc(100% - 12%);margin:0 8px}
+  .btn{position:absolute;display:flex;align-items:center;justify-content:center;
+       background:#1c2530;color:#9fb3c8;border:1px solid #38485a;border-radius:22px;
+       font:600 15px/1 -apple-system,system-ui,sans-serif}
+  .btn[data-pressed="1"]{background:#2c3d4f}
+  .role-scroll{background:#141c25;border-radius:999px}
+  .role-power{background:#10161d;border:1px solid #1e2731;border-radius:999px}
+</style>
+
+<!-- The Mac's theme, pushed over the data channel and replaced wholesale. -->
 <style id="theme"></style>
 
 <!-- This page's own chrome. It must NEVER be replaced: the theme used to
@@ -92,5 +106,5 @@
     </div>
   </div>
 
-  <script src="/app/app.js"></script>
+  <script src="/app/app.js?v=7"></script>
 </body>
