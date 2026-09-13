@@ -128,6 +128,7 @@ class Runtime:
         self._panel_requested = False
         self._panel_url: tuple[str, bool] | None = None
         self._close_calibration = False
+        self._last_logged_phase = "disconnected"
         self.calibration = calibrate.Runner(
             paths, backend, self.engine,
             show=lambda: self.request_panel_url(
@@ -324,6 +325,13 @@ class Runtime:
             # Either transport can be the live one. Reading only state.client
             # reported "not connected" through an entire working WebRTC session,
             # which sent every diagnosis down the wrong path.
+            phase = self.engine.phase.value
+            if phase != self._last_logged_phase:
+                # Logged on the Mac, so "my button does nothing" can be answered
+                # without asking anyone to reload a page: either the press
+                # arrives and moves the pointer, or it never arrives at all.
+                log.info("pointer %s -> %s", self._last_logged_phase, phase)
+                self._last_logged_phase = phase
             rtc_open = self.rtc is not None and self.rtc.is_open
             self.status.update(connected=rtc_open or self.state.client is not None,
                                device_name=(self.rtc.client_name if rtc_open

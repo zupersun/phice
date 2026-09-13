@@ -277,7 +277,10 @@
     // the theme. Do NOT set --recenter-progress here: the browser interpolates it
     // itself from the data-state change via @property, and writing it per message
     // restarts the transition ~50 times a second and stutters.
-    if (msg.phase) el.body.dataset.state = msg.phase;
+    if (msg.phase && msg.phase !== el.body.dataset.state) {
+      el.body.dataset.state = msg.phase;
+      report("phase -> " + msg.phase);
+    }
     if (msg.ui && msg.ui.recenter_ms) {
       el.body.style.setProperty("--recenter-ms", msg.ui.recenter_ms + "ms");
     }

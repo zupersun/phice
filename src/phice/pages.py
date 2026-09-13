@@ -150,7 +150,12 @@ async function refresh() {
     document.getElementById("v-ptr").textContent = d.phase;
     document.getElementById("stale").hidden = !d.client_stale;
     // Never move the knob under a finger that is dragging it.
-    if (!gripDragging && d.layout && d.layout !== grip.dataset.v) applyGrip(d.layout);
+    if (!gripDragging) {
+      // "custom" means layout.json rather than a preset; show it as standard so
+      // the knob has somewhere to sit rather than vanishing off the track.
+      const shown = GRIPS.includes(d.layout) ? d.layout : "standard";
+      if (shown !== grip.dataset.v) applyGrip(shown);
+    }
     document.getElementById("calibrated").textContent =
       d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
@@ -206,6 +211,22 @@ const endGrip = (ev) => {
 };
 grip.addEventListener("pointerup", endGrip);
 grip.addEventListener("pointercancel", endGrip);
+// A plain click as well: pointer capture inside a WKWebView has surprised this
+// project before, and a switch that silently does nothing is worse than one
+// that only clicks.
+grip.addEventListener("click", (ev) => {
+  if (!gripDragging) chooseGrip(GRIPS[Math.round(gripIndexAt(ev.clientX))]);
+});
+for (const stop of grip.querySelectorAll(".stop")) {
+  stop.addEventListener("click", (ev) => { ev.stopPropagation(); chooseGrip(stop.dataset.v); });
+}
+grip.addEventListener("keydown", (ev) => {
+  const i = GRIPS.indexOf(grip.dataset.v || "standard");
+  if (ev.key === "ArrowLeft" && i > 0) chooseGrip(GRIPS[i - 1]);
+  else if (ev.key === "ArrowRight" && i < GRIPS.length - 1) chooseGrip(GRIPS[i + 1]);
+  else return;
+  ev.preventDefault();
+});
 
 document.getElementById("calibrate").onclick = async () => {
   // The calibration screen handles pairing itself, so this needs no phone yet.
