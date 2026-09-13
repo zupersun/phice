@@ -30,7 +30,7 @@
   --line: #dde3ea;
   --btn-bg: #e3e8ee;
   --code-size: 46px;
-  --radius: 14px;
+  --radius: 18px;
   --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
   color-scheme: light;
 }
@@ -117,7 +117,7 @@ h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
 button {
   font: inherit; font-size: 13px; font-weight: 600;
   background: var(--btn-bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 10px;
+  border: 1px solid var(--line); border-radius: 999px;
   padding: 9px 14px; margin: 4px 6px 0 0;
 }
 button.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }

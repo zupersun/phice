@@ -91,6 +91,9 @@ class PointerConfig:
     freeze_ms_on_release: int = 60
     chord_window_ms: int = 50
     recenter_hold_ms: int = 650
+    #: Snap the cursor to the middle of the display when the pointer is
+    #: switched on, so it always starts from a known place.
+    recenter_on_power_on: bool = True
     double_click_s: float = 0.5
     #: Displacement scrolling from the raw touch delta. Off by default: the strip
     #: is a rate control, and adding displacement on top of it reads as doubled.
@@ -201,6 +204,7 @@ class PointerConfig:
             freeze_ms_on_release=_int(d, "freeze_ms_on_release", 60, 0, 2000),
             chord_window_ms=_int(d, "chord_window_ms", 50, 0, 500),
             recenter_hold_ms=_int(d, "recenter_hold_ms", 650, 100, 10000),
+            recenter_on_power_on=_bool(d, "recenter_on_power_on", True),
             double_click_s=_num(d, "double_click_s", 0.5, 0.1, 3.0),
             scroll_gain=_num(d, "scroll_gain", 0.0, 0.0, 50.0),
             scroll_natural=_bool(d, "scroll_natural", False),

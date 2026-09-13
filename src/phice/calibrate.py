@@ -112,10 +112,11 @@ class Calibration:
         return {"done": False, "index": self.index, "total": len(self.plan),
                 "x": d.x, "y": d.y, "note": d.note,
                 "settling": self._still_since is not None,
-                # 0..1 while the phone holds steady, so the dot can show a ring
-                # filling rather than capturing with no warning at all.
-                "progress": 0.0 if self._still_since is None
-                            else min(1.0, self._held / SETTLE_S)}
+                # Milliseconds, not a fraction: the page animates the ring itself
+                # at the display's refresh rate. A fraction sampled by its poll
+                # gave eight frames a second.
+                "settle_ms": int(SETTLE_S * 1000),
+                "held_ms": int(max(0.0, self._held) * 1000)}
 
     def observe(self, now: float, yaw: float, pitch: float) -> None:
         """One sample of where the phone is pointing."""

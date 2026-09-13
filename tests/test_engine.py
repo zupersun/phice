@@ -21,6 +21,10 @@ MECHANICS = {
     "deadzone_dps": 0.5,
     "scroll_gain": 1.5,
     "one_euro": OneEuroConfig(min_cutoff=1.0, beta=0.02),
+    # These measure motion from a known starting point. Snapping to the middle
+    # when the pointer comes on is a product behaviour with its own tests, not
+    # something every mechanics test should have to account for.
+    "recenter_on_power_on": False,
 }
 
 
@@ -766,3 +770,19 @@ def test_the_two_halves_scroll_opposite_ways():
     bottom.power()
     bottom.stream(30, scroll=True, sp=1.0, sd=0)
     assert _scrolled(top) * _scrolled(bottom) < 0
+
+
+def test_switching_the_pointer_on_starts_from_the_middle():
+    """Picking the phone up and finding the pointer anchored to a corner is
+    disorienting; the middle is the one place both ends agree on."""
+    cursor = FakeCursor(x=20.0, y=880.0, display_list=[Rect(0, 0, 1440, 900)])
+    r = Rig(tuned(recenter_on_power_on=True), cursor=cursor)
+    r.power()
+    assert (cursor.x, cursor.y) == (720.0, 450.0)
+
+
+def test_that_snap_can_be_turned_off():
+    cursor = FakeCursor(x=20.0, y=880.0, display_list=[Rect(0, 0, 1440, 900)])
+    r = Rig(tuned(recenter_on_power_on=False), cursor=cursor)
+    r.power()
+    assert (cursor.x, cursor.y) == (20.0, 880.0)

@@ -290,7 +290,18 @@ function show(s) {
   // Only numbers cross this line; calibrate.css decides what they look like.
   target.style.setProperty("--tx", s.x);
   target.style.setProperty("--ty", s.y);
-  target.style.setProperty("--hold", s.progress || 0);
+  // Do not step the ring from the poll: at 120ms that is eight frames a second
+  // and looks broken. Tell the browser how long the hold takes and let it
+  // interpolate at the display's refresh rate, 60 or 120Hz.
+  if (s.settling && !body.dataset.settling) {
+    body.dataset.settling = "1";
+    target.style.setProperty("--hold-ms", Math.max(0, s.settle_ms - s.held_ms) + "ms");
+    requestAnimationFrame(() => target.style.setProperty("--hold", 1));
+  } else if (!s.settling && body.dataset.settling) {
+    delete body.dataset.settling;
+    target.style.setProperty("--hold-ms", "90ms");
+    target.style.setProperty("--hold", 0);
+  }
   body.style.setProperty("--progress", s.total ? s.index / s.total : 0);
   const ready = !!s.ready;
   document.getElementById("begin").disabled = !ready;
@@ -319,11 +330,19 @@ function render(fitted) {
   document.getElementById("apply").hidden = !!fitted.error || !lines.length;
 }
 
+let autoBegun = false;
 async function poll() {
   try {
     const r = await fetch("/calibrate/state", { cache: "no-store" });
     const s = await r.json();
-    if (s.running) show(s);
+    if (!s.running) return;
+    show(s);
+    // Arming the pointer is the moment someone is ready. Making them walk back
+    // to the Mac and press Begin as well is a step for its own sake.
+    if (!s.started && s.ready && !autoBegun) {
+      autoBegun = true;
+      await fetch("/calibrate/begin");
+    }
   } catch (e) { /* the app is restarting; the next tick catches up */ }
 }
 document.getElementById("apply").onclick = async () => {
@@ -331,8 +350,14 @@ document.getElementById("apply").onclick = async () => {
   const out = await r.json();
   document.getElementById("summary").textContent =
     out.ok ? "Saved. Your pointer now uses these." : ("Could not save: " + (out.error || ""));
+  if (!out.ok) return;
+  // Nothing left to do here, so leave: fade out, then close. Sitting on a
+  // finished screen waiting to be dismissed is a step with no purpose.
+  body.dataset.leaving = "1";
+  setTimeout(stop, 620);
 };
 document.getElementById("again").onclick = async () => {
+  autoBegun = false;
   await fetch("/calibrate/start");
   delete body.dataset.done;
 };

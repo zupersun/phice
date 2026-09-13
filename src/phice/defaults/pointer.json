@@ -46,5 +46,6 @@
   "scroll_deadzone": 0.035,
   "scroll_rate_px_per_s": 2400.0,
   "scroll_rate_expo": 1.7,
-  "scroll_min_px_per_s": 90.0
+  "scroll_min_px_per_s": 90.0,
+  "recenter_on_power_on": true
 }

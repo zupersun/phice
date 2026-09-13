@@ -25,6 +25,14 @@
 
 /* Registered so it can be animated: an unregistered custom property is a
    string to the browser and jumps from 0 to 1 rather than filling. */
+/* Registered so the browser can interpolate it. An unregistered custom property
+   is a string, and a transition on it snaps from 0 to 1 instead of sweeping. */
+@property --hold {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
 @property --demo-hold {
   syntax: "<number>";
   inherits: false;
@@ -34,6 +42,9 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  /* Leaving fades rather than vanishing: a full-screen window blinking out is
+     startling, and the fade also covers the window actually closing. */
+  transition: opacity 600ms ease;
   height: 100vh;
   overflow: hidden;
   background: var(--bg);
@@ -62,8 +73,11 @@ body {
   content: "";
   position: absolute; inset: -7px;
   border-radius: 50%;
-  background: conic-gradient(var(--target-hit) calc(var(--hold, 0) * 360deg),
-                             transparent 0);
+  /* A soft edge on the leading end: a hard stop on a conic gradient shimmers as
+     it sweeps, which reads as the animation stuttering even when it is smooth. */
+  background: conic-gradient(var(--target-hit) calc(var(--hold, 0) * 360deg - 2deg),
+                             transparent calc(var(--hold, 0) * 360deg));
+  transition: --hold var(--hold-ms, 90ms) linear;
   -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48%);
           mask: radial-gradient(circle, transparent 0 47%, #000 48%);
 }
@@ -105,7 +119,7 @@ body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
   width: 260px; height: 150px;
   margin: 0 0 22px;
   border: 1px solid var(--ring);
-  border-radius: 12px;
+  border-radius: 18px;
   background: var(--bg);
   overflow: hidden;
 }
@@ -166,7 +180,7 @@ body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
    the code for is no instruction at all. */
 #connect { display: flex; align-items: center; gap: 22px; margin: 0 0 24px; }
 #connect .pair {
-  border: 1px solid var(--ring); border-radius: 14px; padding: 12px 20px;
+  border: 1px solid var(--ring); border-radius: 18px; padding: 12px 20px;
 }
 #connect .code {
   font-size: 34px; font-weight: 700; letter-spacing: 8px; color: var(--target);
@@ -190,13 +204,15 @@ button[disabled] { opacity: 0.4; }
         letter-spacing: 0.06em; text-transform: uppercase; }
 #task { font-size: 15px; font-weight: 600; }
 #why { color: var(--dim); flex: 1; font-size: 13px; }
-#bar { height: 3px; border-radius: 999px; background: var(--ring); width: 180px; }
-#quit { padding: 7px 14px; font-size: 12px; }
+#bar { height: 4px; border-radius: 999px; background: var(--ring); width: 180px; }
+#quit { padding: 8px 16px; font-size: 12px; border-radius: 999px; }
 #bar > i {
   display: block; height: 100%; border-radius: 999px; background: var(--target);
   width: calc(var(--progress, 0) * 100%);
   transition: width 200ms ease-out;
 }
+
+body[data-leaving="1"] { opacity: 0; }
 
 #done { position: fixed; inset: 0; display: none; place-content: center; padding: 40px; }
 body[data-done="1"] #done { display: grid; }
@@ -204,6 +220,7 @@ body[data-done="1"] #target, body[data-done="1"] #hud { display: none; }
 #done h1 { font-size: 22px; margin: 0 0 4px; }
 #done p { color: var(--dim); margin: 0 0 18px; }
 #results {
+  border-radius: 14px;
   font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--dim);
   white-space: pre-wrap;
@@ -212,6 +229,6 @@ body[data-done="1"] #target, body[data-done="1"] #hud { display: none; }
 button {
   font: inherit; font-size: 14px; font-weight: 600;
   background: var(--target); color: var(--bg);
-  border: 0; border-radius: 11px; padding: 11px 20px; margin-right: 8px;
+  border: 0; border-radius: 14px; padding: 12px 22px; margin-right: 8px;
 }
 button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--dim); }

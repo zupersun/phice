@@ -266,7 +266,13 @@ class PointerEngine:
             self._go_off(now)
 
     def _power_on(self, now: float) -> None:
-        self._reset_motion()
+        # Start from the middle rather than from wherever the cursor was left.
+        # Picking the phone up and finding the pointer anchored to a corner is
+        # disorienting, and the middle is the one place both ends agree on.
+        if self._cfg.recenter_on_power_on:
+            self._snap()
+        else:
+            self._reset_motion()
         self._last_rx = now
         self._frozen_until = 0.0
         self._set_phase(Phase.ON)
