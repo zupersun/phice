@@ -177,13 +177,20 @@ async def run(rt: Runtime) -> None:
                                 ice_servers=(rt.rtc_ice_servers
                                              if rt.rtc_ice_servers is not None
                                              else ice))
-        offer = await rt.rtc.create_offer()
-        # Keep the same code for the life of the process and republish a fresh
-        # offer under it. Minting a new one after every disconnect meant the
-        # user had to walk back to the Mac each time -- and the page's
-        # remembered code was always the dead one.
+        # Mint and show the code before gathering candidates, not after. ICE
+        # gathering takes seconds, and minting afterwards meant "new code" sat
+        # there doing nothing visible for all of them. The phone may now ask for
+        # an offer that is still being built, which is why the page retries
+        # rather than failing on the first miss.
+        #
+        # The code itself lives for the whole process: minting a new one after
+        # every disconnect sent the user back to the Mac each time, and the
+        # page's remembered code was always the dead one.
         code = rt.pairing.code or new_pairing_code()
         rt.pairing.code = code
+        rt.status.update(pair_code=code, error="")
+
+        offer = await rt.rtc.create_offer()
         try:
             await client.publish_offer(code, offer)
         except SignalingError as e:
@@ -192,7 +199,6 @@ async def run(rt: Runtime) -> None:
             await rt.rtc.close()
             await asyncio.sleep(10)
             continue
-        rt.status.update(pair_code=code, error="")
         log.info("pairing code %s -- enter it at %s/app", code, rt.config.signaling_url)
         rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(code))
         try:

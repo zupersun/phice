@@ -146,12 +146,19 @@
       }
     });
 
-    const offerRes = await fetch(`/api/offer?code=${encodeURIComponent(code)}`);
-    if (!offerRes.ok) {
+    // The Mac shows a code the moment it mints one, before it has finished
+    // gathering ICE candidates, so a code can be real and its offer not posted
+    // yet. Give it a few seconds before declaring the code wrong.
+    let offer = null;
+    for (let attempt = 0; attempt < 10 && !offer; attempt++) {
+      const res = await fetch(`/api/offer?code=${encodeURIComponent(code)}`);
+      if (res.ok) { offer = await res.json(); break; }
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    if (!offer) {
       fail("That code was not found. Codes expire after five minutes — check your Mac for a fresh one.");
       return;
     }
-    const offer = await offerRes.json();
     await pc.setRemoteDescription(offer);
     await pc.setLocalDescription(await pc.createAnswer());
     await gatherComplete(pc);
@@ -188,7 +195,7 @@
 
   function adopt(transport) {
     state.channel = transport;
-    setTimeout(() => report("client v7 connected"), 0);   // flushes anything queued
+    setTimeout(() => report("client v" + CLIENT_VERSION + " connected"), 0);   // flushes anything queued
     el.body.dataset.link = "ok";
     setScreen("start");
   }
