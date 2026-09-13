@@ -68,7 +68,12 @@ def test_gain_is_the_pixels_the_target_demanded_per_degree_actually_turned():
 
 def test_horizontal_and_vertical_are_fitted_separately():
     """Holding a phone makes pitch and yaw feel different; one number for both
-    would average away exactly the difference worth capturing."""
+    would average away exactly the difference worth capturing.
+
+    Both come from every trial that moved far enough on that axis. Sorting
+    trials into horizontal and vertical instead threw most of them away: a
+    vertical target sits at centre-x while the cursor starts at the last
+    target, off to one side, so the displacement read as horizontal."""
     plan = [Trial(Kind.STEP, 0.75, 0.5, 40.0), Trial(Kind.STEP, 0.5, 0.75, 40.0)] * 3
     cal = Calibration(width=1600, height=1000, plan=plan)
     now = 0.0
@@ -101,17 +106,38 @@ def test_hunting_round_the_target_asks_for_more_smoothing():
     assert out["one_euro"]["min_cutoff"] < 0.4, "hunting means smooth it more"
 
 
-def test_a_shaky_hand_while_holding_still_asks_for_more_smoothing():
+def _hold_still(px_per_frame, hold_s=2.0):
     cal = Calibration(width=1600, height=1000,
-                      plan=[Trial(Kind.STILL, 0.5, 0.5, 44.0, hold_s=2.0)])
+                      plan=[Trial(Kind.STILL, 0.5, 0.5, 44.0, hold_s=hold_s)])
     cal.begin(0.0, (800.0, 500.0))
-    now = 0.0
-    for i in range(1, 130):                      # a steady 30px-per-frame tremor
-        now = i / 60
-        cal.observe(now, (800.0 + (i % 2) * 30, 500.0), 0.0, 0.0)
+    for i in range(1, int(hold_s * 60) + 8):
+        cal.observe(i / 60, (800.0 + (i % 2) * px_per_frame, 500.0), 0.0, 0.0)
+    return cal
+
+
+def test_a_shaky_hand_while_holding_still_asks_for_more_smoothing():
+    cal = _hold_still(0.3)                       # ~18 px/s: a real hand
     out = fit(cal.results, current={"one_euro": {"min_cutoff": 0.4}})
-    assert "12" in out["evidence"]["drift"] or float(out["evidence"]["drift"].split()[0]) > 12
+    assert float(out["evidence"]["drift"].split()[0]) > 12
     assert out["one_euro"]["min_cutoff"] < 0.4
+
+
+def test_a_phone_being_carried_is_not_evidence_about_smoothing():
+    """The first trial starts while the person is still settling into position.
+    380px of "drift" in four seconds is someone moving, and acting on it drove
+    smoothing to the floor and made the pointer laggy."""
+    cal = _hold_still(30.0)                      # ~1800 px/s: nobody's tremor
+    out = fit(cal.results, current={"one_euro": {"min_cutoff": 0.4}})
+    assert "ignored" in out["evidence"]["drift"]
+    assert "one_euro" not in out, "an implausible reading must change nothing"
+
+
+def test_one_run_may_only_nudge_the_smoothing():
+    """Jumping to the floor on a single noisy sample is how a two-minute task
+    produced a pointer that felt worse than the guess it replaced."""
+    cal = _hold_still(0.3)
+    out = fit(cal.results, current={"one_euro": {"min_cutoff": 0.4}})
+    assert out["one_euro"]["min_cutoff"] >= 0.2
 
 
 def test_too_few_trials_refuses_rather_than_inventing_a_number():
@@ -145,4 +171,7 @@ def test_results_are_written_with_the_trials_behind_them(tmp_path):
     saved = __import__("json").loads(path.read_text())
     assert saved["fitted"]["gain_x_px_per_deg"] == 40.0
     assert saved["trials"][0]["yaw_deg"] == 10.0, "keep the evidence, not just the verdict"
+    # The endpoints must survive, or a corrected fit cannot be re-run offline.
+    assert saved["trials"][0]["from_px"] == [0.0, 0.0]
+    assert saved["trials"][0]["to_px"] == [400.0, 0.0]
     assert math.isclose(saved["trials"][0]["overshoot"], 1.05, abs_tol=0.01)

@@ -96,6 +96,15 @@ try {
 </div>
 
 <div class="card">
+  <b>Pointer feel</b>
+  <p class="lede">Sensitivity is measured rather than guessed: follow a few targets
+     and Phice reads the right settings off how far you actually turn the phone.
+     About two minutes, and nothing is saved until you approve it.</p>
+  <p class="when" id="calibrated">Not calibrated yet</p>
+  <button id="calibrate" class="primary">Calibrate pointer\u2026</button>
+</div>
+
+<div class="card">
   <b>How to connect</b>
   <ol>
     <li>Open the link above on your iPhone.</li>
@@ -123,6 +132,8 @@ async function refresh() {
     document.getElementById("v-conn").textContent = d.connected ? "yes" : "no";
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
+    document.getElementById("calibrated").textContent =
+      d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
     if (!dragging && d.appearance && d.appearance !== seg.dataset.v) applyTheme(d.appearance);
     dot(document.getElementById("d-ptr"),
@@ -136,6 +147,10 @@ document.getElementById("newcode").onclick = async () => {
 };
 document.getElementById("grant").onclick = async () => {
   await fetch("/debug/grant"); refresh();
+};
+document.getElementById("calibrate").onclick = async () => {
+  // The calibration screen handles pairing itself, so this needs no phone yet.
+  await fetch("/calibrate/start");
 };
 
 // Appearance: a three stop slider. The Mac owns the value -- the phone follows

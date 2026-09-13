@@ -165,3 +165,12 @@ def test_panel_css_has_a_light_base_and_dark_overrides():
     assert "@media (prefers-color-scheme: dark)" in css
     assert ':root[data-theme="dark"]' in css
     assert ':root[data-theme="light"]' in css
+
+
+def test_the_panel_offers_calibration_without_needing_a_phone_first(setup):
+    """It is the app's own window, so it is where a feature belongs -- not only
+    behind a menu bar item that can be invisible behind the notch. The
+    calibration screen pairs on its own, so the button never has to wait."""
+    html = get(setup, "/panel")[2].decode()
+    assert "/calibrate/start" in html
+    assert "calibrated" in html, "say whether it has ever been run"

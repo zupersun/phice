@@ -93,9 +93,11 @@ def default_plan() -> list[Trial]:
             trials.append(Trial(Kind.STEP, 0.5 + sign * frac, 0.5, 40.0))
             trials.append(Trial(Kind.STEP, 0.5, 0.5 + sign * frac * 0.6, 40.0))
     trials.append(Trial(Kind.STILL, 0.5, 0.5, 44.0, hold_s=4.0))
-    for sign in (1.0, -1.0):
-        trials.append(Trial(Kind.SWEEP, 0.5 + sign * 0.46, 0.5, 56.0))
-        trials.append(Trial(Kind.SWEEP, 0.5 - sign * 0.46, 0.5, 56.0))
+    # Alternate strictly: emitting +0.46, -0.46, -0.46, +0.46 put two targets in
+    # the same place, and the second was satisfied before it began -- 38px of
+    # "sweep" that measured nothing.
+    for i in range(4):
+        trials.append(Trial(Kind.SWEEP, 0.5 + (0.46 if i % 2 == 0 else -0.46), 0.5, 56.0))
     return trials
 
 
@@ -237,17 +239,19 @@ def fit(results: list[TrialResult], current: dict) -> dict:
             out["error"] = "too few usable trials to fit anything"
         return out
 
-    horizontal = [r for r in steps if abs(r.to_px[0] - r.from_px[0]) > abs(r.to_px[1] - r.from_px[1])]
-    vertical = [r for r in steps if r not in horizontal]
-
-    gain_x = _gain_from(horizontal, axis=0)
-    gain_y = _gain_from(vertical, axis=1)
+    # Every trial measures both axes, because every move uses both. Sorting
+    # trials into "horizontal" and "vertical" threw most of them away: a
+    # vertical target sits at screen-centre-x, and the cursor starts wherever
+    # the last target was -- off to one side -- so the displacement reads as
+    # horizontal and eight vertical trials counted as one.
+    gain_x, used_x = _gain_from(steps, axis=0)
+    gain_y, used_y = _gain_from(steps, axis=1)
     if gain_x:
         out["gain_x_px_per_deg"] = round(gain_x, 1)
-        out["evidence"]["gain_x_px_per_deg"] = f"{len(horizontal)} sideways trials"
+        out["evidence"]["gain_x_px_per_deg"] = f"{used_x} trials with real sideways travel"
     if gain_y:
         out["gain_y_px_per_deg"] = round(gain_y, 1)
-        out["evidence"]["gain_y_px_per_deg"] = f"{len(vertical)} vertical trials"
+        out["evidence"]["gain_y_px_per_deg"] = f"{used_y} trials with real vertical travel"
 
     expo = _expo_from(steps)
     if expo is not None:
@@ -270,36 +274,60 @@ def fit(results: list[TrialResult], current: dict) -> dict:
     return out
 
 
+#: Nobody's hand tremor moves a cursor this fast. Past it, the phone was being
+#: carried rather than held, and the reading says nothing about smoothing.
+IMPLAUSIBLE_DRIFT_PX_S = 45.0
+
+
 def _fit_stillness(results: list[TrialResult], current: dict, out: dict) -> None:
-    """A cursor that wanders while the phone is held still is unfiltered tremor."""
+    """A cursor that wanders while the phone is held still is unfiltered tremor.
+
+    Only if the phone really was held still. The first trial begins the moment
+    the run starts, while the person is still settling into position, and 380px
+    of "drift" in four seconds is someone moving -- acted on, it drove smoothing
+    to the floor and made the pointer feel laggy.
+    """
     still = [r for r in results if r.trial.kind is Kind.STILL and r.seconds > 0.5]
     if not still:
         return
-    drift = sum(r.path_px for r in still) / len(still)
-    per_second = drift / (sum(r.seconds for r in still) / len(still))
+    rates = sorted(r.path_px / r.seconds for r in still)
+    per_second = rates[0]        # the calmest sample, not the average of a spoiled one
     out["evidence"]["drift"] = f"{per_second:.1f} px/s while holding still"
+    if per_second > IMPLAUSIBLE_DRIFT_PX_S:
+        out["evidence"]["drift"] += " -- too fast to be a hand; ignored"
+        return
     if per_second > 12.0:
         cutoff = float(current.get("one_euro", {}).get("min_cutoff", 0.4))
-        out.setdefault("one_euro", {})["min_cutoff"] = round(max(0.1, cutoff * 0.5), 2)
+        # A single run may halve it at most: this is a nudge in a direction, not
+        # a measurement precise enough to justify jumping to the floor.
+        out.setdefault("one_euro", {})["min_cutoff"] = round(max(0.2, cutoff * 0.6), 2)
 
 
-def _gain_from(trials: list[TrialResult], axis: int) -> float | None:
-    """Pixels per degree, as the median of what each trial actually demanded.
+#: Below this the trial says nothing useful about that axis: a few pixels of
+#: travel divided by a fraction of a degree is noise with a big number attached.
+MIN_TRAVEL_PX = 60.0
+MIN_TURN_DEG = 2.0
 
-    Median rather than mean: one trial where the phone was fumbled would drag an
-    average a long way, and there are only a dozen of them.
+
+def _gain_from(trials: list[TrialResult], axis: int) -> tuple[float | None, int]:
+    """Pixels per degree on one axis, as the median of what each trial demanded.
+
+    Median rather than mean: one fumbled trial would drag an average a long way,
+    and there are only a dozen of them.
     """
     ratios = []
     for r in trials:
         turned = r.yaw_deg if axis == 0 else r.pitch_deg
-        if turned < 1.0:
+        travel = abs(r.to_px[axis] - r.from_px[axis])
+        if turned < MIN_TURN_DEG or travel < MIN_TRAVEL_PX:
             continue
-        ratios.append(abs(r.to_px[axis] - r.from_px[axis]) / turned)
-    if not ratios:
-        return None
+        ratios.append(travel / turned)
+    if len(ratios) < 3:
+        return None, len(ratios)
     ratios.sort()
     mid = len(ratios) // 2
-    return ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+    value = ratios[mid] if len(ratios) % 2 else (ratios[mid - 1] + ratios[mid]) / 2
+    return value, len(ratios)
 
 
 def _expo_from(trials: list[TrialResult]) -> float | None:
@@ -328,6 +356,12 @@ def write_session(path: Path, results: list[TrialResult], fitted: dict) -> None:
         "fitted": fitted,
         "trials": [
             {"kind": r.trial.kind.value, "distance_px": round(r.distance_px, 1),
+             # The endpoints, not just the distance between them: without them a
+             # correction to the fitting cannot be applied to trials already
+             # recorded, and a two-minute task has to be repeated to answer a
+             # question the data already contains.
+             "from_px": [round(v, 1) for v in r.from_px],
+             "to_px": [round(v, 1) for v in r.to_px],
              "yaw_deg": round(r.yaw_deg, 2), "pitch_deg": round(r.pitch_deg, 2),
              "seconds": round(r.seconds, 2), "path_px": round(r.path_px, 1),
              "overshoot": round(r.overshoot, 2), "timed_out": r.timed_out}

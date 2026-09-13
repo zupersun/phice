@@ -11,6 +11,7 @@ import logging.handlers
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from . import calibrate, webrtc_session
@@ -254,6 +255,7 @@ class Runtime:
                                     if self.rtc.channel else "none"),
                         "state": self.rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
+        d["calibrated"] = self._calibrated_when()
         d["phone_url"] = f"{self.config.signaling_url}/app"
         d["transport"] = self.config.transport
         d["sensor_hz"] = round(self.rtc.hz if self.rtc and self.rtc.is_open
@@ -351,6 +353,22 @@ class Runtime:
 
     def start_calibration(self) -> dict:
         return self.calibration.start()
+
+    def _calibrated_when(self) -> str:
+        """When calibration last wrote settings, as something readable.
+
+        Read off the saved trials rather than tracked separately: the file is
+        the record, and if it is gone the claim would be unsupported anyway.
+        """
+        record = self.paths.sessions / "calibration.json"
+        try:
+            when = datetime.fromtimestamp(record.stat().st_mtime)
+        except OSError:
+            return ""
+        days = (datetime.now() - when).days
+        if days == 0:
+            return when.strftime("today at %H:%M")
+        return "yesterday" if days == 1 else f"{days} days ago"
 
     def calibration_state(self) -> dict:
         """Includes whether there is a phone to calibrate with.
