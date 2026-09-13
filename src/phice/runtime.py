@@ -117,16 +117,18 @@ class Runtime:
                                  calibration_state=self.calibration_state,
                                  start_calibration=self.start_calibration,
                                  apply_calibration=self.apply_calibration,
+                                 cancel_calibration=self.cancel_calibration,
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
         self.pairing = webrtc_session.Pairing()
         self._panel_requested = False
-        self._panel_url: str | None = None
+        self._panel_url: tuple[str, bool] | None = None
+        self._close_calibration = False
         self.calibration = calibrate.Runner(
             paths, backend, self.engine,
             show=lambda: self.request_panel_url(
-                f"http://127.0.0.1:{self.http_port}/calibrate"))
+                f"http://127.0.0.1:{self.http_port}/calibrate", fullscreen=True))
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -358,9 +360,22 @@ class Runtime:
             self._dispatch(self._apply_pointer(self.paths.pointer_json))
         return out
 
-    def request_panel_url(self, url: str) -> None:
-        self._panel_url = url
+    def cancel_calibration(self) -> dict:
+        """Abandon the run and take the window off the screen.
+
+        A borderless full-screen window with no title bar has no close button,
+        so there must be a way out that does not involve the menu bar."""
+        self.calibration.cancel()
+        self._close_calibration = True
+        return {"ok": True}
+
+    def request_panel_url(self, url: str, *, fullscreen: bool = False) -> None:
+        self._panel_url = (url, fullscreen)
         self._panel_requested = True
+
+    def take_calibration_close(self) -> bool:
+        done, self._close_calibration = self._close_calibration, False
+        return done
 
     def request_panel(self) -> None:
         """Ask for the control panel window. Thread safe by design.
@@ -370,8 +385,8 @@ class Runtime:
         """
         self._panel_requested = True
 
-    def take_panel_request(self) -> str | bool:
-        """Returns the url to show, True for the default panel, or False."""
+    def take_panel_request(self) -> tuple[str, bool] | bool:
+        """(url, fullscreen) to show, True for the default panel, or False."""
         if not self._panel_requested:
             return False
         self._panel_requested = False

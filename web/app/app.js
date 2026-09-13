@@ -26,6 +26,7 @@
     counters: new Map(),         // id -> press count
     scrollDelta: 0,
     scrollPos: null,   // where the finger is along the strip, 0..1
+    pending: {},       // channels seen so far, until both have opened
     orientation: null,
     rate: [0, 0, 0],
     gravity: [0, 0, 9.8],
@@ -90,6 +91,7 @@
       ws.send(JSON.stringify(hello));
       adopt({
         send: (text) => ws.send(text),
+        sendControl: (text) => ws.send(text),   // one pipe, already reliable
         close: () => ws.close(),
         get open() { return ws.readyState === WebSocket.OPEN; },
       });
@@ -124,6 +126,7 @@
     state.pc = pc;
 
     pc.addEventListener("datachannel", (ev) => wireChannel(ev.channel));
+    state.pending = {};
     pc.addEventListener("connectionstatechange", () => {
       const s = pc.connectionState;
       // `disconnected` is transient: ICE dips into it routinely and recovers,
@@ -199,20 +202,40 @@
     }
   }
 
+  // Two channels arrive, and which is which matters. "phice" is unreliable and
+  // unordered, right for 60 Hz sensor packets where a retransmitted stale one is
+  // worse than none. "phice-ctl" is reliable, and everything that must arrive
+  // goes over it -- the ~12 KB theme fragments across nine SCTP chunks, and on
+  // the lossy channel losing any one discarded the lot, leaving unstyled buttons
+  // on a black page with no error to show for it.
   function wireChannel(channel) {
-    channel.addEventListener("open", () => {
+    const control = channel.label === "phice-ctl";
+    // Attach this first: the Mac sends the layout and theme the instant its own
+    // end opens, and a message dispatched before anyone is listening is gone.
+    if (control) {
+      channel.addEventListener("message", (ev) => handleMessage(ev.data));
+      channel.addEventListener("close", () => fail("The Mac closed the connection."));
+    }
+    const ready = () => {
+      state.pending[control ? "ctl" : "data"] = channel;
+      if (!state.pending.ctl) return;        // the session is the control channel
+      const ctl = state.pending.ctl, data = state.pending.data || ctl;
       // Pairing already happened through the signaling code, so this hello exists
       // only to tell the Mac what this phone can do. Haptics have been guessed at
       // twice; the Mac logs this instead.
-      channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
+      ctl.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
       adopt({
-        send: (text) => channel.send(text),
-        close: () => channel.close(),
-        get open() { return channel.readyState === "open"; },
+        send: (text) => data.send(text),          // sensor packets: lossy is fine
+        sendControl: (text) => ctl.send(text),    // must arrive
+        close: () => { ctl.close(); if (data !== ctl) data.close(); },
+        get open() { return ctl.readyState === "open"; },
       });
-    });
-    channel.addEventListener("close", () => fail("The Mac closed the connection."));
-    channel.addEventListener("message", (ev) => handleMessage(ev.data));
+    };
+    // A channel can already be open by the time this event reaches us, and then
+    // "open" never fires at all -- which left the page sitting on
+    // "Connecting..." forever, depending entirely on timing.
+    if (channel.readyState === "open") ready();
+    else channel.addEventListener("open", ready);
   }
 
   function applyState(msg) {
@@ -352,8 +375,8 @@
       (i === 0 ? "orient=" : "motion=") +
       (r.status === "rejected" ? "threw:" + (r.reason && r.reason.name) : r.value)).join(","));
     if (state.channel && state.channel.open) {
-      state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
-                                          caps: hapticCaps() + "," + state.perm }));
+      state.channel.sendControl(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
+                                                 caps: hapticCaps() + "," + state.perm }));
     }
     // iOS resolves to "denied" WITHOUT throwing when Motion & Orientation Access
     // is off, or when this site was refused once before. Ignoring the result is
@@ -383,8 +406,8 @@
       clearInterval(state.timer);
       state.timer = null;
       if (state.channel && state.channel.open) {
-        state.channel.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
-                                            caps: "NO-MOTION," + state.perm }));
+        state.channel.sendControl(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
+                                                   caps: "NO-MOTION," + state.perm }));
       }
       fail(denied
         ? "iPhone refused motion access for this site. Settings \u203a Apps \u203a Safari "

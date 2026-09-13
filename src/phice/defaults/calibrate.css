@@ -79,6 +79,7 @@ body[data-kind="still"] #target::after { transform: scale(0.45); }
 #task { font-size: 15px; font-weight: 600; }
 #hint { color: var(--dim); flex: 1; }
 #bar { height: 3px; border-radius: 999px; background: var(--ring); width: 180px; }
+#quit { padding: 7px 14px; font-size: 12px; }
 #bar > i {
   display: block; height: 100%; border-radius: 999px; background: var(--target);
   width: calc(var(--progress, 0) * 100%);

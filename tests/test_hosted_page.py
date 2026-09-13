@@ -65,7 +65,27 @@ def test_the_client_chooses_its_transport_rather_than_assuming_one(js):
     Only this seam may differ -- the wire protocol either side of it is one."""
     assert 'fetch("/transport"' in js, "ask, do not guess which transport this is"
     assert "new WebSocket(" in js and "RTCPeerConnection(" in js
-    # Nothing outside the seam may know which transport it got.
+    # Nothing outside the seam may know which transport it got. The seam itself
+    # is wireChannel/openSocket and the wrappers they hand back.
+    seam = ("get open()", "channel.readyState", "ws.readyState")
     outside = [ln for ln in js.splitlines()
-               if "readyState" in ln and "get open()" not in ln]
+               if "readyState" in ln and not any(s in ln for s in seam)]
     assert not outside, f"transport details leaked out of the seam: {outside}"
+
+
+def test_an_already_open_channel_still_starts_the_session(js):
+    """A data channel can be open by the time the datachannel event arrives, and
+    then "open" never fires. Waiting for it left the page on "Connecting..."
+    forever, depending purely on timing."""
+    assert 'if (channel.readyState === "open") ready();' in js
+    assert 'else channel.addEventListener("open", ready);' in js
+
+
+def test_the_message_listener_is_attached_before_anything_can_arrive(js):
+    """The Mac sends the layout and theme the instant its end opens. A message
+    dispatched before a listener exists is dropped, and the pad renders empty --
+    a black screen with no explanation."""
+    body = js[js.index("function wireChannel("):]
+    body = body[:body.index("\n  }")]
+    assert body.index('addEventListener("message"') < body.index("const ready"), \
+        "the message listener must come first"

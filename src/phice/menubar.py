@@ -69,12 +69,11 @@ class PhiceApp(rumps.App):
     def panel_url(self) -> str:
         return f"http://127.0.0.1:{self.runtime.http_port}/panel"
 
-    def show_panel(self, _=None, url: str | None = None):
+    def show_panel(self, _=None):
         # Falls back to the browser rather than failing silently: on a Mac where
         # WebKit will not load, the panel is still the only place the code lives.
-        target = url or self.panel_url()
-        if not window.open_panel(target):
-            webbrowser.open(target)
+        if not window.open_panel(self.panel_url()):
+            webbrowser.open(self.panel_url())
 
     def calibrate(self, _):
         self.runtime.start_calibration()
@@ -136,9 +135,15 @@ class PhiceApp(rumps.App):
 
     def refresh(self, _):
         self._ticks += 1
+        if self.runtime.take_calibration_close():
+            window.close("calibrate")
         wanted = self.runtime.take_panel_request()
-        if wanted:
-            self.show_panel(url=wanted if isinstance(wanted, str) else None)
+        if wanted is True:
+            self.show_panel()
+        elif wanted:
+            url, fullscreen = wanted
+            window.open_panel(url, key="calibrate" if fullscreen else "panel",
+                              fullscreen=fullscreen)
         if self._ticks == 2:
             # Every launch, not just the first: the menu bar icon can be
             # invisible behind the notch, and then there is nothing to click.

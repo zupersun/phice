@@ -88,7 +88,8 @@ class RTCTransport:
                                             credential=e.get("credential")))
         config = RTCConfiguration(iceServers=servers)
         self.pc = RTCPeerConnection(configuration=config)
-        self.channel: RTCDataChannel | None = None
+        self.channel: RTCDataChannel | None = None   # sensor packets, lossy
+        self.ctl: RTCDataChannel | None = None       # control, reliable
         self._tick: asyncio.Task | None = None
         self._closed = False
         # Counters, because a silently dropped frame is indistinguishable
@@ -102,9 +103,22 @@ class RTCTransport:
     # ----- signaling --------------------------------------------------------
 
     async def create_offer(self) -> dict[str, str]:
+        # Two channels, because the traffic has two opposite requirements.
+        #
+        # Sensor packets are worthless once stale: at 60 Hz, retransmitting a
+        # lost one delivers an old position late and blocks the fresh ones
+        # behind it. Unreliable and unordered is right for them.
+        #
+        # Layout, theme and state must arrive. The theme alone is ~12 KB, which
+        # fragments across nine SCTP chunks, and on an unreliable channel losing
+        # any one of them discards the whole message -- the page then renders
+        # unstyled buttons on a black background with no error anywhere. That
+        # was intermittent for exactly as long as it took to notice.
         self.channel = self.pc.createDataChannel("phice", ordered=False,
                                                  maxRetransmits=0)
+        self.ctl = self.pc.createDataChannel("phice-ctl", ordered=True)
         self._wire_channel(self.channel)
+        self._wire_ctl(self.ctl)
 
         @self.pc.on("connectionstatechange")
         async def _on_state() -> None:
@@ -133,54 +147,75 @@ class RTCTransport:
 
     # ----- channel ----------------------------------------------------------
 
-    def _wire_channel(self, channel: RTCDataChannel) -> None:
-        @channel.on("open")
+    def _wire_ctl(self, ctl: RTCDataChannel) -> None:
+        """The reliable half: everything that must arrive."""
+        @ctl.on("open")
         def _on_open() -> None:
-            log.info("data channel open")
+            log.info("control channel open")
             self.engine.connected()
             # Without this the phone is blind: no status LED, no recenter
             # animation, no reaction to a press. The TLS transport has always
             # done it; leaving it out here made every button look dead even
             # though the engine was reacting.
             self.engine.on_change = self.notify_state
-            channel.send(layout_message(json.loads(self.layout_json)))
-            channel.send(theme_message(self.theme_css))
+            ctl.send(layout_message(json.loads(self.layout_json)))
+            ctl.send(theme_message(self.theme_css))
             self.notify_state()
-            self._tick = asyncio.ensure_future(self._tick_loop())
+            if self._tick is None:
+                self._tick = asyncio.ensure_future(self._tick_loop())
+
+        @ctl.on("message")
+        def _on_ctl(message: Any) -> None:
+            if isinstance(message, str):
+                self._handle(message, ctl)
+
+        @ctl.on("close")
+        def _on_close() -> None:
+            log.info("control channel closed")
+            self.engine.on_change = None
+            self.engine.disconnected()
+
+    def _wire_channel(self, channel: RTCDataChannel) -> None:
+        @channel.on("open")
+        def _on_open() -> None:
+            log.info("data channel open")
+            if self._tick is None:
+                self._tick = asyncio.ensure_future(self._tick_loop())
 
         @channel.on("message")
         def _on_message(message: Any) -> None:
-            if not isinstance(message, str):
-                return
-            self.frames += 1
-            try:
-                parsed = parse_client_message(message)
-            except ProtocolError as e:
-                self.bad_frames += 1
-                self.last_error = str(e)
-                # A bad frame never kills the session, but it must not be silent
-                # either: log the first few so a broken client is visible.
-                if self.bad_frames <= 3:
-                    log.warning("dropping malformed frame: %s -- %s", e, message[:160])
-                return
-            if isinstance(parsed, SensorPacket):
-                self.hz = parsed.hz
-                self.engine.handle(parsed)
-            elif isinstance(parsed, Ping):
-                channel.send(pong_message())
-            elif isinstance(parsed, Bye):
-                self.engine.disconnected()
-            elif isinstance(parsed, Hello):
-                # Pairing already happened out of band, via the code. The hello
-                # only reports what the phone can do.
-                self.client_name = parsed.name
-                log.info("phone connected: %s (caps: %s)", parsed.name, parsed.caps or "none")
+            if isinstance(message, str):
+                self._handle(message, channel)
 
         @channel.on("close")
-        def _on_close() -> None:
+        def _on_data_close() -> None:
             log.info("data channel closed")
-            self.engine.on_change = None
+
+    def _handle(self, message: str, reply: RTCDataChannel) -> None:
+        """One inbound frame, from whichever channel carried it."""
+        self.frames += 1
+        try:
+            parsed = parse_client_message(message)
+        except ProtocolError as e:
+            self.bad_frames += 1
+            self.last_error = str(e)
+            # A bad frame never kills the session, but it must not be silent
+            # either: log the first few so a broken client is visible.
+            if self.bad_frames <= 3:
+                log.warning("dropping malformed frame: %s -- %s", e, message[:160])
+            return
+        if isinstance(parsed, SensorPacket):
+            self.hz = parsed.hz
+            self.engine.handle(parsed)
+        elif isinstance(parsed, Ping):
+            reply.send(pong_message())
+        elif isinstance(parsed, Bye):
             self.engine.disconnected()
+        elif isinstance(parsed, Hello):
+            # Pairing already happened out of band, via the code. The hello
+            # only reports what the phone can do.
+            self.client_name = parsed.name
+            log.info("phone connected: %s (caps: %s)", parsed.name, parsed.caps or "none")
 
     def notify_state(self) -> None:
         """Tell the phone what the engine is doing.
@@ -188,7 +223,7 @@ class RTCTransport:
         Called on every engine change, so it must be cheap and must never raise:
         the engine calls it from inside its own state transitions.
         """
-        ch = self.channel
+        ch = self.ctl
         if ch is None or ch.readyState != "open":
             return
         snap = self.engine.snapshot()
@@ -226,17 +261,19 @@ class RTCTransport:
 
     async def push_layout(self, layout_json: str) -> None:
         self.layout_json = layout_json
-        if self.channel and self.channel.readyState == "open":
-            self.channel.send(layout_message(json.loads(layout_json)))
+        if self.ctl and self.ctl.readyState == "open":
+            self.ctl.send(layout_message(json.loads(layout_json)))
 
     async def push_theme(self, theme_css: str) -> None:
         self.theme_css = theme_css
-        if self.channel and self.channel.readyState == "open":
-            self.channel.send(theme_message(theme_css))
+        if self.ctl and self.ctl.readyState == "open":
+            self.ctl.send(theme_message(theme_css))
 
     @property
     def is_open(self) -> bool:
-        return self.channel is not None and self.channel.readyState == "open"
+        """The control channel is the session: without it the phone has no
+        layout, no theme and no status, whatever the lossy one is doing."""
+        return self.ctl is not None and self.ctl.readyState == "open"
 
     async def close(self) -> None:
         self._closed = True

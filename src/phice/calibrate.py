@@ -354,6 +354,10 @@ class Runner:
         if cal.finished:
             self._engine.on_look = None      # stop sampling the moment it ends
 
+    def cancel(self) -> None:
+        self._engine.on_look = None
+        self.current = None
+
     def _config(self) -> dict:
         return json.loads(self._paths.pointer_json.read_text())
 

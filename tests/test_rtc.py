@@ -26,8 +26,10 @@ async def _connect(transport: RTCTransport) -> tuple[RTCPeerConnection, object]:
 
     @phone.on("datachannel")
     def on_channel(channel):
-        channels["c"] = channel
-        if not opened.done():
+        # Two channels now: the lossy one for sensor packets and the reliable
+        # one for anything that must arrive. The session begins with control.
+        channels[channel.label] = channel
+        if channel.label == "phice-ctl" and not opened.done():
             opened.set_result(channel)
 
     await phone.setRemoteDescription(RTCSessionDescription(**offer))
@@ -37,7 +39,7 @@ async def _connect(transport: RTCTransport) -> tuple[RTCPeerConnection, object]:
     await transport.accept_answer({"sdp": phone.localDescription.sdp,
                                    "type": phone.localDescription.type})
     await asyncio.wait_for(opened, timeout=10)
-    return phone, channels["c"]
+    return phone, channels.get("phice", channels["phice-ctl"])
 
 
 @pytest.fixture
@@ -385,3 +387,39 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
             await phone.close()
         if rt.rtc:
             await rt.rtc.close()
+
+
+async def test_the_theme_goes_over_the_reliable_channel(transport):
+    """The theme is about 12 KB, which fragments across nine SCTP chunks. On the
+    lossy channel losing any one of them discarded the whole message, and the
+    page rendered unstyled buttons on a black background with nothing to
+    indicate why. Sensor packets stay lossy; anything that must arrive does not."""
+    got: dict[str, list] = {"phice": [], "phice-ctl": []}
+    phone = RTCPeerConnection(configuration=_no_stun())
+    ready = asyncio.get_running_loop().create_future()
+
+    @phone.on("datachannel")
+    def on_channel(channel):
+        @channel.on("message")
+        def on_message(msg):
+            got[channel.label].append(json.loads(msg)["t"])
+            if {"layout", "theme", "state"} <= set(got["phice-ctl"]) and not ready.done():
+                ready.set_result(True)
+
+    offer = await transport.create_offer()
+    labels = [ln.split(":")[-1] for ln in offer["sdp"].splitlines() if "webrtc-datachannel" in ln]
+    await phone.setRemoteDescription(RTCSessionDescription(**offer))
+    await phone.setLocalDescription(await phone.createAnswer())
+    await gather_complete(phone)
+    await transport.accept_answer({"sdp": phone.localDescription.sdp,
+                                   "type": phone.localDescription.type})
+    try:
+        await asyncio.wait_for(ready, timeout=10)
+        assert not got["phice"], f"the lossy channel must carry no control traffic: {got}"
+        assert transport.ctl.ordered, "control must be ordered"
+        assert transport.ctl.maxRetransmits is None, "control must not give up on a chunk"
+        assert transport.channel.maxRetransmits == 0, "sensor packets stay lossy"
+    finally:
+        await phone.close()
+        await transport.close()
+        assert labels is not None

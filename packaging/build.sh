@@ -9,14 +9,16 @@ uv run pytest -q
 echo "==> cleaning previous build"
 rm -rf build dist
 
+# Before the freeze, not after: Spotlight indexes files as they appear, and a
+# marker written once the bundle already exists is too late to stop it. Without
+# this the user gets two identical "Phice.app" results and no way to tell which
+# one is installed.
+mkdir -p dist && touch dist/.metadata_never_index
+
 echo "==> freezing"
 uv run pyinstaller packaging/phice.spec --noconfirm --log-level WARN
 
 test -d dist/Phice.app || { echo "build produced no bundle"; exit 1; }
-
-# Spotlight would otherwise index the build output too, leaving the user with two
-# Phice.app results and no way to tell which one is installed.
-touch dist/.metadata_never_index
 
 IDENTITY="${PHICE_SIGN_IDENTITY:-Phice Self Signed}"
 if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then

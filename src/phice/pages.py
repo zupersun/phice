@@ -222,6 +222,7 @@ try {
   <span id="task">Getting ready\u2026</span>
   <span id="hint"></span>
   <span id="bar"><i></i></span>
+  <button id="quit" class="secondary">Stop</button>
 </div>
 
 <div id="done">
@@ -231,6 +232,7 @@ try {
     <div id="results"></div>
     <button id="apply">Use these settings</button>
     <button id="again" class="secondary">Run it again</button>
+    <button id="close" class="secondary">Close</button>
   </div>
 </div>
 
@@ -290,6 +292,13 @@ document.getElementById("again").onclick = async () => {
   await fetch("/calibrate/start");
   delete body.dataset.done;
 };
+// Borderless and full screen, so there is no title bar to close. Escape and a
+// visible button are the only ways out; leaving someone stuck behind a window
+// covering their whole display would be unforgivable.
+const stop = async () => { await fetch("/calibrate/cancel"); };
+document.getElementById("quit").onclick = stop;
+document.getElementById("close").onclick = stop;
+window.addEventListener("keydown", (ev) => { if (ev.key === "Escape") stop(); });
 poll();
 setInterval(poll, 120);
 </script>
