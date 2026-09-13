@@ -89,7 +89,7 @@ try {
   <div class="row"><span class="dot" id="d-acc"></span>
     <span class="what">Permissions</span><span class="val" id="v-acc">?</span></div>
   <div class="row"><span class="dot" id="d-conn"></span>
-    <span class="what">Phone connected</span><span class="val" id="v-conn">?</span></div>
+    <span class="what">Connection</span><span class="val" id="v-conn">?</span></div>
   <div class="row"><span class="dot" id="d-ptr"></span>
     <span class="what">Pointer</span><span class="val" id="v-ptr">?</span></div>
   <p class="note" id="stale" hidden>The phone is showing a cached copy of the
@@ -131,7 +131,7 @@ async function refresh() {
     acc.textContent = d.accessibility ? "granted" : "not granted";
     dot(document.getElementById("d-acc"), d.accessibility ? "ok" : "bad");
     document.getElementById("grant").hidden = !!d.accessibility;
-    document.getElementById("v-conn").textContent = d.connected ? "yes" : "no";
+    document.getElementById("v-conn").textContent = d.connected ? "on" : "off";
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
     document.getElementById("stale").hidden = !d.client_stale;
