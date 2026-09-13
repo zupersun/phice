@@ -161,9 +161,15 @@ class RTCTransport:
             # done it; leaving it out here made every button look dead even
             # though the engine was reacting.
             self.engine.on_change = self.notify_state
-            ctl.send(layout_message(json.loads(self.layout_json)))
-            ctl.send(theme_message(self.theme_css))
-            self.notify_state()
+            self._push_setup(ctl)
+            # Once more after a beat. The Mac sends the instant its own end
+            # opens, which can be before the page has attached its listener --
+            # and a message dispatched to nobody is gone, with no error at
+            # either end. A phone that got everything simply renders it again;
+            # one that missed the theme stops showing unstyled buttons and a
+            # dead status light.
+            asyncio.get_event_loop().call_later(
+                1.2, lambda: self._push_setup(ctl, again=True))
             if self._tick is None:
                 self._tick = asyncio.ensure_future(self._tick_loop())
 
@@ -230,6 +236,19 @@ class RTCTransport:
             if self.client_stale:
                 log.warning("the phone is running client %s but this Mac ships %s: it has "
                             "a cached copy of the page", got or "(unversioned)", want)
+
+    def _push_setup(self, ctl: RTCDataChannel, again: bool = False) -> None:
+        """Everything the page needs to draw itself: layout, theme, status."""
+        if ctl.readyState != "open":
+            return
+        try:
+            ctl.send(layout_message(json.loads(self.layout_json)))
+            ctl.send(theme_message(self.theme_css))
+            self.notify_state()
+            if again:
+                log.debug("re-sent layout and theme")
+        except Exception:
+            log.warning("could not push the layout and theme", exc_info=True)
 
     def notify_state(self) -> None:
         """Tell the phone what the engine is doing.

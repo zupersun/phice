@@ -487,3 +487,36 @@ async def test_an_edited_preset_survives_switching_away_and_back(tmp_path):
     rt.set_layout("standard")
     rt.set_layout("one-handed")
     assert _json.loads(preset.read_text())["buttons"][0]["x"] == 11
+
+
+async def test_the_layout_and_theme_are_sent_again_after_a_moment(transport):
+    """The Mac sends the instant its own end opens, which can be before the page
+    has attached a listener -- and a message dispatched to nobody is gone, with
+    no error at either end. One repeat turns a lost theme from a dead status
+    light and unstyled buttons into a half-second of them."""
+    seen: list[str] = []
+    phone = RTCPeerConnection(configuration=_no_stun())
+
+    @phone.on("datachannel")
+    def on_channel(channel):
+        @channel.on("message")
+        def on_message(msg):
+            if channel.label == "phice-ctl":
+                seen.append(json.loads(msg)["t"])
+
+    offer = await transport.create_offer()
+    await phone.setRemoteDescription(RTCSessionDescription(**offer))
+    await phone.setLocalDescription(await phone.createAnswer())
+    await gather_complete(phone)
+    await transport.accept_answer({"sdp": phone.localDescription.sdp,
+                                   "type": phone.localDescription.type})
+    try:
+        for _ in range(40):
+            if seen.count("theme") >= 2:
+                break
+            await asyncio.sleep(0.1)
+        assert seen.count("layout") >= 2, f"layout sent once only: {seen}"
+        assert seen.count("theme") >= 2, f"theme sent once only: {seen}"
+    finally:
+        await phone.close()
+        await transport.close()

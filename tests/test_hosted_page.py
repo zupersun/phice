@@ -37,9 +37,13 @@ def test_the_pairing_flow_and_the_engine_phase_use_separate_attributes(html, js)
     wiped out whichever pairing screen was showing."""
     assert 'data-screen="pair"' in html
     assert "dataset.screen" in js
-    # data-state is written only from the Mac's status message.
-    writes = [ln.strip() for ln in js.splitlines() if "dataset.state" in ln]
-    assert len(writes) == 1 and "msg.phase" in writes[0], writes
+    # data-state is written only from the Mac's status message. Assert that of
+    # every assignment, rather than counting mentions: reading it to compare is
+    # fine, and a line count made an ordinary guard look like a violation.
+    writes = [ln.strip() for ln in js.splitlines()
+              if "dataset.state =" in ln or "dataset.state=" in ln]
+    assert writes, "nothing sets data-state at all"
+    assert all("msg.phase" in ln for ln in writes), writes
 
 
 def test_every_screen_the_script_selects_is_stylable(html, js):
