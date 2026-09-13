@@ -21,8 +21,10 @@ from aiortc import (
 )
 
 from .engine import PointerEngine
+from .paths import client_version
 from .protocol import (
     Bye,
+    ClientLog,
     Hello,
     Ping,
     ProtocolError,
@@ -213,11 +215,22 @@ class RTCTransport:
             reply.send(pong_message())
         elif isinstance(parsed, Bye):
             self.engine.disconnected()
+        elif isinstance(parsed, ClientLog):
+            # Safari's console cannot be reached from here, so this is the only
+            # way the page can say what went wrong on it.
+            log.warning("phone says: %s", parsed.msg)
         elif isinstance(parsed, Hello):
             # Pairing already happened out of band, via the code. The hello
-            # only reports what the phone can do.
+            # only reports what the phone can do, and which client it is.
             self.client_name = parsed.name
+            self.client_caps = parsed.caps
             log.info("phone connected: %s (caps: %s)", parsed.name, parsed.caps or "none")
+            want = client_version()
+            got = next((c[1:] for c in parsed.caps.split(",") if c.startswith("v")), "")
+            self.client_stale = bool(want) and got != want
+            if self.client_stale:
+                log.warning("the phone is running client %s but this Mac ships %s: it has "
+                            "a cached copy of the page", got or "(unversioned)", want)
 
     def notify_state(self) -> None:
         """Tell the phone what the engine is doing.
