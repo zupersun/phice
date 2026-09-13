@@ -73,10 +73,16 @@ def default_plan() -> list[Dot]:
     rather than average.
     """
     plan = [Dot(0.5, 0.5, "Start here")]
-    plan += [Dot(0.08, 0.5), Dot(0.92, 0.5)]
+    #: Wide first, because the fit is driven by the spread of angles: a pair of
+    #: aims close together divides a small pixel distance by a small rotation,
+    #: and the noise in each aim swamps both. The mid ring adds pairs at a second
+    #: scale, which is what tells a straight line from a curve.
+    plan += [Dot(0.06, 0.5), Dot(0.94, 0.5)]
     plan.append(Dot(0.5, 0.5, "Back to the middle"))
-    plan += [Dot(0.5, 0.08), Dot(0.5, 0.92)]
-    plan += [Dot(0.1, 0.12), Dot(0.9, 0.12), Dot(0.9, 0.88), Dot(0.1, 0.88)]
+    plan += [Dot(0.5, 0.06), Dot(0.5, 0.94)]
+    plan += [Dot(0.08, 0.1), Dot(0.92, 0.1), Dot(0.92, 0.9), Dot(0.08, 0.9)]
+    plan.append(Dot(0.5, 0.5, "Halfway"))
+    plan += [Dot(0.27, 0.28), Dot(0.73, 0.28), Dot(0.73, 0.72), Dot(0.27, 0.72)]
     plan.append(Dot(0.5, 0.5, "Last one"))
     return plan
 

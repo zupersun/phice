@@ -106,5 +106,17 @@
     </div>
   </div>
 
-  <script src="/app/app.js?v=7"></script>
+  <!-- Loaded through a bootstrap with a cache-busting query rather than a plain
+       src. iOS caches this page aggressively -- a Home Screen web app has its own
+       store and does not revalidate reliably -- so a phone can keep running a
+       client from days ago while the Mac has moved on, and every symptom of that
+       looks like a transport bug. The file is 20KB; fetching it fresh costs
+       nothing next to the hours that skew has cost. -->
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      s.src = "/app/app.js?t=" + Date.now();
+      document.body.appendChild(s);
+    })();
+  </script>
 </body>

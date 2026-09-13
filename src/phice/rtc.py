@@ -98,6 +98,8 @@ class RTCTransport:
         self.bad_frames = 0
         self.last_error = ""
         self.client_name = ""
+        self.client_caps = ""
+        self.client_stale = False
         self.hz = 0.0
 
     # ----- signaling --------------------------------------------------------

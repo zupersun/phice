@@ -256,6 +256,7 @@ class Runtime:
                         "state": self.rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
         d["calibrated"] = self._calibrated_when()
+        d["client_stale"] = bool(self.rtc and self.rtc.client_stale)
         d["phone_url"] = f"{self.config.signaling_url}/app"
         d["transport"] = self.config.transport
         d["sensor_hz"] = round(self.rtc.hz if self.rtc and self.rtc.is_open

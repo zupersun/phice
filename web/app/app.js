@@ -7,6 +7,8 @@
 (() => {
   "use strict";
 
+  const CLIENT_VERSION = "8";
+
   const el = {
     body: document.body,
     haptic: document.getElementById("haptic"),
@@ -248,7 +250,7 @@
       // Pairing already happened through the signaling code, so this hello exists
       // only to tell the Mac what this phone can do. Haptics have been guessed at
       // twice; the Mac logs this instead.
-      ctl.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() }));
+      ctl.send(JSON.stringify({ t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() + ",v" + CLIENT_VERSION }));
       adopt({
         send: (text) => data.send(text),          // sensor packets: lossy is fine
         sendControl: (text) => ctl.send(text),    // must arrive
@@ -401,7 +403,7 @@
       (r.status === "rejected" ? "threw:" + (r.reason && r.reason.name) : r.value)).join(","));
     if (state.channel && state.channel.open) {
       state.channel.sendControl(JSON.stringify({ t: "hello", ver: 1, name: "iPhone",
-                                                 caps: hapticCaps() + "," + state.perm }));
+                                                 caps: hapticCaps() + ",v" + CLIENT_VERSION + "," + state.perm }));
     }
     // iOS resolves to "denied" WITHOUT throwing when Motion & Orientation Access
     // is off, or when this site was refused once before. Ignoring the result is

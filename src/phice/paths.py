@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import time
@@ -26,6 +27,21 @@ PACKAGE_DIR = resource_dir()
 DEFAULTS_DIR = PACKAGE_DIR / "defaults"
 WEB_DIR = PACKAGE_DIR / "web"
 UI_FILES = ("layout.json", "theme.css", "panel.css", "calibrate.css")
+
+
+def client_version() -> str:
+    """The version of the phone client this Mac ships.
+
+    Read from the shipped app.js rather than tracked separately: the Mac and the
+    hosted page are the same file, so there is nothing to keep in step by hand,
+    and a phone reporting anything else is running a stale cached copy.
+    """
+    try:
+        src = (resource_dir() / "web" / "app.js").read_text()
+    except OSError:
+        return ""
+    m = re.search(r'CLIENT_VERSION\s*=\s*"([^"]+)"', src)
+    return m.group(1) if m else ""
 
 
 def default_config_dir() -> Path:

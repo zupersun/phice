@@ -33,12 +33,6 @@
   initial-value: 0;
 }
 
-@property --demo-hold {
-  syntax: "<number>";
-  inherits: false;
-  initial-value: 0;
-}
-
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -56,14 +50,39 @@ body {
 
 /* The target. Positioned from --tx/--ty, which the script sets as plain
    fractions of the window; the size, colour and pulse are decided here. */
+/* One definition of an aim dot, used by the real target and by the preview. They
+   had separate rules and drifted apart, which made the preview a promise the
+   test did not keep. */
+.aim {
+  position: absolute;
+  width: var(--aim-size, 88px); height: var(--aim-size, 88px);
+  margin: calc(var(--aim-size, 88px) / -2) 0 0 calc(var(--aim-size, 88px) / -2);
+  border-radius: 50%;
+  background: var(--ring);
+  border: 2px solid var(--target);
+}
+.aim::after {
+  content: "";
+  position: absolute; inset: 38%;
+  border-radius: 50%;
+  background: var(--target);
+  transition: background 140ms linear, transform 180ms ease-out;
+}
+.aim::before {
+  content: "";
+  position: absolute; inset: calc(var(--aim-size, 88px) / -12);
+  border-radius: 50%;
+  background: conic-gradient(var(--target-hit) calc(var(--hold, 0) * 360deg - 2deg),
+                             transparent calc(var(--hold, 0) * 360deg));
+  -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48%);
+          mask: radial-gradient(circle, transparent 0 47%, #000 48%);
+  transition: --hold var(--hold-ms, 90ms) linear;
+}
+
 #target {
   position: fixed;
   left: calc(var(--tx, 0.5) * 100%);
   top: calc(var(--ty, 0.5) * 100%);
-  width: 88px; height: 88px; margin: -44px 0 0 -44px;
-  border-radius: 50%;
-  background: var(--ring);
-  border: 2px solid var(--target);
   transition: left 220ms ease-out, top 220ms ease-out,
               background 140ms linear, border-color 140ms linear;
 }
@@ -80,14 +99,6 @@ body {
   transition: --hold var(--hold-ms, 90ms) linear;
   -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48%);
           mask: radial-gradient(circle, transparent 0 47%, #000 48%);
-}
-#target::after {
-  content: "";
-  position: absolute;
-  inset: 38%;
-  border-radius: 50%;
-  background: var(--target);
-  transition: background 140ms linear, transform 180ms ease-out;
 }
 /* Inside the target, waiting out the dwell. */
 body[data-inside="1"] #target { border-color: var(--target-hit); }
@@ -158,15 +169,15 @@ body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
   100%      { left: 74%; top: 68%; opacity: 0; }
 }
 @keyframes demo-fill {
-  0%, 12%   { --demo-hold: 0; }
-  40%, 48%  { --demo-hold: 1; }
-  52%, 62%  { --demo-hold: 0; }
-  90%, 100% { --demo-hold: 1; }
+  0%, 12%   { --hold: 0; }
+  40%, 48%  { --hold: 1; }
+  52%, 62%  { --hold: 0; }
+  90%, 100% { --hold: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #demo .dot, #demo .dot::before { animation: none; }
-  #demo .dot { left: 50%; top: 50%; opacity: 1; }
-  #demo .dot::before { --demo-hold: 0.65; }
+  .demo-aim, .demo-aim::before { animation: none; }
+  .demo-aim { left: 50%; top: 50%; opacity: 1; }
+  .demo-aim::before { --hold: 0.65; }
 }
 
 #intro .warn {

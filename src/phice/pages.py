@@ -87,11 +87,13 @@ try {
 
 <div class="card">
   <div class="row"><span class="dot" id="d-acc"></span>
-    <span class="what">Can move the cursor</span><span class="val" id="v-acc">?</span></div>
+    <span class="what">Permissions</span><span class="val" id="v-acc">?</span></div>
   <div class="row"><span class="dot" id="d-conn"></span>
     <span class="what">Phone connected</span><span class="val" id="v-conn">?</span></div>
   <div class="row"><span class="dot" id="d-ptr"></span>
     <span class="what">Pointer</span><span class="val" id="v-ptr">?</span></div>
+  <p class="note" id="stale" hidden>The phone is showing a cached copy of the
+     page. Close the tab and open the link again.</p>
   <button id="grant">Grant permission\u2026</button>
 </div>
 
@@ -132,6 +134,7 @@ async function refresh() {
     document.getElementById("v-conn").textContent = d.connected ? "yes" : "no";
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
+    document.getElementById("stale").hidden = !d.client_stale;
     document.getElementById("calibrated").textContent =
       d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
@@ -231,7 +234,7 @@ try {
 } catch (e) { /* falls back to the stylesheet's own default */ }
 </script>
 
-<div id="target"></div>
+<div id="target" class="aim"></div>
 
 <div id="intro">
   <div>
@@ -242,7 +245,7 @@ try {
 
     <!-- Shows what is about to happen, on a loop. The animation is entirely in
          calibrate.css; this is only the stage it plays on. -->
-    <div id="demo" aria-hidden="true"><span class="dot"></span></div>
+    <div id="demo" aria-hidden="true"><span class="aim demo-aim"></span></div>
 
     <div id="connect">
       <div class="pair">
