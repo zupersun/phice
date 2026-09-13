@@ -17,7 +17,7 @@ from .cursor_backend import CursorBackend, clamp_to_displays, display_containing
 from .filters import OneEuroFilter
 from .mapping import absorb_overshoot, accel_multiplier, expo_curve, unwrap_yaw
 from .orientation import yaw_pitch
-from .protocol import SensorPacket
+from .protocol import SensorPacket, state_message
 
 
 class Phase(StrEnum):
@@ -142,6 +142,23 @@ class PointerEngine:
             hold_s = self._cfg.recenter_hold_ms / 1000.0
             return max(0.0, min(1.0, (now - self._hold_started) / hold_s))
         return 1.0 if self._phase == Phase.RECENTER_HELD else 0.0
+
+    def state_message(self, accessibility: bool) -> str:
+        """The status frame the phone draws itself from.
+
+        Built here rather than in each transport: it was written out twice,
+        identically, and every field added to it had to be added in both places
+        or the two transports quietly disagreed.
+        """
+        snap = self.snapshot()
+        cfg = self._cfg
+        return state_message(conn=True, power=snap.power, phase=snap.phase.value,
+                             recenter=snap.recenter, idle_hz=cfg.idle_hz,
+                             accessibility=accessibility,
+                             ui={"haptics": cfg.ui.haptics,
+                                 "keep_awake": cfg.ui.keep_awake,
+                                 "appearance": cfg.ui.appearance,
+                                 "recenter_ms": cfg.recenter_hold_ms})
 
     def snapshot(self) -> Snapshot:
         return Snapshot(phase=self._phase, power=self._phase in ACTIVE_PHASES,

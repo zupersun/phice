@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import calibrate, webrtc_session
+from . import calibrate, signaling
 from .certs import (
     CertError,
     CertPaths,
@@ -123,7 +123,7 @@ class Runtime:
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
-        self.pairing = webrtc_session.Pairing()
+        self.pairing = signaling.Pairing()
         self._panel_requested = False
         self._panel_url: tuple[str, bool] | None = None
         self._close_calibration = False
@@ -474,7 +474,7 @@ class Runtime:
             self.http_port = await asyncio.to_thread(self.setup.start)
             log.info("webrtc transport; pairing code at http://127.0.0.1:%d/pair",
                      self.http_port)
-            await asyncio.gather(webrtc_session.run(self), self._watch_config(),
+            await asyncio.gather(signaling.run(self), self._watch_config(),
                                  self._status_loop())
             return
         if self.config.cert_mode == "tailscale":

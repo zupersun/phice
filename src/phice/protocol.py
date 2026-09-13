@@ -202,10 +202,6 @@ def layout_message(layout_dict: dict) -> str:
     return json.dumps({"t": "layout", **layout_dict})
 
 
-def theme_changed_message() -> str:
-    return json.dumps({"t": "theme_changed"})
-
-
 def theme_message(css: str) -> str:
     """Push the stylesheet itself. The hosted page has no HTTP route back to the
     Mac, so it receives the CSS rather than a hint to re-fetch it."""

@@ -108,9 +108,6 @@ class Calibration:
     def dot(self) -> Dot | None:
         return None if self.index >= len(self.plan) else self.plan[self.index]
 
-    def dot_px(self, dot: Dot) -> tuple[float, float]:
-        return dot.x * self.width, dot.y * self.height
-
     def state(self) -> dict:
         d = self.dot
         if d is None:

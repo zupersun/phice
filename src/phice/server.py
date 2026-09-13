@@ -31,7 +31,6 @@ from .protocol import (
     layout_message,
     parse_client_message,
     pong_message,
-    state_message,
     theme_message,
     welcome_message,
 )
@@ -241,16 +240,8 @@ class PhiceServer:
         conn = st.client
         if conn is None:
             return
-        snap = st.engine.snapshot()
-        cfg = st.engine.config
-        msg = state_message(conn=True, power=snap.power, phase=snap.phase.value,
-                            recenter=snap.recenter, idle_hz=cfg.idle_hz,
-                            accessibility=st.accessibility,
-                            ui={"haptics": cfg.ui.haptics, "keep_awake": cfg.ui.keep_awake,
-                                "appearance": cfg.ui.appearance,
-                                "recenter_ms": cfg.recenter_hold_ms})
         try:
-            await conn.send(msg)
+            await conn.send(st.engine.state_message(st.accessibility))
         except Exception:
             pass
 

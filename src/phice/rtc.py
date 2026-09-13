@@ -32,7 +32,6 @@ from .protocol import (
     layout_message,
     parse_client_message,
     pong_message,
-    state_message,
     theme_message,
 )
 
@@ -241,16 +240,8 @@ class RTCTransport:
         ch = self.ctl
         if ch is None or ch.readyState != "open":
             return
-        snap = self.engine.snapshot()
-        cfg = self.engine.config
         try:
-            ch.send(state_message(conn=True, power=snap.power, phase=snap.phase.value,
-                                  recenter=snap.recenter, idle_hz=cfg.idle_hz,
-                                  accessibility=self._accessibility(),
-                                  ui={"haptics": cfg.ui.haptics,
-                                      "keep_awake": cfg.ui.keep_awake,
-                                      "appearance": cfg.ui.appearance,
-                                      "recenter_ms": cfg.recenter_hold_ms}))
+            ch.send(self.engine.state_message(self._accessibility()))
         except Exception:  # a closing channel must not break an engine transition
             log.debug("state push failed", exc_info=True)
 
