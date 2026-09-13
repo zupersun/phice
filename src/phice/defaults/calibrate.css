@@ -41,14 +41,23 @@ body {
   position: fixed;
   left: calc(var(--tx, 0.5) * 100%);
   top: calc(var(--ty, 0.5) * 100%);
-  width: calc(var(--tr, 40) * 2px);
-  height: calc(var(--tr, 40) * 2px);
-  margin: calc(var(--tr, 40) * -1px) 0 0 calc(var(--tr, 40) * -1px);
+  width: 88px; height: 88px; margin: -44px 0 0 -44px;
   border-radius: 50%;
   background: var(--ring);
   border: 2px solid var(--target);
-  transition: left 160ms ease-out, top 160ms ease-out,
+  transition: left 220ms ease-out, top 220ms ease-out,
               background 140ms linear, border-color 140ms linear;
+}
+/* The hold, drawn as a ring filling clockwise. --hold is 0..1 and nothing else
+   crosses from the script; what that means is decided here. */
+#target::before {
+  content: "";
+  position: absolute; inset: -7px;
+  border-radius: 50%;
+  background: conic-gradient(var(--target-hit) calc(var(--hold, 0) * 360deg),
+                             transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48%);
+          mask: radial-gradient(circle, transparent 0 47%, #000 48%);
 }
 #target::after {
   content: "";
@@ -78,6 +87,10 @@ body[data-started="0"]:not([data-done="1"]) #intro { display: grid; }
 body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
 #intro h1 { font-size: 26px; margin: 0 0 10px; letter-spacing: -0.01em; }
 #intro .lede { color: var(--dim); font-size: 15px; max-width: 46em; margin: 0 0 16px; }
+#intro .warn {
+  color: var(--fg); font-size: 15px; max-width: 46em; margin: 0 0 18px;
+  border-left: 3px solid var(--warn, var(--target)); padding-left: 14px;
+}
 #intro .steps { color: var(--dim); font-size: 15px; max-width: 46em;
                 margin: 0 0 22px; padding-left: 22px; }
 #intro .steps li { margin: 9px 0; }

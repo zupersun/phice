@@ -247,24 +247,29 @@ takes an `id`, a `role`, `x`/`y`/`w`/`h`, and optionally a `label`, an `icon` pa
 ### Calibrate it
 
 Sensitivity is not describable in words, so do not try. **Calibrate pointer…** in
-the menu bar (or `uv run phice calibrate`) runs a two-minute target-tracking task
-and reads the settings off what you actually did.
+the app window (or `uv run phice calibrate`) shows ten dots, one at a time. Point
+the phone at each and hold still.
 
-The core of it is arithmetic rather than search: put a target 400 px away, record
-that the phone turned 10° to reach it, and the gain that would have landed exactly
-on it is 40 px/deg. Four distances give the expo curve too, since expo is precisely
-how that ratio changes with distance, and horizontal and vertical are fitted
-separately because pitch and yaw do not feel alike in the hand. Two stillness
-trials measure hand tremor directly.
+**There is no cursor during it, deliberately.** The obvious design — show a
+target, let you drive the cursor onto it, measure the rotation you used — is
+circular. At gain G, covering D pixels *requires* turning D/G degrees, so you
+turn until the cursor arrives and the measurement comes back as D / (D/G) = G:
+the setting it already had. What it really records is how you correct a cursor,
+which is not how anyone points at a thing.
 
-Nothing changes until you press **Use these settings**, and every trial is saved
-next to the verdict in `sessions/calibration.json`.
+Pointing with no cursor measures the real quantity instead: how many pixels of
+your screen one degree of wrist rotation covers, at the distance you actually sit
+and in the grip you actually use. Nothing in that loop depends on the settings
+being fitted, so the answer cannot echo them back. Tremor is measured the same
+way, in degrees of phone rather than pixels of cursor.
 
-> Why not simply replay a recording against different settings and pick the best?
-> Because that assumes you would have moved identically under settings you never
-> experienced, and you would not — you correct against what the cursor is doing.
-> Only the filter is fitted that way here, where it is fair: filtering is
-> post-processing of an input that does not depend on the cursor.
+It also switches `expo` off, and that is not an oversight: pointing is geometry,
+and one degree covers the same distance wherever you point. A curve on top is a
+preference about feel — turn it back up by hand if you want flicks amplified.
+
+Nothing changes until you press **Use these settings**, and every aim is saved
+next to the verdict in `sessions/calibration.json`, so a correction to the
+fitting can be re-run against data you already gave it.
 
 ### By hand
 

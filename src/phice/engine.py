@@ -81,10 +81,12 @@ class PointerEngine:
         self._f_pitch = OneEuroFilter()
         self._reset_motion()
         self.on_change: Callable[[], None] | None = None
-        #: Raw look direction, for calibration. The unfiltered angles are what
-        #: calibration needs: it measures how far the phone actually turned,
-        #: which must not depend on the settings being fitted.
-        self.on_look: Callable[[float, float, float], None] | None = None
+        #: Raw look direction, for calibration. Called for every packet that
+        #: carries orientation, whatever the pointer is doing -- calibration runs
+        #: with the pointer switched off, because someone correcting a cursor is
+        #: not pointing, and measuring through that loop just returns the gain it
+        #: started with.
+        self.on_packet: Callable[[float, float, float], None] | None = None
 
     # ----- external control -------------------------------------------------
 
@@ -106,6 +108,10 @@ class PointerEngine:
         for bid in list(self._buttons):
             if bid not in self._roles:
                 del self._buttons[bid]
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
 
     def set_enabled(self, enabled: bool) -> None:
         if not enabled and self._phase in ACTIVE_PHASES:
@@ -144,6 +150,11 @@ class PointerEngine:
     # ----- inputs -----------------------------------------------------------
 
     def handle(self, p: SensorPacket) -> None:
+        # Before the phase check: calibration needs the look direction while the
+        # pointer is deliberately switched off.
+        if self.on_packet is not None and p.has_orientation:
+            self.on_packet(self._clock(),
+                           *yaw_pitch(p.alpha, p.beta, p.gamma or 0.0))  # type: ignore[arg-type]
         if self._phase == Phase.DISCONNECTED or p.seq <= self._last_seq:
             return
         self._last_seq = p.seq
@@ -368,8 +379,6 @@ class PointerEngine:
         if not p.has_orientation:
             return
         yaw, pitch = yaw_pitch(p.alpha, p.beta, p.gamma or 0.0)  # type: ignore[arg-type]
-        if self.on_look:
-            self.on_look(now, yaw, pitch)
         self._yaw_cont = unwrap_yaw(self._yaw_raw_prev, yaw, self._yaw_cont)
         self._yaw_raw_prev = yaw
         dt = 0.0

@@ -1,218 +1,155 @@
-"""Fit the pointer to the person holding the phone, by measuring rather than guessing.
+"""Fit the pointer by watching where someone naturally points, with no cursor.
 
-Sensitivity cannot be described in words -- "slightly too fast" is not a number --
-so this runs a short target-tracking task and reads the answer off the data.
+The obvious design is to show a target, let the person drive the cursor onto it,
+and measure how far they turned the phone. It does not work, and not by a little:
+it is circular. At gain G, covering D pixels *requires* turning D/G degrees, so
+the person turns until the cursor arrives and the measurement comes back as
+D / (D/G) = G -- the setting it already had, dressed up as a discovery. What it
+really records is correction behaviour, and nudging a cursor into a circle is not
+how anyone points at a thing.
 
-The central measurement is deliberately simple. Put a target 800 px away, watch
-how far the phone actually rotated to reach it, and the gain that would have
-landed exactly on it is arithmetic: 800 / 22deg = 36 px/deg. No search, no
-scoring function, and no assumption that the person would have behaved the same
-way under different settings -- which is the flaw in tuning a closed loop by
-replaying it. Repeating that across a range of distances gives the expo curve
-too, because expo is precisely how the ratio changes with distance.
+So there is no cursor here. Dots appear, the person points the phone at each one
+as they would point at anything, and holds still. That measures the real
+quantity: how many pixels of screen one degree of wrist rotation covers, at the
+distance they actually sit and in the grip they actually use. Nothing in the loop
+depends on the settings being fitted, so the answer cannot echo them back.
 
-Only the filter is fitted by replay, where it is defensible: filtering is
-post-processing of an input stream that does not depend on what the cursor did.
+Tremor is measured the same way -- in degrees per second of the phone, not pixels
+of cursor travel -- so it too is independent of the gain.
 
-This module is pure. Clock, cursor and screen size are injected, so the whole
-thing is testable without a phone, a display or a single sleep.
+This module is pure. Clock and screen size are injected; the tests need no phone,
+no display and no sleeping.
 """
 from __future__ import annotations
 
 import json
 import math
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 
-#: A trial ends when the cursor has sat inside the target for this long. Long
-#: enough to exclude a fly-through, short enough not to feel like a chore.
-DWELL_S = 0.35
-#: Give up on a target rather than trapping someone who cannot reach it.
-TRIAL_TIMEOUT_S = 12.0
-
-
-class Kind(StrEnum):
-    STILL = "still"      # hold the phone still: measures tremor, fits the filter
-    STEP = "step"        # travel a known distance: measures gain
-    SWEEP = "sweep"      # long and fast: measures the top of the expo curve
+#: The phone counts as aimed once it has been this still for this long. Capturing
+#: on stillness rather than a button press keeps the aim honest: reaching for a
+#: button moves the phone, which is precisely the thing being measured.
+STILL_DPS = 6.0
+SETTLE_S = 0.45
+#: Do not capture before this: the phone is still travelling to the dot, and a
+#: momentary pause on the way is not an aim.
+MIN_AIM_S = 0.6
+#: Give up on a dot rather than trapping someone who cannot hold still enough.
+DOT_TIMEOUT_S = 8.0
 
 
 @dataclass(frozen=True)
-class Trial:
-    kind: Kind
-    #: Target centre in screen fractions, so a plan is resolution independent.
+class Dot:
+    """Somewhere to point, in screen fractions so a plan survives any display."""
+
     x: float
     y: float
-    radius_px: float
-    hold_s: float = 0.0
+    #: Shown to the person. The middle is visited repeatedly, and saying so stops
+    #: it looking as though nothing is happening.
+    note: str = ""
 
 
 @dataclass
-class TrialResult:
-    trial: Trial
-    started: float
-    ended: float
-    #: Where the cursor was when the target appeared, and the target in pixels.
-    from_px: tuple[float, float] = (0.0, 0.0)
-    to_px: tuple[float, float] = (0.0, 0.0)
-    #: Total yaw/pitch the phone actually turned through while reaching it.
-    yaw_deg: float = 0.0
-    pitch_deg: float = 0.0
-    #: Path the cursor travelled. Much longer than the straight line means
-    #: hunting -- overshoot, correction, overshoot.
-    path_px: float = 0.0
+class Aim:
+    """Where the phone was pointing when it settled on a dot."""
+
+    dot: Dot
+    yaw: float
+    pitch: float
+    #: Angular travel per second while holding: the person's tremor in degrees,
+    #: which is the same number whatever the pointer gain happens to be.
+    tremor_dps: float
+    seconds: float
     timed_out: bool = False
 
-    @property
-    def distance_px(self) -> float:
-        return math.dist(self.from_px, self.to_px)
 
-    @property
-    def seconds(self) -> float:
-        return self.ended - self.started
+def default_plan() -> list[Dot]:
+    """Middle, then out to the edges and corners, returning to the middle.
 
-    @property
-    def overshoot(self) -> float:
-        """Path length over straight-line distance. 1.0 is a perfect move."""
-        d = self.distance_px
-        return self.path_px / d if d > 1.0 else 1.0
-
-
-def default_plan() -> list[Trial]:
-    """Stillness first, then distances from a nudge to most of the screen.
-
-    Directions alternate so a habit of always turning one way cannot bias the
-    result, and each distance appears twice: one sample is an anecdote.
+    Every measurement is a difference between two aims, so the spread of dots
+    matters more than their number. Revisiting the middle catches heading drift:
+    phone compasses wander, and a run where the middle moved is one to discard
+    rather than average.
     """
-    trials = [Trial(Kind.STILL, 0.5, 0.5, 44.0, hold_s=4.0)]
-    spread = [0.08, 0.16, 0.28, 0.42]
-    for rep in range(2):
-        for i, frac in enumerate(spread):
-            sign = 1.0 if (i + rep) % 2 == 0 else -1.0
-            trials.append(Trial(Kind.STEP, 0.5 + sign * frac, 0.5, 40.0))
-            trials.append(Trial(Kind.STEP, 0.5, 0.5 + sign * frac * 0.6, 40.0))
-    trials.append(Trial(Kind.STILL, 0.5, 0.5, 44.0, hold_s=4.0))
-    # Alternate strictly: emitting +0.46, -0.46, -0.46, +0.46 put two targets in
-    # the same place, and the second was satisfied before it began -- 38px of
-    # "sweep" that measured nothing.
-    for i in range(4):
-        trials.append(Trial(Kind.SWEEP, 0.5 + (0.46 if i % 2 == 0 else -0.46), 0.5, 56.0))
-    return trials
+    plan = [Dot(0.5, 0.5, "Start here")]
+    plan += [Dot(0.08, 0.5), Dot(0.92, 0.5)]
+    plan.append(Dot(0.5, 0.5, "Back to the middle"))
+    plan += [Dot(0.5, 0.08), Dot(0.5, 0.92)]
+    plan += [Dot(0.1, 0.12), Dot(0.9, 0.12), Dot(0.9, 0.88), Dot(0.1, 0.88)]
+    plan.append(Dot(0.5, 0.5, "Last one"))
+    return plan
 
 
 @dataclass
 class Calibration:
-    """Runs the plan. Feed it packets and cursor positions; it does the rest."""
+    """Runs the plan. Feed it the phone\'s look direction; it does the rest."""
 
     width: int
     height: int
-    plan: list[Trial] = field(default_factory=default_plan)
-    results: list[TrialResult] = field(default_factory=list)
+    plan: list[Dot] = field(default_factory=default_plan)
+    aims: list[Aim] = field(default_factory=list)
     index: int = 0
-    _current: TrialResult | None = None
-    _inside_since: float | None = None
-    _last_cursor: tuple[float, float] | None = None
-    _last_yaw: float | None = None
-    _last_pitch: float | None = None
     finished: bool = False
-
-    # ----- geometry ---------------------------------------------------------
-
-    def target_px(self, trial: Trial) -> tuple[float, float]:
-        return trial.x * self.width, trial.y * self.height
+    _started: float | None = None
+    _still_since: float | None = None
+    _last: tuple[float, float] | None = None
+    _last_t: float | None = None
+    _travel: float = 0.0
+    _held: float = 0.0
 
     @property
-    def trial(self) -> Trial | None:
+    def dot(self) -> Dot | None:
         return None if self.index >= len(self.plan) else self.plan[self.index]
 
-    @property
-    def in_trial(self) -> bool:
-        return self._current is not None
-
-    #: What each kind of trial asks of the person, and what it is for. Shown on
-    #: screen: someone told to "hold still" while a cursor drifts will correct
-    #: it out of sheer instinct, and that is precisely the measurement ruined.
-    GUIDANCE = {
-        Kind.STILL: ("Hold the phone still",
-                     "Do not correct the cursor, even if it drifts. "
-                     "This is measuring your hand, not your aim."),
-        Kind.STEP: ("Move the cursor onto the dot and hold it there",
-                    "Go at a comfortable pace. How far you turn the phone to "
-                    "cover this distance is the measurement."),
-        Kind.SWEEP: ("Sweep to it fast, then settle",
-                     "These set the far end of the curve, where a flick has to "
-                     "cross the whole screen."),
-    }
+    def dot_px(self, dot: Dot) -> tuple[float, float]:
+        return dot.x * self.width, dot.y * self.height
 
     def state(self) -> dict:
-        """What the calibration window draws. Fractions, not pixels: the page
-        does not need to know the display geometry, only where to put a dot."""
-        t = self.trial
-        if t is None:
+        d = self.dot
+        if d is None:
             return {"done": True, "index": self.index, "total": len(self.plan)}
-        same = [i for i, x in enumerate(self.plan) if x.kind is t.kind]
-        task, why = self.GUIDANCE[t.kind]
         return {"done": False, "index": self.index, "total": len(self.plan),
-                "kind": t.kind.value, "x": t.x, "y": t.y, "radius": t.radius_px,
-                "hold": t.hold_s, "task": task, "why": why,
-                "nth": same.index(self.index) + 1, "of": len(same),
-                "inside": self._inside_since is not None}
+                "x": d.x, "y": d.y, "note": d.note,
+                "settling": self._still_since is not None,
+                # 0..1 while the phone holds steady, so the dot can show a ring
+                # filling rather than capturing with no warning at all.
+                "progress": 0.0 if self._still_since is None
+                            else min(1.0, self._held / SETTLE_S)}
 
-    # ----- the run ----------------------------------------------------------
-
-    def begin(self, now: float, cursor: tuple[float, float]) -> None:
-        t = self.trial
-        if t is None or self._current is not None:
+    def observe(self, now: float, yaw: float, pitch: float) -> None:
+        """One sample of where the phone is pointing."""
+        if self.finished or self.dot is None:
             return
-        self._current = TrialResult(trial=t, started=now, ended=now,
-                                    from_px=cursor, to_px=self.target_px(t))
-        self._inside_since = None
-        self._last_cursor = cursor
-        self._last_yaw = self._last_pitch = None
-
-    def observe(self, now: float, cursor: tuple[float, float],
-                yaw: float | None, pitch: float | None) -> None:
-        """One sample. Accumulates the phone's rotation and the cursor's path."""
-        cur = self._current
-        if cur is None or self.finished:
+        if self._started is None:
+            self._started, self._last, self._last_t = now, (yaw, pitch), now
+            self._travel = 0.0
             return
-        if self._last_cursor is not None:
-            cur.path_px += math.dist(cursor, self._last_cursor)
-        self._last_cursor = cursor
-        if yaw is not None:
-            if self._last_yaw is not None:
-                cur.yaw_deg += abs(_wrapped(yaw - self._last_yaw))
-            self._last_yaw = yaw
-        if pitch is not None:
-            if self._last_pitch is not None:
-                cur.pitch_deg += abs(pitch - self._last_pitch)
-            self._last_pitch = pitch
+        moved = math.hypot(_wrapped(yaw - self._last[0]), pitch - self._last[1])
+        dt = max(1e-3, now - (self._last_t or now))
+        self._last, self._last_t = (yaw, pitch), now
+        self._travel += moved
 
-        t = cur.trial
-        if t.kind is Kind.STILL:
-            if now - cur.started >= t.hold_s:
-                self._finish(now)
-            return
-        if math.dist(cursor, cur.to_px) <= t.radius_px:
-            if self._inside_since is None:
-                self._inside_since = now
-            elif now - self._inside_since >= DWELL_S:
-                self._finish(now)
+        if moved / dt < STILL_DPS and now - self._started >= MIN_AIM_S:
+            if self._still_since is None:
+                self._still_since, self._held, self._travel = now, 0.0, 0.0
+            else:
+                self._held = now - self._still_since
+            if self._held >= SETTLE_S:
+                self._capture(now, yaw, pitch)
+                return
         else:
-            self._inside_since = None
-        if now - cur.started > TRIAL_TIMEOUT_S:
-            cur.timed_out = True
-            self._finish(now)
+            self._still_since, self._held = None, 0.0
+        if now - self._started > DOT_TIMEOUT_S:
+            self._capture(now, yaw, pitch, timed_out=True)
 
-    def _finish(self, now: float) -> None:
-        cur = self._current
-        if cur is None:
-            return
-        cur.ended = now
-        self.results.append(cur)
-        self._current = None
+    def _capture(self, now: float, yaw: float, pitch: float, timed_out: bool = False) -> None:
+        self.aims.append(Aim(dot=self.dot, yaw=yaw, pitch=pitch,
+                             tremor_dps=self._travel / max(1e-3, self._held),
+                             seconds=now - (self._started or now), timed_out=timed_out))
         self.index += 1
+        self._started = self._still_since = self._last_t = None
+        self._held = self._travel = 0.0
         self.finished = self.index >= len(self.plan)
 
 
@@ -221,107 +158,84 @@ def _wrapped(delta: float) -> float:
     return (delta + 180.0) % 360.0 - 180.0
 
 
-# ----- reading the answer off the data --------------------------------------
+# ----- reading the answer off the aims ---------------------------------------
 
-def fit(results: list[TrialResult], current: dict) -> dict:
-    """Turn finished trials into pointer.json settings.
+#: Below these a pair says nothing useful: a handful of pixels over a fraction of
+#: a degree is noise with a large number attached to it.
+MIN_TRAVEL_PX = 120.0
+MIN_TURN_DEG = 2.0
+#: Two aims at the same dot should agree. If the middle moved by more than this
+#: between visits, the heading drifted and the aims share no frame of reference.
+MAX_DRIFT_DEG = 12.0
 
-    Returns the settings that changed, plus the evidence behind each one, so a
-    number can always be traced back to the trials that produced it.
-    """
-    steps = [r for r in results
-             if r.trial.kind in (Kind.STEP, Kind.SWEEP) and not r.timed_out
-             and r.distance_px > 20.0 and r.yaw_deg + r.pitch_deg > 1.0]
-    out: dict = {"samples": len(steps), "evidence": {}}
-    _fit_stillness(results, current, out)
-    if len(steps) < 4:
-        if not out["evidence"]:
-            out["error"] = "too few usable trials to fit anything"
+
+def fit(results: list[Aim], current: dict, width: int, height: int) -> dict:
+    """Turn captured aims into pointer.json settings, with the evidence."""
+    good = [a for a in results if not a.timed_out]
+    out: dict = {"samples": len(good), "evidence": {}}
+    if len(good) < 4:
+        out["error"] = "too few aims to fit anything"
         return out
 
-    # Every trial measures both axes, because every move uses both. Sorting
-    # trials into "horizontal" and "vertical" threw most of them away: a
-    # vertical target sits at screen-centre-x, and the cursor starts wherever
-    # the last target was -- off to one side -- so the displacement reads as
-    # horizontal and eight vertical trials counted as one.
-    gain_x, used_x = _gain_from(steps, axis=0)
-    gain_y, used_y = _gain_from(steps, axis=1)
+    drift = _centre_drift(good)
+    if drift is not None:
+        out["evidence"]["heading drift"] = f"{drift:.1f} deg between visits to the middle"
+        if drift > MAX_DRIFT_DEG:
+            out["error"] = ("the phone heading drifted during the run, so the aims do "
+                            "not share a frame of reference; please run it again")
+            return out
+
+    gain_x, used_x = _gain(good, axis=0, size=width)
+    gain_y, used_y = _gain(good, axis=1, size=height)
     if gain_x:
         out["gain_x_px_per_deg"] = round(gain_x, 1)
-        out["evidence"]["gain_x_px_per_deg"] = f"{used_x} trials with real sideways travel"
+        out["evidence"]["gain_x_px_per_deg"] = f"{used_x} pairs of aims"
     if gain_y:
         out["gain_y_px_per_deg"] = round(gain_y, 1)
-        out["evidence"]["gain_y_px_per_deg"] = f"{used_y} trials with real vertical travel"
+        out["evidence"]["gain_y_px_per_deg"] = f"{used_y} pairs of aims"
 
-    expo = _expo_from(steps)
-    if expo is not None:
-        out["expo"] = round(expo, 2)
-        out["evidence"]["expo"] = ("ratio of degrees to pixels across "
-                                   f"{len(steps)} distances")
+    # Pointing is geometry: a degree covers the same distance wherever you point.
+    # Any curve on top of that is a preference about feel, which these aims
+    # cannot measure, so it is switched off rather than invented.
+    out["expo"] = 0.0
+    out["evidence"]["expo"] = "off: pointing is linear, so the mapping should be too"
 
-    hunting = [r.overshoot for r in steps if r.overshoot > 0]
-    if hunting:
-        mean_overshoot = sum(hunting) / len(hunting)
-        out["evidence"]["overshoot"] = f"{mean_overshoot:.2f}x the straight line"
-        # Hunting round the target is the signature of too little smoothing at
-        # low speed; a clean approach means the filter can be lightened.
+    tremor = min(a.tremor_dps for a in good)
+    out["evidence"]["tremor"] = f"{tremor:.2f} deg/s at the steadiest aim"
+    if gain_x:
+        px = tremor * gain_x
+        out["evidence"]["tremor"] += f" ({px:.0f} px/s at this gain)"
         cutoff = float(current.get("one_euro", {}).get("min_cutoff", 0.4))
-        if mean_overshoot > 1.9:
-            out.setdefault("one_euro", {})["min_cutoff"] = round(max(0.15, cutoff * 0.6), 2)
-        elif mean_overshoot < 1.25:
-            out.setdefault("one_euro", {})["min_cutoff"] = round(min(2.0, cutoff * 1.4), 2)
-
+        if px > 25.0:
+            out.setdefault("one_euro", {})["min_cutoff"] = round(max(0.2, cutoff * 0.6), 2)
+        elif px < 6.0:
+            out.setdefault("one_euro", {})["min_cutoff"] = round(min(1.2, cutoff * 1.5), 2)
     return out
 
 
-#: Nobody's hand tremor moves a cursor this fast. Past it, the phone was being
-#: carried rather than held, and the reading says nothing about smoothing.
-IMPLAUSIBLE_DRIFT_PX_S = 45.0
+def _centre_drift(aims: list[Aim]) -> float | None:
+    """How far the middle of the screen moved between visits to it."""
+    yaws = [a.yaw for a in aims if a.dot.x == 0.5 and a.dot.y == 0.5]
+    if len(yaws) < 2:
+        return None
+    return max(abs(_wrapped(b - a)) for a in yaws for b in yaws)
 
 
-def _fit_stillness(results: list[TrialResult], current: dict, out: dict) -> None:
-    """A cursor that wanders while the phone is held still is unfiltered tremor.
+def _gain(aims: list[Aim], axis: int, size: int) -> tuple[float | None, int]:
+    """Pixels per degree, as the median over every usable pair of aims.
 
-    Only if the phone really was held still. The first trial begins the moment
-    the run starts, while the person is still settling into position, and 380px
-    of "drift" in four seconds is someone moving -- acted on, it drove smoothing
-    to the floor and made the pointer feel laggy.
-    """
-    still = [r for r in results if r.trial.kind is Kind.STILL and r.seconds > 0.5]
-    if not still:
-        return
-    rates = sorted(r.path_px / r.seconds for r in still)
-    per_second = rates[0]        # the calmest sample, not the average of a spoiled one
-    out["evidence"]["drift"] = f"{per_second:.1f} px/s while holding still"
-    if per_second > IMPLAUSIBLE_DRIFT_PX_S:
-        out["evidence"]["drift"] += " -- too fast to be a hand; ignored"
-        return
-    if per_second > 12.0:
-        cutoff = float(current.get("one_euro", {}).get("min_cutoff", 0.4))
-        # A single run may halve it at most: this is a nudge in a direction, not
-        # a measurement precise enough to justify jumping to the floor.
-        out.setdefault("one_euro", {})["min_cutoff"] = round(max(0.2, cutoff * 0.6), 2)
-
-
-#: Below this the trial says nothing useful about that axis: a few pixels of
-#: travel divided by a fraction of a degree is noise with a big number attached.
-MIN_TRAVEL_PX = 60.0
-MIN_TURN_DEG = 2.0
-
-
-def _gain_from(trials: list[TrialResult], axis: int) -> tuple[float | None, int]:
-    """Pixels per degree on one axis, as the median of what each trial demanded.
-
-    Median rather than mean: one fumbled trial would drag an average a long way,
-    and there are only a dozen of them.
+    Pairs, not absolute positions: only differences mean anything, since where
+    the phone\'s zero happens to sit says nothing about anybody\'s screen.
     """
     ratios = []
-    for r in trials:
-        turned = r.yaw_deg if axis == 0 else r.pitch_deg
-        travel = abs(r.to_px[axis] - r.from_px[axis])
-        if turned < MIN_TURN_DEG or travel < MIN_TRAVEL_PX:
-            continue
-        ratios.append(travel / turned)
+    for i, a in enumerate(aims):
+        for b in aims[i + 1:]:
+            px = abs((b.dot.x - a.dot.x) * size) if axis == 0 \
+                else abs((b.dot.y - a.dot.y) * size)
+            turned = abs(_wrapped(b.yaw - a.yaw)) if axis == 0 else abs(b.pitch - a.pitch)
+            if px < MIN_TRAVEL_PX or turned < MIN_TURN_DEG:
+                continue
+            ratios.append(px / turned)
     if len(ratios) < 3:
         return None, len(ratios)
     ratios.sort()
@@ -330,101 +244,72 @@ def _gain_from(trials: list[TrialResult], axis: int) -> tuple[float | None, int]
     return value, len(ratios)
 
 
-def _expo_from(trials: list[TrialResult]) -> float | None:
-    """How much faster the far targets need to be than the near ones.
-
-    With no expo, pixels per degree is constant. If long moves consistently
-    demand fewer degrees per pixel than short ones, that ratio is the curve.
-    """
-    near = [r for r in trials if r.distance_px < 300.0]
-    far = [r for r in trials if r.distance_px >= 600.0]
-    if len(near) < 2 or len(far) < 2:
-        return None
-    def ppd(rs: list[TrialResult]) -> float:
-        vals = [r.distance_px / max(1.0, r.yaw_deg + r.pitch_deg) for r in rs]
-        return sum(vals) / len(vals)
-    near_ppd, far_ppd = ppd(near), ppd(far)
-    if near_ppd <= 0:
-        return None
-    return max(0.0, min(4.0, far_ppd / near_ppd))
-
-
-def write_session(path: Path, results: list[TrialResult], fitted: dict) -> None:
-    """Keep the trials, not just the conclusion: a number nobody can check is
-    a number nobody can argue with."""
-    payload = {
+def write_session(path: Path, results: list[Aim], fitted: dict) -> None:
+    """Keep the aims, not just the conclusion: a number nobody can check is a
+    number nobody can argue with, and a corrected fit should never oblige anyone
+    to do the whole thing over."""
+    path.write_text(json.dumps({
         "fitted": fitted,
-        "trials": [
-            {"kind": r.trial.kind.value, "distance_px": round(r.distance_px, 1),
-             # The endpoints, not just the distance between them: without them a
-             # correction to the fitting cannot be applied to trials already
-             # recorded, and a two-minute task has to be repeated to answer a
-             # question the data already contains.
-             "from_px": [round(v, 1) for v in r.from_px],
-             "to_px": [round(v, 1) for v in r.to_px],
-             "yaw_deg": round(r.yaw_deg, 2), "pitch_deg": round(r.pitch_deg, 2),
-             "seconds": round(r.seconds, 2), "path_px": round(r.path_px, 1),
-             "overshoot": round(r.overshoot, 2), "timed_out": r.timed_out}
-            for r in results
-        ],
-    }
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+        "aims": [{"x": a.dot.x, "y": a.dot.y, "yaw": round(a.yaw, 2),
+                  "pitch": round(a.pitch, 2), "tremor_dps": round(a.tremor_dps, 3),
+                  "seconds": round(a.seconds, 2), "timed_out": a.timed_out}
+                 for a in results],
+    }, indent=2) + "\n")
 
 
 class Runner:
-    """Owns a calibration run: the trials, the samples, and writing the result.
+    """Owns a run: the dots, the aims, and writing the result.
 
-    Kept out of the runtime because none of it is about serving a phone, and
-    because a run is entirely described by three things it borrows -- where the
-    config lives, what the cursor is doing, and the engine's raw look direction.
+    Kept out of the runtime because none of it is about serving a phone. It needs
+    the engine only to borrow the look direction, and to make sure the pointer is
+    not driving the cursor while someone is trying to point naturally.
     """
 
     def __init__(self, paths, backend, engine, show):
         self._paths = paths
         self._backend = backend
         self._engine = engine
-        self._show = show                    # open the calibration window
+        self._show = show
         self.current: Calibration | None = None
         self.started = False
+        self._was_enabled = True
 
     def start(self) -> dict:
-        """Prepare a run and show the window. Sampling waits for begin().
-
-        Arming the engine here would start trial one on the next packet, before
-        anyone had read a word of what they are supposed to do.
-        """
+        """Prepare a run and show the window. Sampling waits for begin()."""
         displays = self._backend.displays()
         rect = displays[0] if displays else None
         width, height = (int(rect.w), int(rect.h)) if rect else (1440, 900)
         self.current = Calibration(width=width, height=height)
         self.started = False
         self._show()
-        plan = self.current.plan
-        return {"trials": len(plan), "width": width, "height": height,
-                "still": sum(1 for t in plan if t.kind is Kind.STILL),
-                "step": sum(1 for t in plan if t.kind is Kind.STEP),
-                "sweep": sum(1 for t in plan if t.kind is Kind.SWEEP)}
+        return {"dots": len(self.current.plan), "width": width, "height": height}
 
     def begin(self) -> dict:
         if self.current is None:
             return {"ok": False, "error": "nothing prepared"}
         self.started = True
-        self._engine.on_look = self._sample
+        # The cursor must not move. Someone correcting a cursor is not pointing,
+        # and a measurement taken through that loop returns the gain it started
+        # with rather than anything about the person.
+        self._was_enabled = self._engine.enabled
+        self._engine.set_enabled(False)
+        self._engine.on_packet = self._sample
         return {"ok": True}
 
     def _sample(self, now: float, yaw: float, pitch: float) -> None:
         cal = self.current
-        if cal is None or cal.finished:
+        if cal is None or not self.started or cal.finished:
             return
-        pos = self._backend.get_position()
-        if cal.trial is not None and not cal.in_trial:
-            cal.begin(now, pos)
-        cal.observe(now, pos, yaw, pitch)
+        cal.observe(now, yaw, pitch)
         if cal.finished:
-            self._engine.on_look = None      # stop sampling the moment it ends
+            self._release()
+
+    def _release(self) -> None:
+        self._engine.on_packet = None
+        self._engine.set_enabled(self._was_enabled)
 
     def cancel(self) -> None:
-        self._engine.on_look = None
+        self._release()
         self.current = None
         self.started = False
 
@@ -437,16 +322,16 @@ class Runner:
             return {"running": False}
         state = dict(cal.state(), running=True, started=self.started)
         if cal.finished:
-            state["fitted"] = fit(cal.results, self._config())
+            state["fitted"] = fit(cal.aims, self._config(), cal.width, cal.height)
         return state
 
     def apply(self) -> dict:
-        """Write the fitted settings, and the trials that produced them."""
+        """Write the fitted settings, and the aims that produced them."""
         cal = self.current
         if cal is None or not cal.finished:
             return {"ok": False, "error": "calibration has not finished"}
         data = self._config()
-        fitted = fit(cal.results, data)
+        fitted = fit(cal.aims, data, cal.width, cal.height)
         if "error" in fitted:
             return {"ok": False, **fitted}
         for key, value in fitted.items():
@@ -457,5 +342,5 @@ class Runner:
             else:
                 data[key] = value
         self._paths.pointer_json.write_text(json.dumps(data, indent=2) + "\n")
-        write_session(self._paths.sessions / "calibration.json", cal.results, fitted)
+        write_session(self._paths.sessions / "calibration.json", cal.aims, fitted)
         return {"ok": True, "fitted": fitted}
