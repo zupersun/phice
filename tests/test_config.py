@@ -190,26 +190,26 @@ def test_both_shipped_layouts_are_valid(tmp_path):
         assert set(layout.roles().values()) == {"left", "right", "scroll", "power"}
 
 
-def test_one_handed_is_the_exact_vertical_mirror_of_standard():
-    """Not an arbitrary rearrangement: the same layout flipped about the middle
-    of the pad, so the pads reach the bottom edge and power sits directly above
-    them exactly as it sits directly below them the other way up. Pinned as
-    arithmetic, so the two cannot drift apart."""
+def test_one_handed_puts_everything_in_thumb_reach():
+    """The pads sit in the bottom half and reach the bottom edge, with power
+    above them and well clear. Pinned as relationships rather than coordinates,
+    so the cluster can be nudged without rewriting the test -- but it cannot
+    quietly drift back up the screen, which is the whole point of the layout."""
     from phice.config import load_layout
     from phice.paths import DEFAULTS_DIR
 
-    std = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
     one = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
-    assert std.keys() == one.keys()
-    for name, b in std.items():
-        assert one[name].y == 100 - (b.y + b.h), f"{name} is not the mirror of itself"
-        assert (one[name].x, one[name].w, one[name].h) == (b.x, b.w, b.h)
+    power, left, right = one["power"], one["left"], one["right"]
+    pads = [one[name] for name in ("left", "right", "scroll")]
 
-    power, left = one["power"], one["left"]
-    assert power.y + power.h <= left.y, "power sits above the pads"
-    assert left.y + left.h >= 96, "the pads reach the bottom of the screen"
-    # Symmetric left to right, so it works in either hand.
-    assert left.x == 100 - (one["right"].x + one["right"].w)
+    assert all(b.y >= 45 for b in pads), "the pads must sit in the bottom half"
+    assert all(b.y + b.h >= 96 for b in pads), "the pads must reach the bottom edge"
+    assert power.y + power.h + 8 <= min(b.y for b in pads), \
+        "power must sit clear above the pads, not next to them"
+    assert power.y + power.h < min(b.y for b in pads)
+    # Symmetric, so it works in either hand and needs no handedness setting.
+    assert left.x == 100 - (right.x + right.w)
+    assert left.w == right.w
 
 
 def test_the_standard_power_button_sits_lower_than_it_used_to():

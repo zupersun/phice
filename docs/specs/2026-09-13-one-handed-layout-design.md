@@ -16,7 +16,7 @@ Two named layouts, and a small move in the existing one.
 | | power | pads |
 |---|---|---|
 | `standard` | `y 76`, `h 7` (was `y 68`) | unchanged, `y 2`–`64` |
-| `one-handed` | `y 17`, `h 7` | `y 36`–`98` |
+| `one-handed` | `y 27`, `h 7` | `y 46`–`98` |
 
 Exact geometry, in the percentages `layout.json` already uses:
 
@@ -31,19 +31,22 @@ Exact geometry, in the percentages `layout.json` already uses:
 
 // one-handed.json
 {"version": 1, "buttons": [
-  {"id": "power",  "role": "power",  "x": 42, "y": 17, "w": 16, "h": 7,  "label": ""},
-  {"id": "left",   "role": "left",   "x": 3,  "y": 36, "w": 42, "h": 62, "label": ""},
-  {"id": "scroll", "role": "scroll", "x": 46, "y": 36, "w": 8,  "h": 62, "label": ""},
-  {"id": "right",  "role": "right",  "x": 55, "y": 36, "w": 42, "h": 62, "label": ""}
+  {"id": "power",  "role": "power",  "x": 42, "y": 27, "w": 16, "h": 7,  "label": ""},
+  {"id": "left",   "role": "left",   "x": 3,  "y": 46, "w": 42, "h": 52, "label": ""},
+  {"id": "scroll", "role": "scroll", "x": 46, "y": 46, "w": 8,  "h": 52, "label": ""},
+  {"id": "right",  "role": "right",  "x": 55, "y": 46, "w": 42, "h": 52, "label": ""}
 ]}
 ```
 
-One-handed is the exact vertical mirror of standard: every button flipped about
-the middle of the pad, `y -> 100 - (y + h)`, keeping its size and its horizontal
-place. So the pads reach the bottom edge with the same margin they have at the
-top the other way up, and power sits directly above them exactly as it sits
-directly below them in standard. A test pins that as arithmetic rather than as
-four sets of coordinates, so the two cannot drift apart.
+The pads reach the bottom edge and start below the middle, which is as far down
+as they go: a thumb from a low grip covers the bottom of the screen easily and
+the top not at all. Power keeps the same 12% gap from the pads that it has in
+standard, so the two layouts feel related rather than arbitrary.
+
+The tests pin relationships rather than coordinates -- pads in the bottom half,
+pads touching the bottom edge, power clear above them, left and right
+symmetric -- so the cluster can be nudged by feel without rewriting them, while
+it cannot quietly drift back up the screen, which is the whole point.
 
 Power ends up above the pads rather than below for two reasons pointing the same
 way: it is the one control that must never be pressed by accident, and a thumb
