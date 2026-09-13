@@ -154,10 +154,16 @@ async def test_second_phone_replaces_the_first(rig, client_ssl):
         ws1, device = await pair(rig, port, client_ssl)
         ws2 = await open_ws(port, client_ssl)
         await ws2.send(json.dumps({"t": "hello", "ver": 1, "token": device, "name": "iPhone2"}))
-        await asyncio.sleep(0.1)
         with pytest.raises(ConnectionClosed):
             while True:
                 await ws1.recv()
+        # Wait for the replacement to be registered rather than assuming it has
+        # happened by now: the handshake is fifteen stylesheet pieces long, so a
+        # fixed sleep raced it.
+        for _ in range(50):
+            if rig.state.client is not None:
+                break
+            await asyncio.sleep(0.05)
         assert rig.state.client is not None
         await ws2.close()
     finally:

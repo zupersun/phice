@@ -202,12 +202,17 @@ def layout_message(layout_dict: dict) -> str:
     return json.dumps({"t": "layout", **layout_dict})
 
 
-#: Sent in pieces this size. An 11KB stylesheet in one data channel message
-#: fragments across roughly ten SCTP chunks, and iOS Safari does not reassemble
-#: it -- the message simply never arrives, with no error at either end. The
-#: 394-byte layout beside it always did, which is what made it look like a
-#: reliability problem rather than a size one.
-THEME_CHUNK_BYTES = 3000
+#: Sent in pieces this size, and the size is the whole point. Measured against a
+#: real iPhone: the 394-byte layout message always arrived, an 11855-byte theme
+#: never did, and neither did 3000-byte pieces of it. SCTP's path MTU is around
+#: 1200 bytes, so anything larger is fragmented before it goes out, and iOS
+#: Safari does not put fragmented data channel messages back together. It drops
+#: them with nothing at either end to say so.
+#:
+#: Staying under the MTU means every message crosses whole. Fifteen messages
+#: instead of one costs nothing, and it is the difference between a styled page
+#: and a black one.
+THEME_CHUNK_BYTES = 800
 
 
 def theme_chunks(css: str) -> list[str]:

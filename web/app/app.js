@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "8";
+  const CLIENT_VERSION = "9";
 
   const el = {
     body: document.body,
