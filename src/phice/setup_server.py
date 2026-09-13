@@ -12,7 +12,8 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .pages import PANEL_HTML, SETUP_CSS, check_html, setup_html
+from .pages import SETUP_CSS, check_html, setup_html
+from .templates import PANEL_HTML
 
 log = logging.getLogger("phice.setup")
 

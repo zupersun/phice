@@ -7,9 +7,17 @@
 Point the phone at your screen and the cursor follows.
 No iOS app, no App Store, no Apple Developer account.
 
-<!-- A short screen recording belongs here: the phone in one hand, the cursor
-     following on screen. It answers "what is this?" faster than any paragraph,
-     and it is the one thing this page is missing. -->
+<!-- Placeholder for the demo recording: the phone in one hand, the cursor
+     following on screen. Replace the paragraph below with the video once shot. -->
+
+Pick the phone up and point it at the screen. The cursor is already where you
+aimed — not sliding after you like a trackpad catching up, but sitting on the
+spot, and staying there when your hand stops. Turn your wrist two degrees and it
+moves two degrees' worth. Tap the left pad to click. Set the phone face-down on
+the desk and it switches itself off.
+
+Setup is a six-character code typed into Safari. There is nothing to install on
+the phone.
 
 </div>
 
@@ -24,7 +32,7 @@ No iOS app, no App Store, no Apple Developer account.
 | 📐 **Fitted to you** | Calibration measures how much screen one degree of your wrist covers, with no cursor on screen to steer |
 | 🔌 **Any two networks** | Phone on cellular, Mac behind a campus firewall — WebRTC connects them directly, or over a relay when it must |
 | 🎨 **Yours to restyle** | Every colour, size, button and position is a file you own. No rebuild, saves apply live |
-| 🧪 **234 tests, 15 seconds** | The pointer engine is pure: an injected clock and a fake cursor, so behaviour is testable without a phone or a screen |
+| 🧪 **242 tests, 17 seconds** | The pointer engine is pure: an injected clock and a fake cursor, so behaviour is testable without a phone or a screen |
 
 ## Getting started
 
@@ -102,7 +110,7 @@ applies gamma last, about the very axis the aim vector is projected from.
   negotiable
 
 ```bash
-uv run pytest -q        # 234 tests
+uv run pytest -q        # 242 tests
 uv run ruff check .     # lint
 ./packaging/build.sh    # produces dist/Phice.app
 ```
