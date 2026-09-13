@@ -31,7 +31,7 @@ from .protocol import (
     layout_message,
     parse_client_message,
     pong_message,
-    theme_message,
+    theme_chunks,
     welcome_message,
 )
 
@@ -186,7 +186,8 @@ class PhiceServer:
         # The same messages the WebRTC transport sends, in the same order. The
         # phone client is one file serving both, so anything it learns on one
         # transport it must learn on the other.
-        await conn.send(theme_message(st.paths.theme_css.read_text()))
+        for part in theme_chunks(st.paths.theme_css.read_text()):
+            await conn.send(part)
         await self._send_state()
 
         bad = 0
@@ -263,8 +264,8 @@ class PhiceServer:
         different answers to "the theme changed"."""
         if self.state.client:
             try:
-                await self.state.client.send(
-                    theme_message(self.state.paths.theme_css.read_text()))
+                for part in theme_chunks(self.state.paths.theme_css.read_text()):
+                    await self.state.client.send(part)
             except Exception:
                 pass
 

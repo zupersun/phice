@@ -520,3 +520,42 @@ async def test_the_layout_and_theme_are_sent_again_after_a_moment(transport):
     finally:
         await phone.close()
         await transport.close()
+
+
+async def test_the_stylesheet_arrives_in_pieces_and_reassembles(transport):
+    """One 11KB message never crossed to iOS Safari at all, with nothing at
+    either end to say so -- while the 394-byte layout beside it always did,
+    which is what made a size problem look like a reliability one. Sent in
+    pieces, it arrives."""
+    from phice.protocol import THEME_CHUNK_BYTES
+
+    transport.theme_css = "/* x */\n" + ("a{b:c}\n" * 2000)   # comfortably over one chunk
+    parts: list[dict] = []
+    phone = RTCPeerConnection(configuration=_no_stun())
+    done = asyncio.get_running_loop().create_future()
+
+    @phone.on("datachannel")
+    def on_channel(channel):
+        @channel.on("message")
+        def on_message(raw):
+            m = json.loads(raw)
+            if m["t"] == "theme":
+                parts.append(m)
+                if not m["more"] and not done.done():
+                    done.set_result(True)
+
+    offer = await transport.create_offer()
+    await phone.setRemoteDescription(RTCSessionDescription(**offer))
+    await phone.setLocalDescription(await phone.createAnswer())
+    await gather_complete(phone)
+    await transport.accept_answer({"sdp": phone.localDescription.sdp,
+                                   "type": phone.localDescription.type})
+    try:
+        await asyncio.wait_for(done, timeout=10)
+        assert len(parts) > 1, "a stylesheet this size must be split"
+        assert all(len(p["css"]) <= THEME_CHUNK_BYTES for p in parts), "a piece is too big"
+        assert all(p["more"] for p in parts[:-1]) and not parts[-1]["more"]
+        assert "".join(p["css"] for p in parts) == transport.theme_css
+    finally:
+        await phone.close()
+        await transport.close()

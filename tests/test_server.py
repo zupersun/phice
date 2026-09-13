@@ -84,12 +84,20 @@ async def test_pairing_then_reconnect_with_device_token(rig, client_ssl):
     port = await start(rig)
     try:
         ws, device = await pair(rig, port, client_ssl)
-        # The stylesheet now arrives on this transport too: one phone client
-        # serves both, so it must learn the same things either way.
-        msgs = [json.loads(await ws.recv()) for _ in range(3)]
-        assert {m["t"] for m in msgs} == {"layout", "theme", "state"}
-        state = next(m for m in msgs if m["t"] == "state")
-        assert state["phase"] == "off" and state["idle_hz"] == 0
+        # The stylesheet arrives on this transport too -- one phone client serves
+        # both -- and in pieces, so read until the status frame rather than
+        # counting messages.
+        kinds, css, state_msg = set(), "", None
+        while state_msg is None:
+            m = json.loads(await ws.recv())
+            kinds.add(m["t"])
+            if m["t"] == "theme":
+                css += m["css"]
+            elif m["t"] == "state":
+                state_msg = m
+        assert {"layout", "theme", "state"} <= kinds
+        assert css, "the stylesheet must actually arrive, not just its envelope"
+        assert state_msg["phase"] == "off" and state_msg["idle_hz"] == 0
         await ws.close()
         await asyncio.sleep(0.05)
 
@@ -197,12 +205,14 @@ async def test_malformed_packets_do_not_kill_the_session(rig, client_ssl):
         for _ in range(5):
             await ws.send(json.dumps({"t": "s", "seq": 1, "ts": 1, "o": [999, 0, 0]}))
         await ws.send(json.dumps({"t": "ping"}))
-        msgs = []
-        for _ in range(4):
-            msgs.append(json.loads(await ws.recv()))
-            if msgs[-1]["t"] == "pong":
+        # Read past the handshake, which is now several theme pieces long, and
+        # look for the pong rather than assuming where it lands.
+        kinds = []
+        for _ in range(30):
+            kinds.append(json.loads(await ws.recv())["t"])
+            if kinds[-1] == "pong":
                 break
-        assert msgs[-1]["t"] == "pong"
+        assert "pong" in kinds, kinds
     finally:
         await rig.server.stop()
 

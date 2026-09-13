@@ -32,7 +32,7 @@ from .protocol import (
     layout_message,
     parse_client_message,
     pong_message,
-    theme_message,
+    theme_chunks,
 )
 
 log = logging.getLogger("phice.rtc")
@@ -243,7 +243,8 @@ class RTCTransport:
             return
         try:
             ctl.send(layout_message(json.loads(self.layout_json)))
-            ctl.send(theme_message(self.theme_css))
+            for part in theme_chunks(self.theme_css):
+                ctl.send(part)
             self.notify_state()
             if again:
                 log.debug("re-sent layout and theme")
@@ -292,7 +293,8 @@ class RTCTransport:
     async def push_theme(self, theme_css: str) -> None:
         self.theme_css = theme_css
         if self.ctl and self.ctl.readyState == "open":
-            self.ctl.send(theme_message(theme_css))
+            for part in theme_chunks(theme_css):
+                self.ctl.send(part)
 
     @property
     def is_open(self) -> bool:

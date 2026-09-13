@@ -202,10 +202,30 @@ def layout_message(layout_dict: dict) -> str:
     return json.dumps({"t": "layout", **layout_dict})
 
 
-def theme_message(css: str) -> str:
+#: Sent in pieces this size. An 11KB stylesheet in one data channel message
+#: fragments across roughly ten SCTP chunks, and iOS Safari does not reassemble
+#: it -- the message simply never arrives, with no error at either end. The
+#: 394-byte layout beside it always did, which is what made it look like a
+#: reliability problem rather than a size one.
+THEME_CHUNK_BYTES = 3000
+
+
+def theme_chunks(css: str) -> list[str]:
+    """The stylesheet as a series of messages the page concatenates.
+
+    Ordered and reliable, so arrival order is send order and reassembly is just
+    joining them up.
+    """
+    if not css:
+        return [theme_message("", more=False)]
+    parts = [css[i:i + THEME_CHUNK_BYTES] for i in range(0, len(css), THEME_CHUNK_BYTES)]
+    return [theme_message(p, more=i < len(parts) - 1) for i, p in enumerate(parts)]
+
+
+def theme_message(css: str, more: bool = False) -> str:
     """Push the stylesheet itself. The hosted page has no HTTP route back to the
     Mac, so it receives the CSS rather than a hint to re-fetch it."""
-    return json.dumps({"t": "theme", "css": css})
+    return json.dumps({"t": "theme", "css": css, "more": more})
 
 
 def err_message(code: str, msg: str) -> str:

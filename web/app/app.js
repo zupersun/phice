@@ -30,6 +30,7 @@
     scrollPos: null,   // where the finger is along the strip, 0..1
     pending: {},       // channels seen so far, until both have opened
     pendingLogs: [],   // reports raised before there was anywhere to send them
+    themeParts: [],    // the stylesheet arrives in pieces; see handleMessage
     orientation: null,
     rate: [0, 0, 0],
     gravity: [0, 0, 9.8],
@@ -225,8 +226,16 @@
              + el.pad.getBoundingClientRect().width.toFixed(0) + "x"
              + el.pad.getBoundingClientRect().height.toFixed(0));
     } else if (msg.t === "theme") {
-      el.theme.textContent = msg.css;
-      report("theme: " + msg.css.length + " bytes applied");
+      // Arrives in pieces: one big message never made it across at all on iOS,
+      // with nothing at either end to say so. The channel is ordered, so
+      // arrival order is send order and this is just concatenation.
+      state.themeParts.push(msg.css);
+      if (!msg.more) {
+        el.theme.textContent = state.themeParts.join("");
+        report("theme: " + el.theme.textContent.length + " bytes in "
+               + state.themeParts.length + " parts");
+        state.themeParts = [];
+      }
     }
     else if (msg.t === "state") applyState(msg);
     else if (msg.t === "welcome" && msg.device_token) {
