@@ -460,7 +460,9 @@ async def test_switching_grip_reloads_the_layout_the_phone_is_using(tmp_path):
     assert rt.set_layout("one-handed") is True
     rt = Runtime(paths, FakeCursor(), 0, 0)      # as a restart would see it
     power = next(b for b in rt.layout.buttons if b.role == "power")
-    assert power.y < 15, "one-handed puts power at the top"
+    pads = [b for b in rt.layout.buttons if b.role != "power"]
+    assert all(power.y + power.h <= b.y for b in pads), "power sits above the pads"
+    assert max(b.y + b.h for b in pads) >= 96, "the pads reach the bottom"
     assert rt.set_layout("../escape") is False, "a path is not a preset name"
     assert rt.set_layout("nonsense") is False, "an unknown preset is refused"
 

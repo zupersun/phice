@@ -16,7 +16,7 @@ Two named layouts, and a small move in the existing one.
 | | power | pads |
 |---|---|---|
 | `standard` | `y 76`, `h 7` (was `y 68`) | unchanged, `y 2`–`64` |
-| `one-handed` | `y 4`, `h 6` | `y 40`–`96` |
+| `one-handed` | `y 17`, `h 7` | `y 36`–`98` |
 
 Exact geometry, in the percentages `layout.json` already uses:
 
@@ -31,16 +31,23 @@ Exact geometry, in the percentages `layout.json` already uses:
 
 // one-handed.json
 {"version": 1, "buttons": [
-  {"id": "power",  "role": "power",  "x": 42, "y": 4,  "w": 16, "h": 6,  "label": ""},
-  {"id": "left",   "role": "left",   "x": 3,  "y": 40, "w": 42, "h": 56, "label": ""},
-  {"id": "scroll", "role": "scroll", "x": 46, "y": 40, "w": 8,  "h": 56, "label": ""},
-  {"id": "right",  "role": "right",  "x": 55, "y": 40, "w": 42, "h": 56, "label": ""}
+  {"id": "power",  "role": "power",  "x": 42, "y": 17, "w": 16, "h": 7,  "label": ""},
+  {"id": "left",   "role": "left",   "x": 3,  "y": 36, "w": 42, "h": 62, "label": ""},
+  {"id": "scroll", "role": "scroll", "x": 46, "y": 36, "w": 8,  "h": 62, "label": ""},
+  {"id": "right",  "role": "right",  "x": 55, "y": 36, "w": 42, "h": 62, "label": ""}
 ]}
 ```
 
-Power sits at the top in one-handed mode because it is the one control that must
-never be pressed by accident, and the top of the screen is exactly where a thumb
-gripping low cannot go. Reach and safety point the same way here.
+One-handed is the exact vertical mirror of standard: every button flipped about
+the middle of the pad, `y -> 100 - (y + h)`, keeping its size and its horizontal
+place. So the pads reach the bottom edge with the same margin they have at the
+top the other way up, and power sits directly above them exactly as it sits
+directly below them in standard. A test pins that as arithmetic rather than as
+four sets of coordinates, so the two cannot drift apart.
+
+Power ends up above the pads rather than below for two reasons pointing the same
+way: it is the one control that must never be pressed by accident, and a thumb
+gripping low reaches the bottom of the screen most easily and the top least.
 
 The layout is left-right symmetric, so it works in either hand. There is no
 handedness setting to build.

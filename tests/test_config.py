@@ -190,18 +190,26 @@ def test_both_shipped_layouts_are_valid(tmp_path):
         assert set(layout.roles().values()) == {"left", "right", "scroll", "power"}
 
 
-def test_one_handed_puts_the_pads_in_thumb_reach_and_power_out_of_it():
-    """Pinned as numbers: the whole point of the layout is where things are, and
-    a later tidy-up should not be able to undo it quietly."""
+def test_one_handed_is_the_exact_vertical_mirror_of_standard():
+    """Not an arbitrary rearrangement: the same layout flipped about the middle
+    of the pad, so the pads reach the bottom edge and power sits directly above
+    them exactly as it sits directly below them the other way up. Pinned as
+    arithmetic, so the two cannot drift apart."""
     from phice.config import load_layout
     from phice.paths import DEFAULTS_DIR
 
-    buttons = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
-    assert buttons["power"].y + buttons["power"].h < 15, "power must sit at the top"
-    for name in ("left", "right", "scroll"):
-        assert buttons[name].y >= 40, f"{name} must start in the lower half"
-    # Symmetric, so it works in either hand and needs no handedness setting.
-    assert buttons["left"].x == 100 - (buttons["right"].x + buttons["right"].w)
+    std = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
+    one = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
+    assert std.keys() == one.keys()
+    for name, b in std.items():
+        assert one[name].y == 100 - (b.y + b.h), f"{name} is not the mirror of itself"
+        assert (one[name].x, one[name].w, one[name].h) == (b.x, b.w, b.h)
+
+    power, left = one["power"], one["left"]
+    assert power.y + power.h <= left.y, "power sits above the pads"
+    assert left.y + left.h >= 96, "the pads reach the bottom of the screen"
+    # Symmetric left to right, so it works in either hand.
+    assert left.x == 100 - (one["right"].x + one["right"].w)
 
 
 def test_the_standard_power_button_sits_lower_than_it_used_to():
