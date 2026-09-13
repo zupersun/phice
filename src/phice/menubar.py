@@ -63,6 +63,11 @@ class PhiceApp(rumps.App):
         ]
         self._timer = rumps.Timer(self.refresh, 1)
         self._timer.start()
+        # Windows are asked for from the runtime thread and can only be created
+        # on this one. A second-long wait to honour a click reads as a dead
+        # button, so check for those requests far more often than the status.
+        self._windows = rumps.Timer(self.pump_windows, 0.15)
+        self._windows.start()
         self._ticks = 0
 
     # ----- menu actions -----------------------------------------------------
@@ -141,8 +146,7 @@ class PhiceApp(rumps.App):
             self.title = {"warn": "Phice!", "disconnected": "Phice",
                           "off": "Phice\u00b7", "on": "Phice\u25cf"}[name]
 
-    def refresh(self, _):
-        self._ticks += 1
+    def pump_windows(self, _):
         if self.runtime.take_calibration_close():
             window.close("calibrate")
         wanted = self.runtime.take_panel_request()
@@ -152,6 +156,9 @@ class PhiceApp(rumps.App):
             url, fullscreen = wanted
             window.open_panel(url, key="calibrate" if fullscreen else "panel",
                               fullscreen=fullscreen)
+
+    def refresh(self, _):
+        self._ticks += 1
         if self._ticks == 2:
             # Every launch, not just the first: the menu bar icon can be
             # invisible behind the notch, and then there is nothing to click.

@@ -367,7 +367,10 @@ document.getElementById("again").onclick = async () => {
 // Borderless and full screen, so there is no title bar to close. Escape and a
 // visible button are the only ways out; leaving someone stuck behind a window
 // covering their whole display would be unforgivable.
-const stop = async () => { await fetch("/calibrate/cancel"); };
+const stop = async () => {
+  body.dataset.leaving = "1";          // respond now; the window follows
+  try { await fetch("/calibrate/cancel"); } catch (e) { delete body.dataset.leaving; }
+};
 document.getElementById("quit").onclick = stop;
 document.getElementById("close").onclick = stop;
 window.addEventListener("keydown", (ev) => { if (ev.key === "Escape") stop(); });

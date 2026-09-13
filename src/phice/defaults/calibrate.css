@@ -86,20 +86,6 @@ body {
   transition: left 220ms ease-out, top 220ms ease-out,
               background 140ms linear, border-color 140ms linear;
 }
-/* The hold, drawn as a ring filling clockwise. --hold is 0..1 and nothing else
-   crosses from the script; what that means is decided here. */
-#target::before {
-  content: "";
-  position: absolute; inset: -7px;
-  border-radius: 50%;
-  /* A soft edge on the leading end: a hard stop on a conic gradient shimmers as
-     it sweeps, which reads as the animation stuttering even when it is smooth. */
-  background: conic-gradient(var(--target-hit) calc(var(--hold, 0) * 360deg - 2deg),
-                             transparent calc(var(--hold, 0) * 360deg));
-  transition: --hold var(--hold-ms, 90ms) linear;
-  -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 48%);
-          mask: radial-gradient(circle, transparent 0 47%, #000 48%);
-}
 /* Inside the target, waiting out the dwell. */
 body[data-inside="1"] #target { border-color: var(--target-hit); }
 body[data-inside="1"] #target::after {
@@ -134,31 +120,11 @@ body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
   background: var(--bg);
   overflow: hidden;
 }
-#demo .dot {
-  position: absolute;
-  width: 34px; height: 34px; margin: -17px 0 0 -17px;
-  border-radius: 50%;
-  background: var(--ring);
-  border: 2px solid var(--target);
-  animation: demo-move 4s infinite;
-}
-#demo .dot::after {
-  content: "";
-  position: absolute; inset: 32%;
-  border-radius: 50%;
-  background: var(--target);
-}
-/* The ring, filling clockwise, exactly as the real one does. */
-#demo .dot::before {
-  content: "";
-  position: absolute; inset: -6px;
-  border-radius: 50%;
-  background: conic-gradient(var(--target-hit) calc(var(--demo-hold) * 360deg),
-                             transparent 0);
-  -webkit-mask: radial-gradient(circle, transparent 0 46%, #000 47%);
-          mask: radial-gradient(circle, transparent 0 46%, #000 47%);
-  animation: demo-fill 4s infinite;
-}
+
+/* The preview is the same dot, smaller, running its hold on a loop instead of
+   from the Mac. One definition of an aim, so the two cannot drift apart again. */
+.demo-aim { --aim-size: 38px; animation: demo-move 4s infinite; }
+.demo-aim::before { animation: demo-fill 4s infinite; transition: none; }
 
 @keyframes demo-move {
   0%, 4%    { left: 28%; top: 34%; opacity: 0; }

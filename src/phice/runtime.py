@@ -39,7 +39,7 @@ from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .pages import CALIBRATE_HTML
 from .pairing import PairingManager
-from .paths import Paths
+from .paths import Paths, client_version
 from .rtc import RTCTransport
 from .server import PhiceServer, ServerState
 from .setup_server import SetupServer
@@ -256,6 +256,11 @@ class Runtime:
                         "state": self.rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
         d["calibrated"] = self._calibrated_when()
+        # Both halves of the comparison, not just its verdict: a check that
+        # quietly disables itself because one side is empty is worse than no
+        # check, and that is exactly what happened.
+        d["client_expected"] = client_version()
+        d["client_reported"] = self.rtc.client_caps if self.rtc else ""
         d["client_stale"] = bool(self.rtc and self.rtc.client_stale)
         d["phone_url"] = f"{self.config.signaling_url}/app"
         d["transport"] = self.config.transport
