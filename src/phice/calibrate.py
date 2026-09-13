@@ -128,15 +128,33 @@ class Calibration:
     def in_trial(self) -> bool:
         return self._current is not None
 
+    #: What each kind of trial asks of the person, and what it is for. Shown on
+    #: screen: someone told to "hold still" while a cursor drifts will correct
+    #: it out of sheer instinct, and that is precisely the measurement ruined.
+    GUIDANCE = {
+        Kind.STILL: ("Hold the phone still",
+                     "Do not correct the cursor, even if it drifts. "
+                     "This is measuring your hand, not your aim."),
+        Kind.STEP: ("Move the cursor onto the dot and hold it there",
+                    "Go at a comfortable pace. How far you turn the phone to "
+                    "cover this distance is the measurement."),
+        Kind.SWEEP: ("Sweep to it fast, then settle",
+                     "These set the far end of the curve, where a flick has to "
+                     "cross the whole screen."),
+    }
+
     def state(self) -> dict:
         """What the calibration window draws. Fractions, not pixels: the page
         does not need to know the display geometry, only where to put a dot."""
         t = self.trial
         if t is None:
             return {"done": True, "index": self.index, "total": len(self.plan)}
+        same = [i for i, x in enumerate(self.plan) if x.kind is t.kind]
+        task, why = self.GUIDANCE[t.kind]
         return {"done": False, "index": self.index, "total": len(self.plan),
                 "kind": t.kind.value, "x": t.x, "y": t.y, "radius": t.radius_px,
-                "hold": t.hold_s,
+                "hold": t.hold_s, "task": task, "why": why,
+                "nth": same.index(self.index) + 1, "of": len(same),
                 "inside": self._inside_since is not None}
 
     # ----- the run ----------------------------------------------------------
@@ -333,15 +351,32 @@ class Runner:
         self._engine = engine
         self._show = show                    # open the calibration window
         self.current: Calibration | None = None
+        self.started = False
 
     def start(self) -> dict:
+        """Prepare a run and show the window. Sampling waits for begin().
+
+        Arming the engine here would start trial one on the next packet, before
+        anyone had read a word of what they are supposed to do.
+        """
         displays = self._backend.displays()
         rect = displays[0] if displays else None
         width, height = (int(rect.w), int(rect.h)) if rect else (1440, 900)
         self.current = Calibration(width=width, height=height)
-        self._engine.on_look = self._sample
+        self.started = False
         self._show()
-        return {"trials": len(self.current.plan), "width": width, "height": height}
+        plan = self.current.plan
+        return {"trials": len(plan), "width": width, "height": height,
+                "still": sum(1 for t in plan if t.kind is Kind.STILL),
+                "step": sum(1 for t in plan if t.kind is Kind.STEP),
+                "sweep": sum(1 for t in plan if t.kind is Kind.SWEEP)}
+
+    def begin(self) -> dict:
+        if self.current is None:
+            return {"ok": False, "error": "nothing prepared"}
+        self.started = True
+        self._engine.on_look = self._sample
+        return {"ok": True}
 
     def _sample(self, now: float, yaw: float, pitch: float) -> None:
         cal = self.current
@@ -357,6 +392,7 @@ class Runner:
     def cancel(self) -> None:
         self._engine.on_look = None
         self.current = None
+        self.started = False
 
     def _config(self) -> dict:
         return json.loads(self._paths.pointer_json.read_text())
@@ -365,7 +401,7 @@ class Runner:
         cal = self.current
         if cal is None:
             return {"running": False}
-        state = dict(cal.state(), running=True)
+        state = dict(cal.state(), running=True, started=self.started)
         if cal.finished:
             state["fitted"] = fit(cal.results, self._config())
         return state

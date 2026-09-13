@@ -218,9 +218,39 @@ try {
 
 <div id="target"></div>
 
+<div id="intro">
+  <div>
+    <h1>Calibrate the pointer</h1>
+    <p class="lede">About two minutes. Phice will measure how far you actually turn
+       the phone to cover a given distance, and set the sensitivity from that
+       rather than from a guess.</p>
+    <ol class="steps">
+      <li><b>Hold still</b> \u2014 twice, four seconds each. Do not correct the
+          cursor if it drifts. That drift is the measurement.</li>
+      <li><b>Reach the dot</b> \u2014 sixteen times, near and far, sideways and
+          up. Move the cursor onto it and hold it there for a moment.</li>
+      <li><b>Sweep</b> \u2014 four long ones. Fast, then settle.</li>
+    </ol>
+    <p class="lede">Hold the phone as you normally would, and keep the pointer on
+       throughout. Nothing is saved until you approve it at the end.</p>
+
+    <div id="connect">
+      <div class="pair">
+        <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
+        <div class="url" id="url"></div>
+      </div>
+      <p class="status" id="status">Waiting for your phone\u2026</p>
+    </div>
+
+    <button id="begin" disabled>Begin</button>
+    <button id="skip" class="secondary">Close (Esc)</button>
+  </div>
+</div>
+
 <div id="hud">
+  <span id="step">\u2014</span>
   <span id="task">Getting ready\u2026</span>
-  <span id="hint"></span>
+  <span id="why"></span>
   <span id="bar"><i></i></span>
   <button id="quit" class="secondary">Stop</button>
 </div>
@@ -238,11 +268,7 @@ try {
 
 <script>
 const body = document.body, target = document.getElementById("target");
-const HINTS = {
-  still: "Hold the phone still. Do not try to correct the cursor.",
-  step: "Move the cursor onto the target and hold it there.",
-  sweep: "Sweep to it as fast as you can, then settle."
-};
+const NAMES = { still: "Hold still", step: "Reach the dot", sweep: "Sweep" };
 
 function show(s) {
   if (s.done) {
@@ -251,6 +277,7 @@ function show(s) {
     return;
   }
   delete body.dataset.done;
+  body.dataset.started = s.started ? "1" : "0";
   body.dataset.kind = s.kind;
   body.dataset.inside = s.inside ? "1" : "0";
   // Only numbers cross this line; calibrate.css decides what they look like.
@@ -258,9 +285,19 @@ function show(s) {
   target.style.setProperty("--ty", s.y);
   target.style.setProperty("--tr", s.radius);
   body.style.setProperty("--progress", s.total ? s.index / s.total : 0);
-  document.getElementById("task").textContent =
-    "Trial " + (s.index + 1) + " of " + s.total;
-  document.getElementById("hint").textContent = HINTS[s.kind] || "";
+  const ready = !!s.ready;
+  document.getElementById("begin").disabled = !ready;
+  body.dataset.ready = ready ? "1" : "0";
+  document.getElementById("code").textContent = s.pair_code || "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
+  document.getElementById("url").textContent = s.phone_url || "";
+  document.getElementById("status").textContent =
+    !s.connected ? "Waiting for your phone \u2014 open the link above and enter the code"
+    : !ready ? "Connected. Press any button on the phone to switch the pointer on."
+    : "Ready.";
+  document.getElementById("step").textContent =
+    NAMES[s.kind] + " " + s.nth + "/" + s.of;
+  document.getElementById("task").textContent = s.task || "";
+  document.getElementById("why").textContent = s.why || "";
 }
 
 function render(fitted) {
@@ -271,7 +308,7 @@ function render(fitted) {
   }
   for (const [k, v] of Object.entries(fitted.evidence || {})) lines.push("  " + k + ": " + v);
   document.getElementById("results").textContent =
-    lines.join("\n") || "Not enough usable trials. Try again and follow each target.";
+    lines.join("\\n") || "Not enough usable trials. Try again and follow each target.";
   document.getElementById("apply").hidden = !!fitted.error || !lines.length;
 }
 
@@ -299,6 +336,12 @@ const stop = async () => { await fetch("/calibrate/cancel"); };
 document.getElementById("quit").onclick = stop;
 document.getElementById("close").onclick = stop;
 window.addEventListener("keydown", (ev) => { if (ev.key === "Escape") stop(); });
+document.getElementById("begin").onclick = async () => {
+  await fetch("/calibrate/begin");
+  body.dataset.started = "1";
+};
+document.getElementById("skip").onclick = stop;
+
 poll();
 setInterval(poll, 120);
 </script>

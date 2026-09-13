@@ -118,6 +118,7 @@ class Runtime:
                                  start_calibration=self.start_calibration,
                                  apply_calibration=self.apply_calibration,
                                  cancel_calibration=self.cancel_calibration,
+                                 begin_calibration=lambda: self.calibration.begin(),
                                  signaling_url=lambda: self.config.signaling_url)
         self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
         self.rtc: RTCTransport | None = None
@@ -352,7 +353,20 @@ class Runtime:
         return self.calibration.start()
 
     def calibration_state(self) -> dict:
-        return self.calibration.state()
+        """Includes whether there is a phone to calibrate with.
+
+        The window covers the whole display, including the panel that shows the
+        pairing code, so it has to carry that itself -- otherwise the only way
+        to connect a phone is to close the thing you are trying to use.
+        """
+        s = self.calibration.state()
+        status = self.status.read()
+        s["connected"] = status["connected"]
+        s["phase"] = status["phase"]
+        s["pair_code"] = status["pair_code"]
+        s["phone_url"] = f"{self.config.signaling_url}/app"
+        s["ready"] = status["connected"] and status["phase"] in ("on", "hold", "held")
+        return s
 
     def apply_calibration(self) -> dict:
         out = self.calibration.apply()

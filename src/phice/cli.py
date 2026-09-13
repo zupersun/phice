@@ -170,6 +170,19 @@ def cmd_calibrate(args) -> int:
     return 0
 
 
+def cmd_uncalibrate(args) -> int:
+    """Stop a calibration run from outside the window it is showing."""
+    import urllib.error
+    import urllib.request
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{args.http_port}/calibrate/cancel", timeout=5)
+    except (urllib.error.URLError, OSError):
+        print("Could not reach the running app.", file=sys.stderr)
+        return 1
+    print("Calibration stopped.")
+    return 0
+
+
 def cmd_grant(args) -> int:
     """Ask macOS for Accessibility from the running agent, so the right binary is listed."""
     import urllib.error
@@ -297,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         ("tailscale", cmd_tailscale, "use a trusted tailnet certificate"),
         ("grant", cmd_grant, "ask macOS for Accessibility permission"),
         ("calibrate", cmd_calibrate, "fit the pointer to you by measuring"),
+        ("stop-calibrate", cmd_uncalibrate, "stop a calibration run"),
     ):
         sp = sub.add_parser(name, help=help_text)
         sp.set_defaults(func=fn)

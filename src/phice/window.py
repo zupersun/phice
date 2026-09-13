@@ -44,7 +44,15 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
             screen = AppKit.NSScreen.mainScreen()
             if fullscreen and screen is not None:
                 rect = screen.frame()          # frame, not visibleFrame: cover the menu bar too
-                style = AppKit.NSWindowStyleMaskBorderless
+                # Titled with a full-size content view, NOT borderless. A
+                # borderless window cannot become the key window, so it never
+                # receives a key press -- Escape did nothing and there was no way
+                # out of a window covering the whole screen. FullSizeContentView
+                # keeps the content rect equal to the frame, which calibration
+                # depends on: page coordinates have to be display coordinates.
+                style = (AppKit.NSWindowStyleMaskTitled
+                         | AppKit.NSWindowStyleMaskClosable
+                         | AppKit.NSWindowStyleMaskFullSizeContentView)
             else:
                 rect = AppKit.NSMakeRect(0, 0, 420, 620)
                 style = (AppKit.NSWindowStyleMaskTitled
@@ -56,6 +64,9 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
             win.setTitle_(title)
             win.setReleasedWhenClosed_(False)   # reuse it; do not free on close
             if fullscreen:
+                win.setTitlebarAppearsTransparent_(True)
+                win.setTitleVisibility_(AppKit.NSWindowTitleHidden)
+                win.setMovable_(False)          # dragging it would break the mapping
                 win.setLevel_(AppKit.NSFloatingWindowLevel)
                 win.setFrame_display_(rect, True)
             else:

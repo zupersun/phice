@@ -48,6 +48,7 @@ class PhiceApp(rumps.App):
             None,
             rumps.MenuItem("Open Phice window", callback=self.show_panel),
             rumps.MenuItem("Calibrate pointer…", callback=self.calibrate),
+            rumps.MenuItem("Stop calibrating", callback=self.stop_calibrating),
             rumps.MenuItem("Show setup page…", callback=self.show_setup),
             self.item_enabled,
             rumps.MenuItem("Reload config now", callback=self.reload_config),
@@ -77,6 +78,13 @@ class PhiceApp(rumps.App):
 
     def calibrate(self, _):
         self.runtime.start_calibration()
+
+    def stop_calibrating(self, _):
+        """A way out that does not depend on the calibration window itself.
+
+        It covers the whole display, so if anything about it goes wrong there
+        has to be an exit somewhere else."""
+        self.runtime.cancel_calibration()
 
     def show_setup(self, _):
         webbrowser.open(f"http://127.0.0.1:{self.runtime.http_port}/setup")

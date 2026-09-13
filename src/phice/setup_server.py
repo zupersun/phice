@@ -37,6 +37,7 @@ class SetupServer:
                  start_calibration: Callable[[], dict] | None = None,
                  apply_calibration: Callable[[], dict] | None = None,
                  cancel_calibration: Callable[[], dict] | None = None,
+                 begin_calibration: Callable[[], dict] | None = None,
                  signaling_url: Callable[[], str] | None = None):
         self.port = port
         self._ca_der = ca_der
@@ -53,6 +54,7 @@ class SetupServer:
         self._start_calibration = start_calibration
         self._apply_calibration = apply_calibration
         self._cancel_calibration = cancel_calibration
+        self._begin_calibration = begin_calibration
         self._signaling_url = signaling_url
         self._urls = urls
         self._debug_cursor = debug_cursor
@@ -141,6 +143,9 @@ class SetupServer:
                                "application/json")
                 elif path == "/calibrate/apply" and outer._apply_calibration and self._is_local():
                     self._send(200, json.dumps(outer._apply_calibration()).encode(),
+                               "application/json")
+                elif path == "/calibrate/begin" and outer._begin_calibration and self._is_local():
+                    self._send(200, json.dumps(outer._begin_calibration()).encode(),
                                "application/json")
                 elif (path == "/calibrate/cancel" and outer._cancel_calibration
                       and self._is_local()):

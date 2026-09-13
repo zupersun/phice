@@ -67,6 +67,38 @@ body[data-inside="1"] #target::after {
 /* Holding still is a different task: no chasing, so no bullseye. */
 body[data-kind="still"] #target::after { transform: scale(0.45); }
 
+/* The intro. Shown until Begin, and again never: the run starts on the first
+   packet after that, so nobody should meet trial one without reading this. */
+#intro {
+  position: fixed; inset: 0; z-index: 5;
+  display: none; place-content: center;
+  padding: 6vh 8vw; background: var(--bg);
+}
+body[data-started="0"]:not([data-done="1"]) #intro { display: grid; }
+body[data-started="0"] #target, body[data-started="0"] #hud { display: none; }
+#intro h1 { font-size: 26px; margin: 0 0 10px; letter-spacing: -0.01em; }
+#intro .lede { color: var(--dim); font-size: 15px; max-width: 46em; margin: 0 0 16px; }
+#intro .steps { color: var(--dim); font-size: 15px; max-width: 46em;
+                margin: 0 0 22px; padding-left: 22px; }
+#intro .steps li { margin: 9px 0; }
+#intro b { color: var(--fg); font-weight: 600; }
+
+/* Pairing, on the calibration screen itself: it covers the panel that would
+   otherwise show this, and telling someone to connect a phone they cannot see
+   the code for is no instruction at all. */
+#connect { display: flex; align-items: center; gap: 22px; margin: 0 0 24px; }
+#connect .pair {
+  border: 1px solid var(--ring); border-radius: 14px; padding: 12px 20px;
+}
+#connect .code {
+  font-size: 34px; font-weight: 700; letter-spacing: 8px; color: var(--target);
+  -webkit-user-select: all; user-select: all;
+}
+#connect .url { font-size: 12px; color: var(--dim); margin-top: 2px; }
+#connect .status { color: var(--dim); font-size: 14px; margin: 0; }
+body[data-ready="1"] #connect .status { color: var(--target-hit); }
+button[disabled] { opacity: 0.4; }
+
 #hud {
   position: fixed;
   left: 0; right: 0; bottom: 0;
@@ -76,8 +108,10 @@ body[data-kind="still"] #target::after { transform: scale(0.45); }
   gap: 16px;
   background: linear-gradient(to top, var(--bg), transparent);
 }
+#step { color: var(--target); font-weight: 700; font-size: 12px;
+        letter-spacing: 0.06em; text-transform: uppercase; }
 #task { font-size: 15px; font-weight: 600; }
-#hint { color: var(--dim); flex: 1; }
+#why { color: var(--dim); flex: 1; font-size: 13px; }
 #bar { height: 3px; border-radius: 999px; background: var(--ring); width: 180px; }
 #quit { padding: 7px 14px; font-size: 12px; }
 #bar > i {
