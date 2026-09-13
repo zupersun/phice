@@ -37,12 +37,12 @@ from .config import (
 )
 from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
-from .pages import CALIBRATE_HTML
 from .pairing import PairingManager
 from .paths import Paths, client_version
 from .rtc import RTCTransport
 from .server import PhiceServer, ServerState
 from .setup_server import SetupServer
+from .templates import CALIBRATE_HTML
 
 log = logging.getLogger("phice")
 
