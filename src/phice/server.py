@@ -22,6 +22,7 @@ from .pairing import PairingManager
 from .paths import WEB_DIR, Paths
 from .protocol import (
     Bye,
+    ClientLog,
     Hello,
     Ping,
     ProtocolError,
@@ -219,6 +220,8 @@ class PhiceServer:
                     st.engine.handle(m)
                 elif isinstance(m, Ping):
                     await conn.send(pong_message())
+                elif isinstance(m, ClientLog):
+                    log.warning("phone says: %s", m.msg)
                 elif isinstance(m, Bye):
                     break
         finally:

@@ -13,6 +13,30 @@ import logging
 
 log = logging.getLogger("phice.window")
 
+#: Built once, on first use: an Objective-C class cannot be defined twice under
+#: the same name, and AppKit is only imported inside the functions below.
+_fullscreen_class = None
+
+
+def _fullscreen_window(AppKit):
+    """An NSWindow that does not let AppKit move it off the menu bar.
+
+    Every ordinary route -- setFrame:display:, setFrameOrigin: -- runs the rect
+    through constrainFrameRect:toScreen:, which pushes the window clear of the
+    menu bar. The result was a window 32px low, hanging off the bottom of the
+    display with a strip of desktop above it, and calibration cannot live with
+    that: it maps page coordinates directly onto display coordinates.
+    """
+    global _fullscreen_class
+    if _fullscreen_class is None:
+        class PhiceFullScreenWindow(AppKit.NSWindow):
+            def constrainFrameRect_toScreen_(self, rect, screen):
+                return rect
+
+        _fullscreen_class = PhiceFullScreenWindow
+    return _fullscreen_class
+
+
 #: Kept alive by key: a released NSWindow closes itself. The panel and the
 #: calibration screen are separate windows because they are different shapes --
 #: resizing one into the other would leave the panel full screen afterwards.
@@ -59,7 +83,8 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                          | AppKit.NSWindowStyleMaskClosable
                          | AppKit.NSWindowStyleMaskMiniaturizable
                          | AppKit.NSWindowStyleMaskResizable)
-            win = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            cls = _fullscreen_window(AppKit) if fullscreen else AppKit.NSWindow
+            win = cls.alloc().initWithContentRect_styleMask_backing_defer_(
                 rect, style, AppKit.NSBackingStoreBuffered, False)
             win.setTitle_(title)
             win.setReleasedWhenClosed_(False)   # reuse it; do not free on close
@@ -67,7 +92,14 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                 win.setTitlebarAppearsTransparent_(True)
                 win.setTitleVisibility_(AppKit.NSWindowTitleHidden)
                 win.setMovable_(False)          # dragging it would break the mapping
-                win.setLevel_(AppKit.NSFloatingWindowLevel)
+                # Above the Dock (20) and the menu bar (24). At a lower level the
+                # Dock draws over the window, and AppKit also refuses to let an
+                # ordinary window cover the menu bar -- so the frame came back
+                # shortened and the desktop showed through the gap.
+                win.setLevel_(AppKit.NSStatusWindowLevel)
+                win.setCollectionBehavior_(
+                    AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+                    | AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces)
                 win.setFrame_display_(rect, True)
             else:
                 win.center()
@@ -79,6 +111,14 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
         win, view = _windows[key]
         view.loadRequest_(NSURLRequest.requestWithURL_(NSURL.URLWithString_(url)))
         AppKit.NSApp.activateIgnoringOtherApps_(True)
+        if fullscreen:
+            # Take the Dock and the menu bar off the screen for the duration.
+            # Raising the window above them is not enough on its own: the Dock
+            # still slides out on hover, over the top of whatever is showing.
+            AppKit.NSApp.setPresentationOptions_(
+                AppKit.NSApplicationPresentationHideDock
+                | AppKit.NSApplicationPresentationHideMenuBar)
+            win.setFrame_display_(AppKit.NSScreen.mainScreen().frame(), True)
         win.makeKeyAndOrderFront_(None)
         return True
     except Exception:
@@ -92,6 +132,10 @@ def close(key: str) -> None:
     if entry is None:
         return
     try:
+        import AppKit
         entry[0].orderOut_(None)
+        # Give the Dock and the menu bar back. Leaving them hidden after the
+        # window has gone would look like the Mac itself had broken.
+        AppKit.NSApp.setPresentationOptions_(AppKit.NSApplicationPresentationDefault)
     except Exception:
         log.exception("could not close the %s window", key)

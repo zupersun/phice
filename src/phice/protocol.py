@@ -33,6 +33,18 @@ class Hello:
 
 
 @dataclass(frozen=True)
+class ClientLog:
+    """Something the page needs the Mac to know about itself.
+
+    A phone showing a blank screen tells you nothing from the Mac side, and
+    Safari's console is not reachable from here. This is the only channel
+    through which the page can say what went wrong.
+    """
+
+    msg: str
+
+
+@dataclass(frozen=True)
 class Ping:
     pass
 
@@ -112,7 +124,7 @@ def _button_map(v: Any, name: str, as_bool: bool) -> dict:
     return out
 
 
-def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
+def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket | ClientLog:
     if len(text.encode("utf-8", "replace")) > MAX_FRAME_BYTES:
         raise ProtocolError("frame too large")
     try:
@@ -161,6 +173,11 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket:
             raise ProtocolError("caps: expected string")
         return Hello(ver=ver, pair=_token(d.get("pair"), "pair"), token=_token(d.get("token"), "token"),
                      name=name[:64], caps=caps[:200])
+    if t == "log":
+        msg = d.get("msg", "")
+        if not isinstance(msg, str):
+            raise ProtocolError("msg: expected string")
+        return ClientLog(msg=msg[:400])
     if t == "ping":
         return Ping()
     if t == "bye":

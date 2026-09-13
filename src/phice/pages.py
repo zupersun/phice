@@ -235,22 +235,14 @@ try {
 
 <div id="intro">
   <div>
-    <h1>Calibrate the pointer</h1>
-    <p class="lede">Under a minute. Dots appear one at a time. <b>Point the phone
-       at each one</b>, the way you would point at something across a room, and
-       hold it there until the ring fills.</p>
-    <p class="warn"><b>There will be no cursor.</b> That is deliberate. With a
-       cursor on screen you steer it into the circle instead of pointing, and
-       what gets measured is your steering rather than your aim \u2014 which
-       only ever hands back the setting Phice already had.</p>
-    <ol class="steps">
-      <li><b>Hold the phone the way you normally hold it</b>, sitting where you
-          normally sit. The answer depends on both.</li>
-      <li><b>Aim at the middle dot</b> to start, then follow each dot as it
-          moves. Ten of them.</li>
-      <li><b>Keep still</b> for a moment on each. The ring shows it counting.</li>
-    </ol>
-    <p class="lede">Nothing is saved until you approve it at the end.</p>
+    <h1>Point at the dots</h1>
+    <p class="lede">There won\u2019t be a cursor. Hold your phone the way you
+       normally do. Point your phone at the dots that appear on the screen and
+       hold until the rings fill.</p>
+
+    <!-- Shows what is about to happen, on a loop. The animation is entirely in
+         calibrate.css; this is only the stage it plays on. -->
+    <div id="demo" aria-hidden="true"><span class="dot"></span></div>
 
     <div id="connect">
       <div class="pair">

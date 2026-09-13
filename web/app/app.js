@@ -189,11 +189,31 @@
     setScreen("start");
   }
 
+  // Safari's console is unreachable from the Mac, so a page that fails silently
+  // is a page nobody can debug. Anything that goes wrong goes back over the
+  // control channel and into the Mac's log.
+  function report(what) {
+    try {
+      if (state.channel && state.channel.open) {
+        state.channel.sendControl(JSON.stringify({ t: "log", msg: String(what) }));
+      }
+    } catch (_) { /* never let reporting a fault cause one */ }
+  }
+  window.addEventListener("error", (e) => report("error: " + (e.message || e)));
+  window.addEventListener("unhandledrejection", (e) => report("rejected: " + e.reason));
+
   function handleMessage(data) {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
-    if (msg.t === "layout") renderLayout(msg);
-    else if (msg.t === "theme") el.theme.textContent = msg.css;
+    if (msg.t === "layout") {
+      renderLayout(msg);
+      report("layout: " + state.buttons.size + " buttons, pad "
+             + el.pad.getBoundingClientRect().width.toFixed(0) + "x"
+             + el.pad.getBoundingClientRect().height.toFixed(0));
+    } else if (msg.t === "theme") {
+      el.theme.textContent = msg.css;
+      report("theme: " + msg.css.length + " bytes applied");
+    }
     else if (msg.t === "state") applyState(msg);
     else if (msg.t === "welcome" && msg.device_token) {
       // Given once, on the first pairing, so this phone can reconnect later
@@ -395,8 +415,28 @@
     });
 
     setScreen("live");
+    const pad = el.pad.getBoundingClientRect();
+    const first = el.pad.firstElementChild;
+    const box = first ? first.getBoundingClientRect() : null;
+    report("live: pad " + pad.width.toFixed(0) + "x" + pad.height.toFixed(0)
+           + ", buttons " + state.buttons.size
+           + (box ? ", first " + box.width.toFixed(0) + "x" + box.height.toFixed(0)
+                  + " at " + box.left.toFixed(0) + "," + box.top.toFixed(0) : ""));
     if (state.timer) clearInterval(state.timer);
     state.timer = setInterval(() => send(false), 1000 / 60);
+
+    // Never leave a black screen. If the pad is empty or unstyled, the Mac's
+    // layout or theme did not arrive, and sitting there silently is the single
+    // most expensive symptom this project has had.
+    if (!state.buttons.size || !el.theme.textContent) {
+      report("live but nothing to show: buttons=" + state.buttons.size
+             + " theme=" + el.theme.textContent.length);
+      fail(!state.buttons.size
+        ? "Your Mac did not send the button layout. Pull down to reload this page."
+        : "Your Mac did not send the theme, so the buttons are invisible. "
+          + "Pull down to reload this page.");
+      return;
+    }
 
     // Attaching a listener proves nothing: permission can be refused and the
     // events simply never arrive. The Mac then times the pointer out a second
@@ -486,6 +526,11 @@
     startSensors().catch(() => fail("Motion access was denied. Allow it in Settings › Apps › Safari › Motion & Orientation Access."));
   });
   document.getElementById("btn-retry").addEventListener("click", () => setScreen("pair"));
+
+  // A seam for the test harness. The client is otherwise sealed in this IIFE,
+  // which is why nothing has ever executed it: every phone bug so far has been
+  // in a file with no test able to reach inside it.
+  window.__phice = { handleMessage, renderLayout, applyState, state, el };
 
   el.code.value = localStorage.getItem("phice.code") || "";
   setScreen("pair");
