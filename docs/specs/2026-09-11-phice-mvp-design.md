@@ -1,9 +1,14 @@
 # Phice MVP — Design Spec
 
 Date: 2026-09-11
-Status: approved by user. A reference build validated the whole design end to end
-(121 unit tests, 11 live patterns over real TLS). Implementation plan:
-`docs/plans/2026-09-11-phice-mvp.md`
+Status: **historical.** This is the design Phice was built from, kept because it
+records why the pointer works the way it does -- the roll-invariant maths, the pure
+engine, the data-driven UI, all of which still hold.
+
+What has changed since: the phone page is hosted and pairs by a six-character code
+over WebRTC, so no certificate is involved in the normal path. Serving the page
+from the Mac over TLS, described throughout below, is now the offline alternative
+rather than the default. See the README for how it actually ships.
 
 ## 1. Summary
 

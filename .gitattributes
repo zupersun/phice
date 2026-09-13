@@ -9,5 +9,7 @@ docs/**            linguist-documentation
 uv.lock            linguist-generated
 packaging/*.spec   linguist-generated
 
-# The phone client is the product's UI, so it should count as source.
-src/phice/web/*.js linguist-detectable
+# The phone client is the product's UI, so it should count as source. It lives at
+# web/app; src/phice/web is a symlink to it, so that path matches nothing.
+web/app/*.js       linguist-detectable
+web/api/*.js       linguist-detectable
