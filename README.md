@@ -2,7 +2,7 @@
 
 # Phice
 
-**Turn an iPhone into a Wii-remote-style air mouse for macOS.**
+**Turn an iPhone into a pointer mouse for macOS.**
 
 Point the phone at your screen and the cursor follows.
 No iOS app, no App Store, no Apple Developer account.
