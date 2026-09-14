@@ -7,12 +7,12 @@
 /* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
    app.js never sets a colour, size or font of its own. */
 :root {
-  --bg-off: #000000;
-  --bg-on: #0b0f14;
-  --fg: #e8eef5;
-  --fg-dim: #6b7a8c;
-  --accent: #3ea6ff;
-  --danger: #ff5a5f;
+  --bg-off: #141414;
+  --bg-on: #1c1c1c;
+  --fg: #d4d4d4;
+  --fg-dim: #808080;
+  --accent: #4daafc;
+  --danger: #f14c4c;
 
   /* Corner radii are concentric: an inner shape's radius is its container's
      radius minus the gap between them, so every curve shares a centre. Change
@@ -41,26 +41,26 @@
     1.0038 100.0%);
   --scroll-spring-ms: 312ms;
 
-  --btn-bg: #1c2530;
-  --btn-bg-pressed: #2c3d4f;
-  --btn-fg: #9fb3c8;
-  --btn-border: 1px solid #38485a;
+  --btn-bg: #252526;
+  --btn-bg-pressed: #37373d;
+  --btn-fg: #cccccc;
+  --btn-border: 1px solid #3c3c3c;
   --btn-radius: calc(var(--pad-radius) - var(--btn-inset));
-  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #2a3644 inset;
+  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #3a3a3c inset;
 
-  --scroll-bg: #141c25;
-  --scroll-thumb: #46596d;
-  --scroll-thumb-active: #3ea6ff;
+  --scroll-bg: #1f1f1f;
+  --scroll-thumb: #4f4f4f;
+  --scroll-thumb-active: #4daafc;
   --scroll-thumb-w: 4px;
   --scroll-thumb-h: 34%;
   /* Leeway at both ends: the thumb must stop short of the track's edge. */
   --scroll-inset: 7px;
 
   /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
-  --led-off: #ff453a;
-  --led-on: #30d158;
-  --power-bg: #10161d;
-  --power-border: 1px solid #1e2731;
+  --led-off: #f14c4c;
+  --led-on: #23d18b;
+  --power-bg: #1a1a1a;
+  --power-border: 1px solid #333333;
   --led-size: 9px;
 
   --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
