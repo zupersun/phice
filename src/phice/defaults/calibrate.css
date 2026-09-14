@@ -36,6 +36,10 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  /* No cursor. The pointer is switched off for the duration, so the arrow just
+     sits there being the one thing on screen that is not a dot. The window
+     covers the whole display, so hiding it here hides it everywhere. */
+  cursor: none;
   /* Leaving fades rather than vanishing: a full-screen window blinking out is
      startling, and the fade also covers the window actually closing. */
   transition: opacity 600ms ease;

@@ -141,3 +141,36 @@ def test_the_aims_are_saved_with_the_verdict(tmp_path):
     saved = json.loads(path.read_text())
     assert saved["fitted"]["gain_x_px_per_deg"] == 40.0
     assert saved["aims"][0]["yaw"] == 180.0, "keep the evidence, not just the verdict"
+
+
+def test_a_twitch_does_not_empty_the_ring():
+    """A hand holding something steady crosses any stillness threshold
+    constantly. Treating each crossing as a restart made the ring empty and
+    refill -- the capture looking like it was failing rather than progressing."""
+    cal = Calibration(width=W, height=H, plan=[Dot(0.5, 0.5)])
+    now, yaw = 0.0, 180.0
+    for _ in range(int((MIN_AIM_S + 0.2) * 60)):     # settle onto the dot
+        now += 1 / 60
+        cal.observe(now, yaw, 0.0)
+    before = cal.state()["held_ms"]
+    assert before > 0, "the hold should have started"
+
+    now += 1 / 60                                    # one twitch past the threshold
+    cal.observe(now, yaw + 0.4, 0.0)
+    during = cal.state()["held_ms"]
+    assert during >= before, f"the ring went backwards: {before} -> {during}"
+    assert cal.state()["settling"], "a twitch must not abandon the hold"
+
+
+def test_sustained_movement_does_abandon_the_hold():
+    """The grace is for a twitch, not for giving up and aiming somewhere else."""
+    cal = Calibration(width=W, height=H, plan=[Dot(0.5, 0.5)])
+    now, yaw = 0.0, 180.0
+    for _ in range(int((MIN_AIM_S + 0.2) * 60)):
+        now += 1 / 60
+        cal.observe(now, yaw, 0.0)
+    assert cal.state()["settling"]
+    for i in range(30):                              # half a second of real movement
+        now += 1 / 60
+        cal.observe(now, yaw + i * 2.0, 0.0)
+    assert not cal.state()["settling"], "moving away must abandon the hold"

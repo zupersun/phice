@@ -35,6 +35,10 @@ SETTLE_S = 0.45
 #: Do not capture before this: the phone is still travelling to the dot, and a
 #: momentary pause on the way is not an aim.
 MIN_AIM_S = 0.6
+#: How long the phone may wander above the stillness threshold before the hold is
+#: abandoned. A hand holding something steady crosses any threshold constantly;
+#: treating each crossing as a restart made the ring flicker instead of fill.
+STILL_GRACE_S = 0.18
 #: Give up on a dot rather than trapping someone who cannot hold still enough.
 DOT_TIMEOUT_S = 8.0
 
@@ -103,6 +107,7 @@ class Calibration:
     _last_t: float | None = None
     _travel: float = 0.0
     _held: float = 0.0
+    _last_still: float = 0.0
 
     @property
     def dot(self) -> Dot | None:
@@ -135,6 +140,7 @@ class Calibration:
         self._travel += moved
 
         if moved / dt < STILL_DPS and now - self._started >= MIN_AIM_S:
+            self._last_still = now
             if self._still_since is None:
                 self._still_since, self._held, self._travel = now, 0.0, 0.0
             else:
@@ -142,6 +148,13 @@ class Calibration:
             if self._held >= SETTLE_S:
                 self._capture(now, yaw, pitch)
                 return
+        elif self._still_since is not None and now - self._last_still < STILL_GRACE_S:
+            # One twitch is not a decision to stop aiming. Without this the ring
+            # emptied and refilled every time a sample crossed the threshold,
+            # which reads as the capture failing rather than progressing. Time is
+            # measured from the last still sample, so sustained movement still
+            # runs the grace out and abandons the hold.
+            self._held = now - self._still_since
         else:
             self._still_since, self._held = None, 0.0
         if now - self._started > DOT_TIMEOUT_S:
@@ -153,6 +166,7 @@ class Calibration:
                              seconds=now - (self._started or now), timed_out=timed_out))
         self.index += 1
         self._started = self._still_since = self._last_t = None
+        self._last_still = 0.0
         self._held = self._travel = 0.0
         self.finished = self.index >= len(self.plan)
 

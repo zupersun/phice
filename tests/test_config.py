@@ -190,28 +190,6 @@ def test_both_shipped_layouts_are_valid(tmp_path):
         assert set(layout.roles().values()) == {"left", "right", "scroll", "power"}
 
 
-def test_one_handed_puts_everything_in_thumb_reach():
-    """The pads sit in the bottom half and reach the bottom edge, with power
-    above them and well clear. Pinned as relationships rather than coordinates,
-    so the cluster can be nudged without rewriting the test -- but it cannot
-    quietly drift back up the screen, which is the whole point of the layout."""
-    from phice.config import load_layout
-    from phice.paths import DEFAULTS_DIR
-
-    one = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
-    power, left, right = one["power"], one["left"], one["right"]
-    pads = [one[name] for name in ("left", "right", "scroll")]
-
-    assert all(b.y >= 45 for b in pads), "the pads must sit in the bottom half"
-    assert all(b.y + b.h >= 96 for b in pads), "the pads must reach the bottom edge"
-    assert power.y + power.h + 8 <= min(b.y for b in pads), \
-        "power must sit clear above the pads, not next to them"
-    assert power.y + power.h < min(b.y for b in pads)
-    # Symmetric, so it works in either hand and needs no handedness setting.
-    assert left.x == 100 - (right.x + right.w)
-    assert left.w == right.w
-
-
 def test_the_standard_power_button_sits_lower_than_it_used_to():
     from phice.config import load_layout
     from phice.paths import DEFAULTS_DIR
@@ -253,3 +231,21 @@ def test_the_shipped_layout_is_two_handed_and_a_choice_is_remembered(tmp_path):
     # Empty still means layout.json, for installs that predate presets.
     p.write_text(json.dumps({"ui": {"layout": ""}}))
     assert load_pointer_config(p).ui.layout == ""
+
+
+def test_one_handed_keeps_power_below_the_pads():
+    """The same relationship the two-handed layout has -- power under the pads,
+    not over them -- while the pads keep their place in thumb reach."""
+    from phice.config import load_layout
+    from phice.paths import DEFAULTS_DIR
+
+    one = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
+    std = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
+    pads = [one[n] for n in ("left", "right", "scroll")]
+
+    assert all(b.y >= 45 for b in pads), "the pads stay in the bottom half"
+    assert one["power"].y >= max(b.y + b.h for b in pads), "power sits below the pads"
+    assert one["power"].y + one["power"].h <= 100, "and stays on the screen"
+    # Both layouts now read the same way: pads, then power underneath.
+    assert std["power"].y >= max(std[n].y + std[n].h for n in ("left", "right", "scroll"))
+    assert one["left"].x == 100 - (one["right"].x + one["right"].w), "symmetric, either hand"
