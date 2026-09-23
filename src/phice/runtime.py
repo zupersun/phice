@@ -56,12 +56,16 @@ class Status:
     pair_code: str = ""
     enabled: bool = True
     error: str = ""
+    #: Set while the letterbox cannot be reached. Separate from `error`, which is
+    #: about the config files: the panel and the menu bar say different things.
+    pairing_error: str = ""
 
     def read(self) -> dict:
         with self.lock:
             return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
                         accessibility=self.accessibility, enabled=self.enabled,
-                        pair_code=self.pair_code, error=self.error)
+                        pair_code=self.pair_code, error=self.error,
+                        pairing_error=self.pairing_error)
 
     def update(self, **kw) -> None:
         with self.lock:
@@ -252,6 +256,12 @@ class Runtime:
         # answered it. After a disconnect the previous offer lingers there until
         # the fresh one is gathered and published; answering it fails ICE.
         d["offer_ready"] = self.pairing.waiter is not None
+        # The code's remaining life at the letterbox, from the wall clock so a
+        # sleep shows as expired rather than paused. The panel draws code_life.
+        p = self.pairing
+        remaining = max(0.0, p.published_at + p.ttl - time.time()) if p.waiter else 0.0
+        d["code_expires_in"] = round(remaining)
+        d["code_life"] = round(remaining / p.ttl, 3) if p.ttl else 0.0
         d["sensor_hz"] = round(rtc.hz, 1) if rtc and rtc.is_open else 0.0
         d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):

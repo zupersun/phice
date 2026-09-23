@@ -103,6 +103,8 @@ def test_the_debug_snapshot_names_the_letterbox_and_the_phone_page(tmp_path):
     assert d["signaling_url"] == "https://phice.vercel.app"
     assert d["phone_url"] == "https://phice.vercel.app/app"
     assert d["offer_ready"] is False, "nothing published yet"
+    assert d["code_expires_in"] == 0 and d["code_life"] == 0.0
+    assert d["pairing_error"] == ""
     for gone in ("transport", "cert_mode", "phone_caps", "tls_url"):
         assert gone not in d
 

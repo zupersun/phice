@@ -40,6 +40,9 @@ HTTP_TIMEOUT = 10.0
 #: does not say. The reply is authoritative: the two must never disagree.
 DEFAULT_OFFER_TTL_S = 300.0
 
+#: How long to wait before trying the letterbox again after it refused a publish.
+RETRY_S = 10.0
+
 
 def offer_ttl(body: dict | None) -> float:
     """The lifetime a letterbox reply promises, or the default if it is silent."""
@@ -159,9 +162,9 @@ class Pairing:
     """The pairing code and the wait for an answer, shared between this loop and
     whoever asks for a fresh code from the panel.
 
-    A small named thing rather than three loose attributes on the runtime: they
-    are only meaningful together, and `rotate` in particular has to be read in
-    the same breath as `waiter` -- it is what tells a cancellation of that wait
+    A small named thing rather than loose attributes on the runtime: they are
+    only meaningful together, and `rotate` in particular has to be read in the
+    same breath as `waiter` -- it is what tells a cancellation of that wait
     apart from the whole task being shut down.
     """
 
@@ -171,6 +174,11 @@ class Pairing:
     code: str = ""
     waiter: asyncio.Task | None = None
     rotate: bool = False
+    #: When the current offer was accepted by the letterbox (wall clock) and for
+    #: how many seconds it promised to keep it. Together they are the code's
+    #: remaining life, which the panel draws.
+    published_at: float = 0.0
+    ttl: float = 0.0
 
 
 def ice_servers(rt: Runtime) -> tuple | None:
@@ -225,24 +233,36 @@ async def run(rt: Runtime) -> None:
         # page's remembered code was always the dead one.
         code = rt.pairing.code or new_pairing_code()
         rt.pairing.code = code
-        rt.status.update(pair_code=code, error="")
+        rt.status.update(pair_code=code)
 
         offer = await rt.rtc.create_offer()
         try:
-            await client.publish_offer(code, offer)
+            ttl = await client.publish_offer(code, offer)
         except SignalingError as e:
             log.error("could not reach the pairing service: %s", e)
-            rt.status.update(error=str(e))
+            rt.status.update(pairing_error=str(e))
             await rt.rtc.close()
-            await asyncio.sleep(10)
+            await asyncio.sleep(RETRY_S)
             continue
+        rt.pairing.published_at = time.time()
+        rt.pairing.ttl = ttl
+        rt.status.update(pairing_error="")
         log.info("pairing code %s -- enter it at %s/app", code, rt.config.signaling_url)
-        rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(code))
+        # One second past the lifetime, so the letterbox has certainly dropped
+        # this offer before the next one is gathered: a phone that could still
+        # fetch the old offer would answer it, and that answer fails on the new
+        # peer connection. A missing offer it simply retries.
+        rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(
+            code, timeout=ttl + 1.0, expires_at=rt.pairing.published_at + ttl))
         try:
             answer = await rt.pairing.waiter
-        except SignalingError:
+        except SignalingError as e:
+            # Say which way it ended: "expired at the letterbox" after a sleep
+            # looks nothing like "timed out" after an ordinary five minutes, and
+            # the log is the only place the difference is visible.
+            log.info("offer under %s lapsed (%s); publishing another", code, e)
             await rt.rtc.close()
-            continue            # the code expired unused; mint another
+            continue
         except asyncio.CancelledError:
             # Two very different things arrive here: the panel asking for a
             # new code, and this whole task being shut down. Swallowing both
