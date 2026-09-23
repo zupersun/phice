@@ -327,7 +327,8 @@ async def test_the_loop_waits_as_long_as_the_letterbox_keeps_the_offer(tmp_path,
 async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_path, monkeypatch):
     """The failure used to land in status.error, which the panel never showed
     and the menu bar called a config error. It has its own field, and it is
-    cleared by the next successful publish, not by the next attempt."""
+    cleared by the next successful publish, not by the next attempt. The retry
+    is held behind an event so the transient state is observed, not raced."""
     import json as _json
 
     from phice.paths import Paths
@@ -341,6 +342,7 @@ async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_pa
     paths.pointer_json.write_text(_json.dumps(d))
 
     attempts: list[int] = []
+    proceed = asyncio.Event()
 
     class FakeSignaling:
         def __init__(self, *a, **kw):
@@ -353,6 +355,7 @@ async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_pa
             attempts.append(1)
             if len(attempts) == 1:
                 raise SignalingError("POST /api/offer failed: no route to host")
+            await proceed.wait()      # hold the retry until the test has seen the error
             return 300.0
 
         async def wait_for_answer(self, code, **kw):
@@ -370,6 +373,7 @@ async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_pa
             await asyncio.sleep(0.1)
         assert "no route to host" in rt.status.read()["pairing_error"]
         assert rt.status.read()["error"] == "", "a letterbox failure is not a config error"
+        proceed.set()
         for _ in range(60):
             if len(attempts) >= 2 and not rt.status.read()["pairing_error"]:
                 break
