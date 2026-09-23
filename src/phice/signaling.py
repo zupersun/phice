@@ -153,8 +153,8 @@ async def run(rt: Runtime) -> None:
 
     Loops: a pairing code is single use, so once a phone connects the next one
     needs a fresh offer. No certificate is involved at any point -- WebRTC
-    verifies the peers by DTLS fingerprint, which is the whole reason this
-    transport exists.
+    verifies the peers by DTLS fingerprint, which is what lets a plain hosted
+    page reach the motion sensors and the Mac without anything installed.
     """
     client = SignalingClient(rt.config.signaling_url)
     while True:
@@ -171,12 +171,13 @@ async def run(rt: Runtime) -> None:
                     log.warning("no TURN relay available; this will only connect "
                                 "when both devices are on the same network")
         rt.rtc = RTCTransport(engine=rt.engine,
-                                layout_json=rt.paths.layout_json.read_text(),
-                                theme_css=rt.paths.theme_css.read_text(),
-                                accessibility=lambda: rt.status.read()["accessibility"],
-                                ice_servers=(rt.rtc_ice_servers
-                                             if rt.rtc_ice_servers is not None
-                                             else ice))
+                              layout=rt.layout.to_dict(),
+                              theme_css=rt.paths.theme_css.read_text(),
+                              accessibility=lambda: rt.status.read()["accessibility"],
+                              record=rt.record,
+                              ice_servers=(rt.rtc_ice_servers
+                                           if rt.rtc_ice_servers is not None
+                                           else ice))
         # Mint and show the code before gathering candidates, not after. ICE
         # gathering takes seconds, and minting afterwards meant "new code" sat
         # there doing nothing visible for all of them. The phone may now ask for

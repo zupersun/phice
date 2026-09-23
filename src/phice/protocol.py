@@ -25,9 +25,10 @@ class ProtocolError(ValueError):
 
 @dataclass(frozen=True)
 class Hello:
+    """Who the phone is and what it can do. Pairing happened out of band, by
+    code, before this channel existed; nothing here grants anything."""
+
     ver: int
-    pair: str | None
-    token: str | None
     name: str
     caps: str = ""
 
@@ -98,14 +99,6 @@ def _vec3(v: Any, lim: float, name: str) -> Vec3:
     return tuple(_num(x if x is not None else 0.0, -lim, lim, name) for x in v)  # type: ignore[return-value]
 
 
-def _token(v: Any, name: str) -> str | None:
-    if v is None:
-        return None
-    if not isinstance(v, str) or not (8 <= len(v) <= 128) or not re.fullmatch(r"[A-Za-z0-9_-]+", v):
-        raise ProtocolError(f"{name}: malformed")
-    return v
-
-
 def _button_map(v: Any, name: str, as_bool: bool) -> dict:
     if not isinstance(v, dict) or len(v) > MAX_BUTTONS:
         raise ProtocolError(f"{name}: expected object with <= {MAX_BUTTONS} keys")
@@ -171,8 +164,7 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket | Clien
         caps = d.get("caps", "")
         if not isinstance(caps, str):
             raise ProtocolError("caps: expected string")
-        return Hello(ver=ver, pair=_token(d.get("pair"), "pair"), token=_token(d.get("token"), "token"),
-                     name=name[:64], caps=caps[:200])
+        return Hello(ver=ver, name=name[:64], caps=caps[:200])
     if t == "log":
         msg = d.get("msg", "")
         if not isinstance(msg, str):
@@ -186,10 +178,6 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket | Clien
 
 
 # --- server -> phone -------------------------------------------------------
-
-def welcome_message(device_token: str) -> str:
-    return json.dumps({"t": "welcome", "device_token": device_token})
-
 
 def state_message(*, conn: bool, power: bool, phase: str, recenter: float, idle_hz: int,
                   accessibility: bool, ui: dict) -> str:
@@ -228,13 +216,9 @@ def theme_chunks(css: str) -> list[str]:
 
 
 def theme_message(css: str, more: bool = False) -> str:
-    """Push the stylesheet itself. The hosted page has no HTTP route back to the
-    Mac, so it receives the CSS rather than a hint to re-fetch it."""
+    """Push the stylesheet itself: the page has no HTTP route back to the Mac,
+    so it receives the CSS rather than a hint to re-fetch it."""
     return json.dumps({"t": "theme", "css": css, "more": more})
-
-
-def err_message(code: str, msg: str) -> str:
-    return json.dumps({"t": "err", "code": code, "msg": msg})
 
 
 def pong_message() -> str:

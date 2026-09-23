@@ -4,15 +4,12 @@ version = "0.1.0"
 description = "Use an iPhone as a Wii-remote-style air mouse for macOS"
 requires-python = ">=3.12"
 dependencies = [
-    "websockets>=13",
-    "cryptography>=42",
+    "aiortc>=1.15",                  # the data channel the phone streams over
     "rumps>=0.4.0",
-    "qrcode>=7.4",
     "pyobjc-framework-Quartz>=10",
     "pyobjc-framework-Cocoa>=10",
     "pyobjc-framework-ApplicationServices>=10",
     "pyobjc-framework-WebKit>=10",   # the control panel window
-    "aiortc>=1.15",
 ]
 
 [project.scripts]

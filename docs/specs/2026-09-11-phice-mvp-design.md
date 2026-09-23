@@ -6,9 +6,10 @@ records why the pointer works the way it does -- the roll-invariant maths, the p
 engine, the data-driven UI, all of which still hold.
 
 What has changed since: the phone page is hosted and pairs by a six-character code
-over WebRTC, so no certificate is involved in the normal path. Serving the page
-from the Mac over TLS, described throughout below, is now the offline alternative
-rather than the default. See the README for how it actually ships.
+over WebRTC, so no certificate is involved anywhere. Serving the page from the Mac
+over TLS, the local CA, the Tailscale certificate and the token-based pairing
+described throughout below were removed on 2026-09-22; `tools/fake_phone.py` now
+pairs the way the phone does. See the README for how it actually ships.
 
 ## 1. Summary
 

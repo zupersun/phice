@@ -33,7 +33,7 @@ def test_partial_config_uses_defaults(tmp_path):
 @pytest.mark.parametrize("bad", [
     {"gain_x_px_per_deg": 0}, {"gain_x_px_per_deg": "fast"}, {"invert_y": 1},
     {"one_euro": {"min_cutoff": -1}}, {"chord_window_ms": 5000}, {"ui": {"keep_awake": "never"}},
-    {"cert_mode": "magic"}, {"recenter_hold_ms": 10},
+    {"recenter_hold_ms": 10},
 ])
 def test_rejects_invalid_values(bad):
     with pytest.raises(ConfigError):
@@ -114,14 +114,15 @@ def test_paths_ensure_and_reset(tmp_path):
     assert paths.theme_css.read_text() == (DEFAULTS_DIR / "theme.css").read_text()
 
 
-def test_ensure_creates_menubar_icons_and_touch_icon(tmp_path):
+def test_ensure_creates_menubar_icons(tmp_path):
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     for name in ("warn", "disconnected", "off", "on"):
         p = paths.assets / "menubar" / f"{name}.png"
         assert p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
-    assert (paths.assets / "apple-touch-icon.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
     assert (paths.assets / "logo.svg").read_text().startswith("<svg")
+    # The Home Screen icon existed for the page the Mac used to serve itself.
+    assert not (paths.assets / "apple-touch-icon.png").exists()
 
 
 def test_ensure_never_overwrites_user_assets(tmp_path):
@@ -134,14 +135,15 @@ def test_ensure_never_overwrites_user_assets(tmp_path):
     assert (paths.assets / "menubar" / "on.png").read_bytes() == b"mine"
 
 
-def test_tailscale_host_is_remembered():
-    """The runtime cannot reach the Tailscale GUI's CLI from the launch agent,
-    so the name resolved once in a terminal has to survive in config."""
-    cfg = PointerConfig.from_dict({"cert_mode": "tailscale",
+def test_settings_from_the_tls_era_are_ignored_not_rejected():
+    """Installs that predate the hosted page still carry cert_mode, transport and
+    tailscale_host in pointer.json. Rejecting them would kill the pointer on
+    the first launch after an upgrade, so they are simply not read."""
+    cfg = PointerConfig.from_dict({"cert_mode": "tailscale", "transport": "tls",
                                    "tailscale_host": "mac.tail1234.ts.net"})
-    assert cfg.cert_mode == "tailscale" and cfg.tailscale_host == "mac.tail1234.ts.net"
-    with pytest.raises(ConfigError):
-        PointerConfig.from_dict({"tailscale_host": 123})
+    assert cfg == PointerConfig()
+    for gone in ("cert_mode", "transport", "tailscale_host"):
+        assert not hasattr(cfg, gone)
 
 
 def test_layout_no_longer_requires_a_power_button():
@@ -156,23 +158,18 @@ def test_layout_still_rejects_two_power_buttons():
         parse_layout(_layout([_btn(), _btn(id="p2", role="power", x=50)]))
 
 
-def test_transport_settings():
-    cfg = PointerConfig.from_dict({})
-    assert cfg.transport == "tls"           # unchanged default: nothing breaks yet
-    assert cfg.signaling_url == "https://phice.vercel.app"
-
-    cfg = PointerConfig.from_dict({"transport": "webrtc",
-                                   "signaling_url": "https://example.test"})
-    assert cfg.transport == "webrtc" and cfg.signaling_url == "https://example.test"
+def test_signaling_url_setting():
+    assert PointerConfig.from_dict({}).signaling_url == "https://phice.vercel.app"
+    cfg = PointerConfig.from_dict({"signaling_url": "https://example.test"})
+    assert cfg.signaling_url == "https://example.test"
 
 
 @pytest.mark.parametrize("bad", [
-    {"transport": "carrier-pigeon"},
     {"signaling_url": "ftp://example.test"},
     {"signaling_url": "http://example.test"},   # signaling must be HTTPS
     {"signaling_url": 42},
 ])
-def test_rejects_bad_transport_settings(bad):
+def test_rejects_bad_signaling_urls(bad):
     with pytest.raises(ConfigError):
         PointerConfig.from_dict(bad)
 

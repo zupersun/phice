@@ -39,27 +39,6 @@ def _png_rgba(pixels: list[list[tuple[int, int, int, int]]]) -> bytes:
     return _png_bytes(w, h, 6, raw)
 
 
-def touch_icon(size: int = 180) -> bytes:
-    """Home Screen icon: iOS requires PNG here, so draw one rather than ship SVG."""
-    bg, accent = (11, 15, 20, 255), (62, 166, 255, 255)
-    cx, cy = size / 2, size / 2
-    rx, ry = size * 0.17, size * 0.29
-    stroke = size * 0.039
-    wheel_w, wheel_top, wheel_h = size * 0.045, size * 0.32, size * 0.145
-    rows = []
-    for y in range(size):
-        row = []
-        for x in range(size):
-            fx, fy = (x - cx + 0.5) / rx, (y - cy + 0.5) / ry
-            d = math.hypot(fx, fy)
-            on_body = abs(d - 1.0) * min(rx, ry) <= stroke / 2
-            in_wheel = (abs(x - cx + 0.5) <= wheel_w / 2
-                        and wheel_top <= y <= wheel_top + wheel_h)
-            row.append(accent if (on_body or in_wheel) else bg)
-        rows.append(row)
-    return _png_rgba(rows)
-
-
 def _blank() -> list[list[int]]:
     return [[0] * SIZE for _ in range(SIZE)]
 
@@ -138,7 +117,4 @@ def write_defaults(assets: Path) -> None:
     logo = assets / "logo.svg"
     if not logo.exists():
         logo.write_text(LOGO_SVG)
-    touch = assets / "apple-touch-icon.png"
-    if not touch.exists():
-        touch.write_bytes(touch_icon())
     (assets / "icons").mkdir(exist_ok=True)

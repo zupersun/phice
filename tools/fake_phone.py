@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Fake phone: drives a running Phice server over the real TLS socket.
+"""Fake phone: pairs with a running Phice the way an iPhone does and drives it.
 
-The agent building this project cannot hold an iPhone, so this is how every
-end-to-end behaviour gets verified.
+It reads the pairing code and the letterbox address off the Mac's own debug
+hook, fetches the offer from that letterbox, answers it over a WebRTC data
+channel and then streams sensor packets. The agent building this project cannot
+hold an iPhone, so this is how every end-to-end behaviour gets verified.
 
-    python tools/fake_phone.py --pattern sweep --check
+    uv run phice --config-dir /tmp/e2e --http-port 18080 run --backend fake --headless &
+    uv run python tools/fake_phone.py --pattern sweep --check --http-port 18080
+
+Pairing goes through whatever `signaling_url` the Mac is configured with, so
+this needs the letterbox to be reachable -- the hosted one by default.
 """
 from __future__ import annotations
 
@@ -12,39 +18,43 @@ import argparse
 import asyncio
 import json
 import math
-import ssl
 import sys
 import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from websockets.asyncio.client import connect  # noqa: E402
+from aiortc import (  # noqa: E402
+    RTCConfiguration,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+)
 
-from phice.certs import CertPaths  # noqa: E402
-from phice.pairing import PairingManager  # noqa: E402
-from phice.paths import Paths, default_config_dir  # noqa: E402
+from phice.paths import client_version  # noqa: E402
+from phice.rtc import gather_complete  # noqa: E402
+from phice.signaling import SignalingClient  # noqa: E402
 
 BUTTONS = ["left", "right", "scroll", "power"]
 
 
 class FakePhone:
-    def __init__(self, ws, hz: float = 60.0):
-        self.ws = ws
+    def __init__(self, send, hz: float = 60.0):
+        self._send = send
         self.hz = hz
         self.seq = 0
         self.t = 0.0
         self.buttons = {b: False for b in BUTTONS}
         self.counters = {b: 0 for b in BUTTONS}
 
-    async def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0):
+    async def send(self, alpha=0.0, beta=0.0, gamma=0.0, rr=(10.0, 0.0, 0.0), sd=0.0, sp=None):
         self.seq += 1
         self.t += 1.0 / self.hz
-        await self.ws.send(json.dumps({
+        self._send(json.dumps({
             "t": "s", "seq": self.seq, "ts": self.t, "o": [alpha % 360, beta, gamma],
             "rr": list(rr), "g": [0.0, 0.0, 9.81],
             "b": {k: int(v) for k, v in self.buttons.items()}, "c": dict(self.counters),
-            "sd": sd}))
+            "sd": sd, "sp": sp}))
         await asyncio.sleep(1.0 / self.hz)
 
     async def press(self, name, alpha=0.0, beta=0.0):
@@ -131,10 +141,12 @@ async def pattern_chord(p):
 
 
 async def pattern_scroll(p):
+    """The strip is a rate control: speed comes from where the finger sits, so
+    holding it near the end keeps scrolling. `sd` alone does nothing by default."""
     await p.power_on()
     await p.press("scroll")
     for _ in range(int(0.8 * p.hz)):
-        await p.send(sd=-6.0)
+        await p.send(sd=-6.0, sp=0.95)
     await p.release("scroll")
     await p.hold(0.2)
 
@@ -147,8 +159,9 @@ async def pattern_roll(p):
 
 
 async def pattern_rest(p):
+    """Lie flat and still for longer than `rest_seconds`: the pointer switches itself off."""
     await p.power_on()
-    await p.hold(2.0, alpha=0.0, beta=0.0, rr=(0.2, 0.2, 0.2))
+    await p.hold(3.5, alpha=0.0, beta=0.0, rr=(0.2, 0.2, 0.2))
 
 
 PATTERNS = {n[len("pattern_"):]: f for n, f in list(globals().items()) if n.startswith("pattern_")}
@@ -159,7 +172,7 @@ def debug_cursor(http_port: int) -> dict:
         return json.loads(r.read())
 
 
-async def replay(phone: FakePhone, path: Path) -> None:
+async def replay(send, path: Path) -> None:
     records = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
     if not records:
         return
@@ -170,7 +183,7 @@ async def replay(phone: FakePhone, path: Path) -> None:
         delay = target - asyncio.get_running_loop().time()
         if delay > 0:
             await asyncio.sleep(delay)
-        await phone.ws.send(rec["raw"])
+        send(rec["raw"])
 
 
 def check(pattern: str, before: dict, after: dict) -> bool:
@@ -191,48 +204,96 @@ def check(pattern: str, before: dict, after: dict) -> bool:
     if pattern == "chord":
         return clicks == 0 and not held and centered == (720.0, 450.0)
     if pattern == "scroll":
-        return scrolled > 10 and clicks == 0 and moves == 0
-    if pattern in ("still", "roll"):
+        # Powering on snaps the cursor once; the strip must freeze it after that.
+        return scrolled > 10 and clicks == 0 and moves <= 1
+    if pattern == "still":
         return moves == 0 and clicks == 0
+    if pattern == "roll":
+        # Powering on snaps the cursor to the centre; rolling must leave it there.
+        return clicks == 0 and centered == (720.0, 450.0) and moves <= 5
     if pattern == "rest":
         return after.get("phase") in (None, "off")
     return True
 
 
+async def pair(http_port: int, name: str, verbose: bool) -> tuple[RTCPeerConnection, object, object]:
+    """Do what the page does: fetch the offer under the Mac's code, answer it.
+
+    Returns the peer connection and its two channels once both are open."""
+    # Wait for the Mac to say its current offer is in the letterbox. After the
+    # previous session ends the old offer lingers there while the fresh one is
+    # gathered, and answering that one fails ICE every time.
+    status = None
+    for _ in range(300):
+        status = debug_cursor(http_port)
+        if status.get("pair_code") and status.get("offer_ready"):
+            break
+        await asyncio.sleep(0.2)
+    else:
+        raise SystemExit(f"the Mac is not offering a pairing code: {status}")
+    code, letterbox = status["pair_code"], status["signaling_url"]
+    client = SignalingClient(letterbox, allow_insecure=True)
+    print(f"pairing with code {code} via {letterbox}")
+
+    ice = await client.fetch_ice_servers()
+    servers = [RTCIceServer(urls=s["urls"], username=s.get("username"),
+                            credential=s.get("credential")) for s in (ice or [])]
+    pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=servers))
+    channels: dict[str, object] = {}
+    opened = asyncio.get_running_loop().create_future()
+
+    @pc.on("datachannel")
+    def on_channel(channel):
+        channels[channel.label] = channel
+
+        @channel.on("message")
+        def on_message(raw):
+            msg = json.loads(raw)
+            if msg.get("t") == "err":
+                print("server error:", msg, file=sys.stderr)
+            elif verbose and msg.get("t") != "state":
+                print("<-", str(raw)[:140])
+
+        if {"phice", "phice-ctl"} <= channels.keys() and not opened.done():
+            opened.set_result(True)
+
+    # The Mac shows the code before its offer is fully gathered, so retry.
+    offer = None
+    for _ in range(40):
+        offer = await client.fetch_offer(code)
+        if offer:
+            break
+        await asyncio.sleep(0.5)
+    if not offer:
+        raise SystemExit(f"no offer under {code} at {letterbox}")
+    await pc.setRemoteDescription(RTCSessionDescription(sdp=offer["sdp"], type=offer["type"]))
+    await pc.setLocalDescription(await pc.createAnswer())
+    await gather_complete(pc)
+    await client.publish_answer(code, {"sdp": pc.localDescription.sdp,
+                                       "type": pc.localDescription.type})
+    await asyncio.wait_for(opened, timeout=60)
+    ctl, data = channels["phice-ctl"], channels["phice"]
+    ctl.send(json.dumps({"t": "hello", "ver": 1, "name": name,
+                         "caps": "fake,v" + client_version()}))
+    return pc, ctl, data
+
+
 async def run(args) -> int:
-    paths = Paths(Path(args.config_dir) if args.config_dir else default_config_dir())
-    pairing = PairingManager(paths.devices_json)
-    token = pairing.mint_pairing_token()
-    ctx = ssl.create_default_context(cafile=str(CertPaths.under(paths.certs).ca_crt))
-    url = f"wss://{args.host}:{args.tls_port}/ws"
     before = debug_cursor(args.http_port) if args.check else None
-
-    async with connect(url, ssl=ctx,
-                       additional_headers={"Origin": f"https://{args.host}:{args.tls_port}"}) as ws:
-        await ws.send(json.dumps({"t": "hello", "ver": 1, "pair": token, "name": args.name}))
-        phone = FakePhone(ws, args.hz)
-
-        async def drain():
-            try:
-                async for raw in ws:
-                    msg = json.loads(raw)
-                    if msg.get("t") == "err":
-                        print("server error:", msg, file=sys.stderr)
-                    elif args.verbose and msg.get("t") != "state":
-                        print("<-", str(raw)[:140])
-            except Exception:
-                pass
-
-        reader = asyncio.create_task(drain())
+    pc, _ctl, data = await pair(args.http_port, args.name, args.verbose)
+    try:
+        phone = FakePhone(data.send, args.hz)
         if args.pattern == "replay":
-            await replay(phone, Path(args.file))
+            await replay(data.send, Path(args.file))
         else:
             await PATTERNS[args.pattern](phone)
-        reader.cancel()
+        await asyncio.sleep(0.3)             # let the last packets land
+        after = debug_cursor(args.http_port) if args.check else None
+    finally:
+        await pc.close()
 
     if not args.check:
         return 0
-    after = debug_cursor(args.http_port)
     ok = check(args.pattern, before, after)
     print(json.dumps({"pattern": args.pattern, "before": before, "after": after}, indent=2))
     print("PASS" if ok else "FAIL", "-", args.pattern)
@@ -243,12 +304,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pattern", default="sweep", choices=sorted(PATTERNS) + ["replay"])
     ap.add_argument("--file", help="session .jsonl for --pattern replay")
-    ap.add_argument("--host", default="localhost")
-    ap.add_argument("--tls-port", type=int, default=8443)
     ap.add_argument("--http-port", type=int, default=8080)
     ap.add_argument("--hz", type=float, default=60.0)
     ap.add_argument("--name", default="FakePhone")
-    ap.add_argument("--config-dir")
     ap.add_argument("--check", action="store_true", help="assert the cursor did the right thing")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()

@@ -51,7 +51,7 @@ def transport():
     # and is consumed; power taps off and holds to recenter.
     # No STUN: these peers only ever talk over loopback, and the round trip
     # costs five seconds per connection while discovering nothing useful.
-    t = RTCTransport(engine=engine, layout_json='{"version":1,"buttons":[]}',
+    t = RTCTransport(engine=engine, layout={"version": 1, "buttons": []},
                      theme_css="body{}", ice_servers=())
     t.cursor = cursor
     return t
@@ -143,8 +143,8 @@ async def test_disconnect_releases_held_buttons(transport):
 
 
 async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
-    """In webrtc transport the runtime must publish an offer and expose the code
-    without minting any certificate: the whole point is that none is needed."""
+    """The runtime must publish an offer and expose the code; no certificate is
+    involved anywhere, which is the whole point of pairing this way."""
     import json as _json
 
     from phice.paths import Paths
@@ -153,7 +153,6 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     d = _json.loads(paths.pointer_json.read_text())
-    d["transport"] = "webrtc"
     d["signaling_url"] = "https://example.invalid"
     paths.pointer_json.write_text(_json.dumps(d))
 
@@ -174,7 +173,7 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
             await asyncio.sleep(3600)  # never answers, in this test
 
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
-    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()  # loopback: no STUN round trip
     task = asyncio.ensure_future(signaling.run(rt))
     try:
@@ -205,7 +204,6 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     d = _json.loads(paths.pointer_json.read_text())
-    d["transport"] = "webrtc"
     d["signaling_url"] = "https://example.invalid"
     paths.pointer_json.write_text(_json.dumps(d))
 
@@ -227,7 +225,7 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
             raise SignalingError("timed out")
 
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
-    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
     task = asyncio.ensure_future(signaling.run(rt))
     try:
@@ -299,11 +297,11 @@ async def test_status_says_connected_while_a_phone_is_on_the_data_channel(tmp_pa
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     d = _json.loads(paths.pointer_json.read_text())
-    d.update(transport="webrtc", signaling_url="https://example.invalid")
+    d["signaling_url"] = "https://example.invalid"
     paths.pointer_json.write_text(_json.dumps(d))
 
-    rt = Runtime(paths, FakeCursor(), 0, 0)
-    rt.rtc = RTCTransport(engine=rt.engine, layout_json='{"version":1,"buttons":[]}',
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc = RTCTransport(engine=rt.engine, layout={"version": 1, "buttons": []},
                           theme_css="body{}", ice_servers=())
     status = asyncio.ensure_future(rt._status_loop())
     try:
@@ -332,7 +330,7 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     d = _json.loads(paths.pointer_json.read_text())
-    d.update(transport="webrtc", signaling_url="https://example.invalid")
+    d["signaling_url"] = "https://example.invalid"
     paths.pointer_json.write_text(_json.dumps(d))
 
     codes: list[str] = []
@@ -361,7 +359,7 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
 
     import phice.signaling as session_mod
     original, session_mod.SignalingClient = session_mod.SignalingClient, FakeSignaling
-    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt = Runtime(paths, FakeCursor(), 0)
     rt._loop = asyncio.get_running_loop()
     rt.rtc_ice_servers = ()
     task = asyncio.ensure_future(signaling.run(rt))
@@ -441,7 +439,7 @@ async def test_the_active_layout_follows_ui_layout_and_falls_back_safely(tmp_pat
         d = _json.loads(cfg.read_text())
         d.setdefault("ui", {})["layout"] = layout_name
         cfg.write_text(_json.dumps(d))
-        return Runtime(paths, FakeCursor(), 0, 0)
+        return Runtime(paths, FakeCursor(), 0)
 
     assert reload("").active_layout_path() == paths.layout_json
     assert reload("one-handed").active_layout_path() == paths.layouts / "one-handed.json"
@@ -456,9 +454,9 @@ async def test_switching_grip_reloads_the_layout_the_phone_is_using(tmp_path):
 
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
-    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt = Runtime(paths, FakeCursor(), 0)
     assert rt.set_layout("one-handed") is True
-    rt = Runtime(paths, FakeCursor(), 0, 0)      # as a restart would see it
+    rt = Runtime(paths, FakeCursor(), 0)      # as a restart would see it
     power = next(b for b in rt.layout.buttons if b.role == "power")
     pads = [b for b in rt.layout.buttons if b.role != "power"]
     assert all(b.y >= 45 for b in pads), "one-handed puts the pads in thumb reach"
@@ -482,7 +480,7 @@ async def test_an_edited_preset_survives_switching_away_and_back(tmp_path):
     edited["buttons"][0]["x"] = 11
     preset.write_text(_json.dumps(edited))
 
-    rt = Runtime(paths, FakeCursor(), 0, 0)
+    rt = Runtime(paths, FakeCursor(), 0)
     rt.set_layout("one-handed")
     rt.set_layout("standard")
     rt.set_layout("one-handed")
@@ -559,3 +557,87 @@ async def test_the_stylesheet_arrives_in_pieces_and_reassembles(transport):
     finally:
         await phone.close()
         await transport.close()
+
+
+async def test_a_recording_holds_every_sensor_frame_and_a_scrubbed_hello():
+    """The recorder used to hang off the WebSocket server, so on this transport
+    "Record session" wrote an empty file. tools/replay.py needs every sensor
+    frame as it arrived and one hello marker per connection -- the marker, not
+    the raw hello, so a recording never carries what the phone said about
+    itself."""
+    lines: list[str] = []
+    engine = PointerEngine(PointerConfig(), FakeCursor())
+    transport = RTCTransport(engine=engine, layout={"version": 1, "buttons": []},
+                             theme_css="body{}", ice_servers=(), record=lines.append)
+    phone, channel = await _connect(transport)
+    try:
+        hello = {"t": "hello", "ver": 1, "name": "iPhone", "caps": "switch,v9"}
+        channel.send(json.dumps(hello))
+        frame = json.dumps({"t": "s", "seq": 1, "ts": 0.016, "o": [0, 0, 0], "rr": [0, 0, 0],
+                            "g": [0, 0, 9.8], "b": {}, "c": {}, "sd": 0})
+        channel.send(frame)
+        channel.send(json.dumps({"t": "ping"}))
+        channel.send(json.dumps(hello))          # the page says hello again after Start
+        for _ in range(40):
+            if len(lines) >= 2:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
+        assert [json.loads(ln)["t"] for ln in lines] == ["hello", "s"]
+        assert json.loads(lines[0]) == {"t": "hello", "ver": 1, "name": "iPhone"}
+        assert lines[1] == frame, "sensor frames are recorded verbatim"
+    finally:
+        await phone.close()
+        await transport.close()
+
+
+async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_path, monkeypatch):
+    """Every new session used to build its transport from layout.json, so a
+    phone reconnecting after the grip was switched to one-handed got the
+    two-handed layout back until something else touched the config."""
+    import json as _json
+
+    from phice.config import load_layout
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+    assert Runtime(paths, FakeCursor(), 0).set_layout("one-handed")
+
+    published: dict = {}
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            published["code"] = code
+
+        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc_ice_servers = ()
+    task = asyncio.ensure_future(signaling.run(rt))
+    try:
+        for _ in range(60):
+            if "code" in published:
+                break
+            await asyncio.sleep(0.1)
+        assert "code" in published
+        one_handed = load_layout(paths.layouts / "one-handed.json").to_dict()
+        assert rt.rtc.layout == one_handed
+        assert rt.rtc.layout != load_layout(paths.layout_json).to_dict()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if rt.rtc:
+            await rt.rtc.close()

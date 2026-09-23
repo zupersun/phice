@@ -49,7 +49,6 @@ class PhiceApp(rumps.App):
             rumps.MenuItem("Open Phice window", callback=self.show_panel),
             rumps.MenuItem("Calibrate pointer…", callback=self.calibrate),
             rumps.MenuItem("Stop calibrating", callback=self.stop_calibrating),
-            rumps.MenuItem("Show setup page…", callback=self.show_setup),
             self.item_enabled,
             rumps.MenuItem("Reload config now", callback=self.reload_config),
             rumps.MenuItem("Open config folder", callback=self.open_config),
@@ -57,7 +56,7 @@ class PhiceApp(rumps.App):
             None,
             rumps.MenuItem("Grant Accessibility…", callback=self.grant_accessibility),
             self.item_login,
-            rumps.MenuItem("Revoke all paired devices", callback=self.revoke),
+            rumps.MenuItem("New pairing code", callback=self.new_code),
             None,
             rumps.MenuItem("Quit Phice", callback=self.quit),
         ]
@@ -91,9 +90,6 @@ class PhiceApp(rumps.App):
         has to be an exit somewhere else."""
         self.runtime.cancel_calibration()
 
-    def show_setup(self, _):
-        webbrowser.open(f"http://127.0.0.1:{self.runtime.http_port}/setup")
-
     def toggle_enabled(self, sender):
         sender.state = not sender.state
         self.runtime.set_enabled(bool(sender.state))
@@ -122,9 +118,10 @@ class PhiceApp(rumps.App):
         else:
             agent_plist_path().unlink(missing_ok=True)
 
-    def revoke(self, _):
-        self.runtime.revoke_devices()
-        rumps.notification("Phice", "Paired devices revoked", "Scan the pairing QR again.")
+    def new_code(self, _):
+        """Drop the phone that is connected, if any, and publish a fresh code."""
+        self.runtime.new_pair_code()
+        self.show_panel()
 
     def quit(self, _):
         self.runtime.stop()
@@ -165,8 +162,6 @@ class PhiceApp(rumps.App):
             # The pairing code changes each launch anyway, so the window is
             # what the user needs to see.
             self.show_panel()
-        if self._ticks % 3 == 1:
-            self.runtime.set_accessibility(accessibility_trusted())
         s = self.runtime.status.read()
         if not s["accessibility"]:
             self._set_icon("warn")

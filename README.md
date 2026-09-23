@@ -32,7 +32,7 @@ the phone.
 | 📐 **Fitted to you** | Calibration measures how much screen one degree of your wrist covers, with no cursor on screen to steer |
 | 🔌 **Any two networks** | Phone on cellular, Mac behind a campus firewall — WebRTC connects them directly, or over a relay when it must |
 | 🎨 **Yours to restyle** | Every colour, size, button and position is a file you own. No rebuild, saves apply live |
-| 🧪 **242 tests, 17 seconds** | The pointer engine is pure: an injected clock and a fake cursor, so behaviour is testable without a phone or a screen |
+| 🧪 **224 tests, 15 seconds** | The pointer engine is pure: an injected clock and a fake cursor, so behaviour is testable without a phone or a screen |
 
 ## Getting started
 
@@ -88,14 +88,15 @@ iPhone (Safari)                          Mac (Phice.app)
 ────────────────                         ────────────────────────
 CoreMotion ──┐                           validate the packet
 touch      ──┼── JSON, 60 Hz ──────────► decide what should happen
-             │   WebRTC or WebSocket     post a Quartz cursor event
+             │   WebRTC data channel     post a Quartz cursor event
              └─◄── layout + theme ─────── push config changes live
 ```
 
 Every pointer decision happens on the Mac, in an engine with no I/O driven by an
 injected clock and a swappable cursor backend. There is **one** phone client,
-`web/app/`, served both by Vercel and by your Mac; it asks `/transport` which way
-it arrived and opens a data channel or a socket accordingly.
+`web/app/`, served by Vercel. The two devices find each other through a
+letterbox that holds one offer and one answer under the code; after that the
+data channel is direct, or relayed when the networks allow nothing else.
 
 Roll cancels algebraically rather than by approximation: the W3C rotation order
 applies gamma last, about the very axis the aim vector is projected from.
@@ -110,18 +111,17 @@ applies gamma last, about the very axis the aim vector is projected from.
   negotiable
 
 ```bash
-uv run pytest -q        # 242 tests
+uv run pytest -q        # 224 tests
 uv run ruff check .     # lint
 ./packaging/build.sh    # produces dist/Phice.app
 ```
 
-Exercise the whole system with no iPhone:
+Exercise the whole system with no iPhone. The fake phone pairs through the same
+letterbox a real one uses:
 
 ```bash
-uv run phice --config-dir /tmp/e2e --tls-port 18443 --http-port 18080 \
-  run --backend fake --headless &
-uv run python tools/fake_phone.py --pattern sweep --check \
-  --config-dir /tmp/e2e --tls-port 18443 --http-port 18080
+uv run phice --config-dir /tmp/e2e --http-port 18080 run --backend fake --headless &
+uv run python tools/fake_phone.py --pattern sweep --check --http-port 18080
 ```
 
 ## Licence

@@ -67,7 +67,6 @@ export function load(ids) {
     console: { warn: (...a) => errors.push(a.join(" ")), log: () => {},
                error: (...a) => errors.push(a.join(" ")) },
     RTCPeerConnection: class { addEventListener() {} },
-    WebSocket: class { addEventListener() {} },
   };
   win.window = win;
   const ctx = vm.createContext(win);

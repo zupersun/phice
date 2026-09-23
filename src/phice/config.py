@@ -127,9 +127,7 @@ class PointerConfig:
     rest_rate_dps: float = 8.0
     idle_hz_when_auto_activate: int = 10
     timeout_ms: int = 500
-    cert_mode: str = "auto"
-    tailscale_host: str = ""
-    transport: str = "tls"
+    #: Where the hosted page and its pairing letterbox live.
     signaling_url: str = "https://phice.vercel.app"
     ice_servers: tuple = ()
     ui: UIConfig = field(default_factory=UIConfig)
@@ -159,18 +157,9 @@ class PointerConfig:
             appearance = "dark"   # the setting was dropped; do not reject old config
         if appearance not in APPEARANCES:
             raise ConfigError(f"ui.appearance: expected one of {', '.join(APPEARANCES)}")
-        cert_mode = d.get("cert_mode", "auto")
-        if cert_mode not in ("auto", "external", "tailscale"):
-            raise ConfigError("cert_mode: expected 'auto', 'external' or 'tailscale'")
-        ts_host = d.get("tailscale_host", "")
-        if not isinstance(ts_host, str) or len(ts_host) > 253:
-            raise ConfigError("tailscale_host: expected a hostname")
         mapping = d.get("mapping", "absolute")
         if mapping not in ("absolute", "relative"):
             raise ConfigError("mapping: expected 'absolute' or 'relative'")
-        transport = d.get("transport", "tls")
-        if transport not in ("tls", "webrtc"):
-            raise ConfigError("transport: expected 'tls' or 'webrtc'")
         raw_ice = d.get("ice_servers", [])
         if not isinstance(raw_ice, list) or len(raw_ice) > 8:
             raise ConfigError("ice_servers: expected a list of at most 8 entries")
@@ -233,9 +222,6 @@ class PointerConfig:
             rest_rate_dps=_num(d, "rest_rate_dps", 8.0, 0.0, 500.0),
             idle_hz_when_auto_activate=_int(d, "idle_hz_when_auto_activate", 10, 1, 60),
             timeout_ms=_int(d, "timeout_ms", 500, 100, 10000),
-            cert_mode=cert_mode,
-            tailscale_host=ts_host,
-            transport=transport,
             signaling_url=signaling_url,
             ice_servers=tuple(ice),
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake,

@@ -18,7 +18,7 @@ kills the pointer mid-use.
 | `theme.css` | Every colour, size, font and radius on the phone page |
 | `panel.css` | The Mac window: palette, the appearance switch, layout |
 | `calibrate.css` | The calibration screen |
-| `assets/` | Logo, menu-bar icons, Home Screen icon, button icons |
+| `assets/` | Menu-bar icons and the logo |
 | `sessions/` | Recordings, for offline tuning |
 | `logs/phice.log` | What the app is doing |
 
@@ -60,10 +60,8 @@ whatever was there.
 | `rest_rate_dps` | How still counts as "resting". |
 | `idle_hz_when_auto_activate` | Packet rate the phone uses while idle and waiting to be picked up. |
 | `timeout_ms` | No packets for this long releases every button and powers off. |
-| `transport` | `webrtc` (default) pairs by code through the hosted page. `tls` serves the page from your Mac instead. |
-| `signaling_url` | Where the hosted page and its pairing letterbox live. |
-| `cert_mode` | `tailscale` for a publicly trusted tailnet certificate (recommended), `auto` for the built-in certificate authority, `external` if you supply your own `certs/server.{crt,key}`. |
-| `tailscale_host` | Set by `phice tailscale`. The MagicDNS name to serve on. |
+| `signaling_url` | Where the hosted page and its pairing letterbox live. The Mac publishes its offer there under the code, and the phone fetches it. Must be `https://`. |
+| `ice_servers` | Override the STUN/TURN servers both peers use. Empty by default: the letterbox hands out the same list to both sides, which is what lets them meet. |
 | `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter. `relative` integrates turn deltas like a trackpad in the air. |
 | `ui.appearance` | `dark` or `light`, for the phone and the Mac window together. The switch in the Mac window writes this. |
 | `ui.haptics` | Haptic tick on button press. Best-effort — see the note under Daily use. |
@@ -72,8 +70,9 @@ whatever was there.
 ### `layout.json`
 
 Positions are percentages of the pad, so a layout works on any screen size. Each button
-takes an `id`, a `role`, `x`/`y`/`w`/`h`, and optionally a `label`, an `icon` path under
-`assets/`, and a `class` for your own CSS.
+takes an `id`, a `role`, `x`/`y`/`w`/`h`, and optionally a `label` and a `class` for your
+own CSS. Put imagery in `theme.css` under that class: the page is hosted, so it cannot
+fetch files from the Mac.
 
 | Role | Behaviour |
 |---|---|
@@ -130,39 +129,3 @@ whether anything was left held. Recordings carry no pairing tokens and are safe 
 
 Start with `gain_x_px_per_deg` / `gain_y_px_per_deg` for speed, `one_euro.beta` for the
 jitter-versus-lag trade-off, and `freeze_ms_on_touch` if clicks land slightly off target.
-
-
-
-## Running it without the hosted page
-
-Phice can serve the page from your Mac instead, which needs no third party but
-does need a certificate the phone trusts, because Safari exposes motion sensors
-only to a secure page. Set `transport` to `"tls"` in `pointer.json`.
-
-**Tailscale — recommended.** A real Let's Encrypt certificate for your tailnet
-name, so there is nothing to install on the phone and it still works over
-cellular.
-
-1. `brew install --cask tailscale`, open it, sign in.
-2. Enable HTTPS once: [login.tailscale.com/admin/dns](https://login.tailscale.com/admin/dns)
-   › **HTTPS Certificates** › **Enable**.
-3. Install Tailscale on the iPhone, same account.
-4. `uv run phice tailscale`, then open `http://127.0.0.1:8080/setup` and scan.
-
-**Local certificate — same Wi-Fi only.** No accounts, but the phone must install
-a profile and both devices must be on a network that allows client-to-client
-traffic.
-
-1. `http://127.0.0.1:8080/setup` on the Mac shows two QR codes.
-2. Scan the first, allow the profile, then **Settings › Profile Downloaded ›
-   Install**.
-3. **Settings › General › About › Certificate Trust Settings** — turn **Phice
-   Local CA** on. Installing is not enough; this switch is what trusts it.
-4. Scan the second QR code.
-
-If a QR does nothing, the network is blocking `.local`; the setup page prints an
-IP form underneath. If the page loads but stays black, open
-`http://<your-mac-ip>:8080/check` — it loads over plain HTTP and reports whether
-the certificate is trusted.
-
-It is the same page either way: the phone asks `/transport` which one it is on.

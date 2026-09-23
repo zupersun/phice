@@ -37,7 +37,7 @@ def client_version() -> str:
     and a phone reporting anything else is running a stale cached copy.
     """
     try:
-        src = (resource_dir() / "web" / "app.js").read_text()
+        src = (WEB_DIR / "app.js").read_text()
     except OSError:
         return ""
     m = re.search(r'CLIENT_VERSION\s*=\s*"([^"]+)"', src)
@@ -70,17 +70,13 @@ class Paths:
     @property
     def assets(self) -> Path: return self.root / "assets"
     @property
-    def devices_json(self) -> Path: return self.root / "devices.json"
-    @property
-    def certs(self) -> Path: return self.root / "certs"
-    @property
     def logs(self) -> Path: return self.root / "logs"
     @property
     def sessions(self) -> Path: return self.root / "sessions"
 
     def ensure(self) -> None:
         """Create directories and copy packaged defaults for anything missing."""
-        for d in (self.root, self.certs, self.logs, self.sessions):
+        for d in (self.root, self.logs, self.sessions):
             d.mkdir(parents=True, exist_ok=True)
         for name in ("pointer.json", *UI_FILES):
             dst = self.root / name

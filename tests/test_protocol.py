@@ -64,13 +64,16 @@ def test_rejects_large_frames_and_bad_json():
 
 
 def test_hello_ping_bye():
+    """Pairing happens through the code before the channel exists, so a hello
+    only says who the phone is and what it can do."""
     h = parse_client_message(json.dumps(
-        {"t": "hello", "ver": 1, "pair": "abcdefghij", "name": "iPhone"}))
-    assert isinstance(h, Hello) and h.pair == "abcdefghij" and h.token is None
+        {"t": "hello", "ver": 1, "name": "iPhone", "caps": "switch,v9"}))
+    assert isinstance(h, Hello) and h.name == "iPhone" and h.caps == "switch,v9"
+    assert not hasattr(h, "pair") and not hasattr(h, "token")
     with pytest.raises(ProtocolError):
         parse_client_message(json.dumps({"t": "hello", "ver": 2}))
     with pytest.raises(ProtocolError):
-        parse_client_message(json.dumps({"t": "hello", "ver": 1, "token": "bad token!"}))
+        parse_client_message(json.dumps({"t": "hello", "ver": 1, "name": 7}))
     assert isinstance(parse_client_message('{"t":"ping"}'), Ping)
     assert isinstance(parse_client_message('{"t":"bye"}'), Bye)
 

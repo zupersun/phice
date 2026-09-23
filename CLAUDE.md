@@ -1,8 +1,8 @@
 # Phice
 
-Use an iPhone as a Wii-remote-style air mouse for macOS. A background Mac app serves a web
-page to the phone over TLS; the phone streams orientation and touch at 60 Hz over a
-WebSocket; the Mac decides everything and drives the cursor.
+Use an iPhone as a Wii-remote-style air mouse for macOS. A hosted web page pairs the phone
+with a background Mac app by a six-character code; the phone streams orientation and touch
+at 60 Hz over a WebRTC data channel; the Mac decides everything and drives the cursor.
 
 **There is no iOS app and there must not be one.** The phone client is a plain web page —
 no framework, no build step, no Apple Developer account.
@@ -15,22 +15,22 @@ uv run ruff check .       # lint (must stay clean)
 uv run phice install      # (re)install + restart the login agent
 uv run phice uninstall    # remove it
 uv run phice paths        # where config lives
-uv run phice tailscale    # switch to a trusted tailnet certificate
-uv run phice setup-url    # print setup URLs
 uv run phice grant        # ask macOS for Accessibility (from the agent, not the shell)
+./scripts/deploy-web.sh   # deploy web/ and prove the live app.js matches the repo
 ```
 
-Exercise the whole system without a phone, via real TLS against a real server:
+Exercise the whole system without a phone. The fake phone reads the code off the Mac's
+debug hook and pairs through the same letterbox a real phone uses, so the hosted service
+must be reachable:
 
 ```bash
-uv run phice --config-dir /tmp/e2e --tls-port 18443 --http-port 18080 \
-  run --backend fake --headless &
-uv run python tools/fake_phone.py --pattern sweep --check \
-  --config-dir /tmp/e2e --tls-port 18443 --http-port 18080
+uv run phice --config-dir /tmp/e2e --http-port 18080 run --backend fake --headless &
+uv run python tools/fake_phone.py --pattern sweep --check --http-port 18080
 ```
 
 Patterns: `still roll sweep square click doubleclick rightclick drag chord scroll rest`.
 All eleven must pass before shipping. Drop `--backend fake` to drive the real cursor.
+`tests/test_rtc.py` exercises the same transport with two in-process peers and no network.
 
 `tools/replay.py <session.jsonl> --compare gain_x_px_per_deg=60` replays a recording
 offline and prints path statistics — the tuning loop, and a language-independent
@@ -50,25 +50,25 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 
 | Reading | Meaning |
 |---|---|
-| `connected: false` | The phone never reached the server. Network or certificate. |
-| `connected: true, phase: "off"` | Connected, pointer not armed. Tap POWER. |
+| `connected: false` | No session. Either the code was never entered, or the offer and answer never met: an expired code, or two networks with no relay between them (`/api/ice` on the letterbox reports `relay: false` and why). |
+| `connected: true, phase: "off"` | Connected, pointer not armed. Press any button. |
 | `phase: "on", accessibility: false` | Everything works except the macOS permission. |
 | `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
 | `rtc.frames` climbing, `sensor_hz: 0` | Buttons arrive, motion does not. The phone was refused sensor access; it reports what iOS answered in `phone connected: ... (caps: ...)`. |
 | `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
 
-`connected` is true for either transport. The pointer switching itself off a second after
-it is armed is the packet timeout doing its job, not a bug: no packets are arriving.
+The pointer switching itself off a second after it is armed is the packet timeout doing
+its job, not a bug: no packets are arriving.
 
 `phice grant` asks macOS for Accessibility **from the running agent**, which is what
 makes it list the right binary. Prompting from a terminal would add the terminal
 instead. A granted permission only takes effect after the agent restarts
 (`phice install`).
 
-A blank page on the phone has three unrelated causes that look identical: an
-untrusted certificate, a WebSocket origin 403, and the phone being unable to route
-to the Mac at all. Do not guess between them — `http://<mac>:8080/check` loads over
-plain HTTP and probes the TLS port, which separates the first from the others.
+A phone stuck on "Connecting…" and a phone showing an unstyled pad are different
+failures. The first means the data channel never opened (see `connected` above).
+The second means it opened and the theme did not arrive whole; the Mac's log has
+the phone's own report of what it received, sent back over the control channel.
 
 ## macOS integration
 
@@ -119,11 +119,13 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 Dependency order, and nothing may point backwards:
 
 ```
-orientation  filters  protocol  paths     (no dependencies)
+orientation  filters  protocol  paths  templates  calibrate   (no dependencies)
 config       <- paths
 engine       <- config cursor_backend filters orientation protocol
-server       <- engine pairing certs config paths
-runtime      <- server setup_server
+rtc          <- engine paths protocol
+signaling    <- rtc
+control      <- templates
+runtime      <- calibrate config control engine paths rtc signaling
 menubar cli  <- runtime
 ```
 
@@ -160,62 +162,58 @@ These were each discovered the hard way. Changing them re-breaks the product.
    layout change. Treating it as a release fires phantom events.
 4. **Adopt button counters silently on first sighting.** After a reconnect the page's
    counters keep climbing; diffing against zero replays every press ever registered.
-5. **Pairing tokens live in a file, not memory.** `phice pair-token` runs in a different
-   process from the menu bar app.
-6. **Never record the raw `hello` frame.** It carries a pairing token. The recorder writes a
-   scrubbed session marker, which `replay.py` also needs to reset the engine between sessions.
-7. **The leaf certificate needs an Authority Key Identifier.** OpenSSL 3.x strict
-   verification rejects the chain without it (RFC 5280).
-8. **The WebSocket origin allow-list must cover every name in the certificate** — IPs and
-   the tailnet FQDN, not just `<host>.local`. A rejected origin 403s the socket, which the
-   phone renders as a blank page: identical symptom to an untrusted certificate, unrelated
-   cause.
-9. **Do not call the Tailscale GUI's CLI from the runtime.** From the launch agent it exits
-   0 but prints plain text instead of JSON. The name is resolved once by `phice tailscale`
-   and stored as `tailscale_host` in config.
-10. **Never dispatch to the asyncio loop unguarded.** The menu bar outlives the runtime
-    thread; use `Runtime._dispatch`, which discards the coroutine if the loop is closed.
-11. **Do not block the asyncio thread in tests.** `asyncio.to_thread` blocking HTTP calls or
-    the server cannot answer and the test times out.
-12. **iOS will not install a bare `.crt`.** Serve `/ca.mobileconfig` as
-    `application/x-apple-aspen-config`.
-13. **The hosted page's own chrome must not live in the stylesheet the Mac replaces.**
-    `web/app/index.html` has two: `#theme`, overwritten wholesale by the pushed theme, and
-    `#shell`, which the page owns. They were one, so the first theme push deleted the rule
-    that displays the Start button -- motion access could then never be granted and the
-    phone streamed nothing, while the pad rendered perfectly.
-14. **Every transport must push engine state back.** The phone draws its LED, its recenter
-    bar and every reaction from `state` messages. The WebRTC transport shipped without
-    wiring `engine.on_change`, so each button worked and looked dead.
-16. **`RTCTransport.close()` must be safe to interrupt.** aiortc's `close()` creates its
+5. **Record a session marker for `hello`, not the raw frame**, and only once per
+   connection. `replay.py` resets the engine on each marker; the page says hello again
+   whenever its capabilities change, and a marker there would reset a replay mid-stream.
+6. **Never dispatch to the asyncio loop unguarded.** The menu bar outlives the runtime
+   thread; use `Runtime._dispatch`, which discards the coroutine if the loop is closed.
+7. **Do not block the asyncio thread in tests.** `asyncio.to_thread` blocking HTTP calls or
+   the server cannot answer and the test times out.
+8. **The page's own chrome must not live in the stylesheet the Mac replaces.**
+   `web/app/index.html` has two: `#theme`, overwritten wholesale by the pushed theme, and
+   `#shell`, which the page owns. They were one, so the first theme push deleted the rule
+   that displays the Start button -- motion access could then never be granted and the
+   phone streamed nothing, while the pad rendered perfectly.
+9. **The transport must push engine state back.** The phone draws its LED, its recenter
+   bar and every reaction from `state` messages. `RTCTransport` wires `engine.on_change`
+   the moment the control channel opens; it once shipped without that, and each button
+   worked and looked dead.
+10. **A fresh session takes the validated layout from the runtime, not `layout.json`.**
+    `RTCTransport` is built per session; reading the file gave a phone that reconnected
+    after switching to one-handed the two-handed layout back.
+11. **`RTCTransport.close()` must be safe to interrupt.** aiortc's `close()` creates its
     internal "closed" future first and resolves it last, so a cancellation landing
     mid-close leaves that future pending forever and every later `close()` on the same
     peer connection deadlocks. `asyncio.shield` keeps the cleanup running while the
     cancellation still reaches the caller. Symptom: the test suite hangs at random, in
-    whichever test happens to cancel `start_webrtc` at the wrong moment.
-17. **The scroll strip is a rate control, not a displacement one.** Speed comes from the
+    whichever test happens to cancel the signaling loop at the wrong moment.
+12. **The scroll strip is a rate control, not a displacement one.** Speed comes from the
     finger's distance from the centre, so holding still off-centre keeps scrolling. Running
     displacement scrolling alongside it doubles the input and feels choppy, which is why
     `scroll_gain` ships at 0.
-18. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
+13. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
     be *started* inside the user gesture -- awaiting the first puts the second outside it.
     Check the returned value, and then check that events actually arrive: a listener that
     is attached but never fires is indistinguishable from a working one.
+14. **The control server binds 127.0.0.1 and nothing else.** Nothing on it is for the
+    phone. It once listened on every interface because the phone had to fetch a
+    certificate from it; that reason is gone.
 
-## Why TLS is not optional
+## Why the page is hosted
 
 Safari exposes motion sensors only on a secure page, and a secure page cannot open an
-insecure WebSocket. Hence HTTPS, hence a certificate. `cert_mode`:
+insecure connection back to a Mac on the LAN. Serving the page from the Mac therefore
+meant a certificate the phone trusted: a self-signed CA installed as a profile, or one
+issued for a Tailscale name. Both shipped and both were removed on 2026-09-22. The profile
+took six steps on the phone and a network that allowed client-to-client traffic, which
+university and corporate Wi-Fi usually do not; the tailnet needed an account on both
+devices. Neither reached a phone on cellular from a Mac behind a campus firewall.
 
-- `tailscale` — a real Let's Encrypt certificate for the MagicDNS name. Nothing to install
-  on the phone and it works across networks, including cellular. **Preferred.**
-- `auto` — self-signed local CA; the phone must install and trust a profile, and both
-  devices must be on the same network with mDNS or direct IP reachable.
-- `external` — the user supplies `certs/server.{crt,key}`.
-
-Network reality: university and corporate Wi-Fi usually block mDNS and isolate clients, so
-`.local` and direct IP both fail there. A phone on cellular cannot reach a `10.x` address
-at all. Only `tailscale` covers every case.
+The hosted page needs none of that. WebRTC authenticates the peers by DTLS fingerprint, so
+the only secret is the six-character code, and the relay covers the case where neither
+device can be reached from outside. The cost is that pairing depends on the letterbox
+being up; the pointer itself does not, once the channel is open. Do not add a second way
+in: the two clients drifted last time, and every phone bug had to be fixed twice.
 
 ## External services and what they cost
 

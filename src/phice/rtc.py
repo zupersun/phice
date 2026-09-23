@@ -1,8 +1,7 @@
-"""WebRTC transport: a DataChannel peer that feeds the existing engine.
+"""WebRTC transport: a DataChannel peer that feeds the engine.
 
-The wire format is unchanged -- frames go through protocol.parse_client_message
-exactly as the WebSocket transport does -- so this swaps how bytes arrive and
-nothing else.
+Bytes arrive here and go through protocol.parse_client_message; nothing about
+the pointer is decided in this file.
 """
 from __future__ import annotations
 
@@ -71,12 +70,17 @@ class RTCTransport:
     #: nothing.
     DEFAULT_ICE_SERVERS = ("stun:stun.l.google.com:19302",)
 
-    def __init__(self, engine: PointerEngine, layout_json: str, theme_css: str,
+    def __init__(self, engine: PointerEngine, layout: dict, theme_css: str,
                  ice_servers: tuple | None = None,
-                 accessibility: Callable[[], bool] | None = None):
+                 accessibility: Callable[[], bool] | None = None,
+                 record: Callable[[str], None] | None = None):
         self.engine = engine
         self._accessibility = accessibility or (lambda: False)
-        self.layout_json = layout_json
+        self._record = record or (lambda _raw: None)
+        #: The validated layout, as the runtime holds it. Taking the dict rather
+        #: than the file kept a fresh session from sending layout.json when a
+        #: preset was the layout in force.
+        self.layout = layout
         self.theme_css = theme_css
         entries = self.DEFAULT_ICE_SERVERS if ice_servers is None else ice_servers
         servers = []
@@ -103,6 +107,7 @@ class RTCTransport:
         self.client_stale = False
         self.hz = 0.0
         self._last_phase = "disconnected"
+        self._hello_recorded = False
 
     # ----- signaling --------------------------------------------------------
 
@@ -158,9 +163,8 @@ class RTCTransport:
             log.info("control channel open")
             self.engine.connected()
             # Without this the phone is blind: no status LED, no recenter
-            # animation, no reaction to a press. The TLS transport has always
-            # done it; leaving it out here made every button look dead even
-            # though the engine was reacting.
+            # animation, no reaction to a press. Leaving it out made every
+            # button look dead even though the engine was reacting.
             self.engine.on_change = self.notify_state
             self._push_setup(ctl)
             # Once more after a beat. The Mac sends the instant its own end
@@ -215,6 +219,7 @@ class RTCTransport:
                 log.warning("dropping malformed frame: %s -- %s", e, message[:160])
             return
         if isinstance(parsed, SensorPacket):
+            self._record(message)
             self.hz = parsed.hz
             self.engine.handle(parsed)
         elif isinstance(parsed, Ping):
@@ -231,6 +236,12 @@ class RTCTransport:
             self.client_name = parsed.name
             self.client_caps = parsed.caps
             log.info("phone connected: %s (caps: %s)", parsed.name, parsed.caps or "none")
+            if not self._hello_recorded:
+                # A session marker for tools/replay.py, once per connection.
+                # The page says hello again whenever its capabilities change,
+                # and a marker there would reset a replay mid-stream.
+                self._hello_recorded = True
+                self._record(json.dumps({"t": "hello", "ver": parsed.ver, "name": parsed.name}))
             want = client_version()
             got = next((c[1:] for c in parsed.caps.split(",") if c.startswith("v")), "")
             self.client_stale = bool(want) and got != want
@@ -243,7 +254,7 @@ class RTCTransport:
         if ctl.readyState != "open":
             return
         try:
-            ctl.send(layout_message(json.loads(self.layout_json)))
+            ctl.send(layout_message(self.layout))
             for part in theme_chunks(self.theme_css):
                 ctl.send(part)
             self.notify_state()
@@ -293,10 +304,10 @@ class RTCTransport:
         except asyncio.CancelledError:
             pass
 
-    async def push_layout(self, layout_json: str) -> None:
-        self.layout_json = layout_json
+    async def push_layout(self, layout: dict) -> None:
+        self.layout = layout
         if self.ctl and self.ctl.readyState == "open":
-            self.ctl.send(layout_message(json.loads(layout_json)))
+            self.ctl.send(layout_message(layout))
 
     async def push_theme(self, theme_css: str) -> None:
         self.theme_css = theme_css

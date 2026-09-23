@@ -82,6 +82,6 @@ def test_a_second_launch_reopens_the_window_instead_of_starting_a_rival(monkeypa
 
     monkeypatch.setattr(cli, "_ask_running_instance_to_show_itself", fake_ask)
     args = type("A", (), {"headless": False, "http_port": 8080, "config_dir": None,
-                          "tls_port": 8443, "backend": "fake"})
+                          "backend": "fake"})
     assert cli.cmd_run(args) == 0
     assert asked == [8080], "it must ask the running instance, not start a second one"

@@ -1,4 +1,4 @@
-/* Phice hosted client.
+/* Phice phone client.
  *
  * Pairs by short code through the signaling letterbox, then talks to the Mac
  * over a direct WebRTC DataChannel. Contains no colours, sizes or labels: the
@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "9";
+  const CLIENT_VERSION = "10";
 
   const el = {
     body: document.body,
@@ -63,48 +63,6 @@
     const remembered = localStorage.getItem("phice.appearance");
     if (remembered) setAppearance(remembered);
   } catch (_) { /* falls back to the system appearance */ }
-
-  // ---------- transport ----------
-  //
-  // One client, two ways in. Served from the Mac it opens a WebSocket straight
-  // back to it; served from the hosted page it pairs by code and opens a WebRTC
-  // data channel. The wire protocol is identical, so only the connecting
-  // differs -- and keeping it to this one seam is what stopped the two clients
-  // from drifting apart, which they had.
-
-  async function localTransport() {
-    // Only the Mac answers this. Vercel 404s, which means "pair by code".
-    try {
-      const r = await fetch("/transport", { cache: "no-store" });
-      if (!r.ok) return null;
-      return (await r.json()).transport === "ws";
-    } catch (e) { return null; }
-  }
-
-  function openSocket() {
-    setScreen("connecting");
-    const ws = new WebSocket(`wss://${location.host}/ws`);
-    const params = new URLSearchParams(location.search);
-    ws.addEventListener("open", () => {
-      const hello = { t: "hello", ver: 1, name: "iPhone", caps: hapticCaps() };
-      // A one-shot pairing token from the setup QR, or the device token this
-      // phone was given the first time it paired.
-      const saved = localStorage.getItem("phice.token");
-      if (params.get("pair")) hello.pair = params.get("pair");
-      else if (saved) hello.token = saved;
-      ws.send(JSON.stringify(hello));
-      adopt({
-        send: (text) => ws.send(text),
-        sendControl: (text) => ws.send(text),   // one pipe, already reliable
-        close: () => ws.close(),
-        get open() { return ws.readyState === WebSocket.OPEN; },
-      });
-    });
-    ws.addEventListener("message", (ev) => handleMessage(ev.data));
-    ws.addEventListener("close", () => fail("The Mac closed the connection."));
-    ws.addEventListener("error", () =>
-      fail("Could not reach your Mac. Check that Phice is running and you are on the same network."));
-  }
 
   // ---------- pairing ----------
 
@@ -194,8 +152,10 @@
 
   // ---------- channel ----------
 
-  function adopt(transport) {
-    state.channel = transport;
+  // The two channels, behind one small interface so the rest of the page never
+  // has to know which is which.
+  function adopt(link) {
+    state.channel = link;
     setTimeout(() => report("client v" + CLIENT_VERSION + " connected"), 0);   // flushes anything queued
     el.body.dataset.link = "ok";
     setScreen("start");
@@ -238,11 +198,6 @@
       }
     }
     else if (msg.t === "state") applyState(msg);
-    else if (msg.t === "welcome" && msg.device_token) {
-      // Given once, on the first pairing, so this phone can reconnect later
-      // without another trip to the setup page.
-      try { localStorage.setItem("phice.token", msg.device_token); } catch (_) { /* ignore */ }
-    }
   }
 
   // Two channels arrive, and which is which matters. "phice" is unreliable and
@@ -565,5 +520,4 @@
 
   el.code.value = localStorage.getItem("phice.code") || "";
   setScreen("pair");
-  localTransport().then((isLocal) => { if (isLocal) openSocket(); });
 })();

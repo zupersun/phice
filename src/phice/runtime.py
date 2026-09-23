@@ -1,4 +1,4 @@
-"""Runtime: owns the asyncio loop, both servers, config watching and the engine.
+"""Runtime: owns the asyncio loop, the control server, config watching and the engine.
 
 The menu bar wraps this; `phice run --headless` uses it directly.
 """
@@ -15,34 +15,21 @@ from datetime import datetime
 from pathlib import Path
 
 from . import calibrate, signaling
-from .certs import (
-    CertError,
-    CertPaths,
-    ca_der,
-    ca_mobileconfig,
-    cert_covers,
-    ensure_server_cert,
-    ensure_tailscale_cert,
-    local_hostname,
-    local_ipv4s,
-    tailscale_dns_name,
-)
 from .config import (
     APPEARANCES,
     ConfigError,
     FileWatcher,
+    Layout,
     PointerConfig,
     load_layout,
     load_pointer_config,
+    parse_layout,
 )
+from .control import ControlServer
 from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
-from .pairing import PairingManager
 from .paths import Paths, client_version
 from .rtc import RTCTransport
-from .server import PhiceServer, ServerState
-from .setup_server import SetupServer
-from .templates import CALIBRATE_HTML
 
 log = logging.getLogger("phice")
 
@@ -59,7 +46,7 @@ def setup_logging(paths: Paths, debug: bool = False) -> None:
 
 @dataclass
 class Status:
-    """Thread-safe snapshot the menu bar reads once a second."""
+    """Thread-safe snapshot the menu bar and the panel read once a second."""
 
     lock: threading.Lock = field(default_factory=threading.Lock)
     connected: bool = False
@@ -68,15 +55,13 @@ class Status:
     accessibility: bool = False
     pair_code: str = ""
     enabled: bool = True
-    tls_url: str = ""
     error: str = ""
 
     def read(self) -> dict:
         with self.lock:
             return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
                         accessibility=self.accessibility, enabled=self.enabled,
-                        pair_code=self.pair_code,
-                        tls_url=self.tls_url, error=self.error)
+                        pair_code=self.pair_code, error=self.error)
 
     def update(self, **kw) -> None:
         with self.lock:
@@ -85,55 +70,45 @@ class Status:
 
 
 class Runtime:
-    def __init__(self, paths: Paths, backend: CursorBackend, tls_port: int = 8443,
-                 http_port: int = 8080):
+    def __init__(self, paths: Paths, backend: CursorBackend, http_port: int = 8080):
         self.paths = paths
         self.backend = backend
-        self.tls_port = tls_port
         self.http_port = http_port
         self.status = Status()
-        self.host = local_hostname()
-        self.cert_paths = CertPaths.under(paths.certs)
 
         self.config = self._load_config_or_default()
         self.layout = self._load_layout_or_default()
         self.engine = PointerEngine(self.config, backend)
         self.engine.set_roles(self.layout.roles())
-        self.pairing = PairingManager(paths.devices_json)
-        self.state = ServerState(paths=paths, pairing=self.pairing, engine=self.engine,
-                                 layout=self.layout, config=self.config)
-        self.server = PhiceServer(self.state, "0.0.0.0", tls_port, self.host,
-                                  extra_origin_hosts=self._extra_origin_hosts)
-        self.setup = SetupServer(http_port, lambda: ca_der(self.cert_paths), self._urls,
-                                 debug_cursor=self._debug_cursor,
-                                 ca_mobileconfig=lambda: ca_mobileconfig(self.cert_paths),
-                                 grant_accessibility=lambda: accessibility_trusted(prompt=True),
-                                 pair_code=lambda: self.status.read()["pair_code"],
-                                 panel_css=lambda: self.paths.panel_css.read_bytes(),
-                                 new_code=self.new_pair_code,
-                                 set_appearance=self.set_appearance,
-                                 set_layout=self.set_layout,
-                                 request_panel=self.request_panel,
-                                 calibrate_html=lambda: CALIBRATE_HTML.encode(),
-                                 calibrate_css=lambda: self.paths.calibrate_css.read_bytes(),
-                                 calibration_state=self.calibration_state,
-                                 start_calibration=self.start_calibration,
-                                 apply_calibration=self.apply_calibration,
-                                 cancel_calibration=self.cancel_calibration,
-                                 begin_calibration=lambda: self.calibration.begin(),
-                                 signaling_url=lambda: self.config.signaling_url)
-        self.tailnet: str | None = None  # set in _main when cert_mode is "tailscale"
-        self.rtc: RTCTransport | None = None
         self.pairing = signaling.Pairing()
-        self._panel_requested = False
-        self._panel_url: tuple[str, bool] | None = None
-        self._close_calibration = False
-        self._last_logged_phase = "disconnected"
+        self.rtc: RTCTransport | None = None
+        self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
+        self.recorder = None                                 # an open text file while recording
         self.calibration = calibrate.Runner(
             paths, backend, self.engine,
             show=lambda: self.request_panel_url(
                 f"http://127.0.0.1:{self.http_port}/calibrate", fullscreen=True))
-        self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
+        self.control = ControlServer(
+            http_port,
+            pages={"/panel.css": paths.panel_css.read_bytes,
+                   "/calibrate.css": paths.calibrate_css.read_bytes},
+            actions={"/debug/cursor": self._debug_cursor,
+                     # Prompting from this process is what makes macOS list *this*
+                     # binary; asking from a terminal would add the terminal.
+                     "/debug/grant": lambda: {"accessibility": accessibility_trusted(prompt=True)},
+                     "/debug/panel": self.request_panel,
+                     "/debug/newcode": self.new_pair_code,
+                     "/calibrate/state": self.calibration_state,
+                     "/calibrate/start": self.start_calibration,
+                     "/calibrate/begin": self.calibration.begin,
+                     "/calibrate/apply": self.apply_calibration,
+                     "/calibrate/cancel": self.cancel_calibration},
+            settings={"/debug/layout": self.set_layout,
+                      "/debug/appearance": self.set_appearance})
+        self._panel_requested = False
+        self._panel_url: tuple[str, bool] | None = None
+        self._close_calibration = False
+        self._last_logged_phase = "disconnected"
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._watcher = FileWatcher(self._watched())
@@ -173,8 +148,7 @@ class Runtime:
                   name, preset)
         return self.paths.layout_json
 
-    def _load_layout_or_default(self):
-        from .config import parse_layout
+    def _load_layout_or_default(self) -> Layout:
         chosen = self.active_layout_path()
         try:
             return load_layout(chosen)
@@ -215,7 +189,6 @@ class Runtime:
             self.status.update(error=str(e))
             return
         self.config = cfg
-        self.state.config = cfg
         self.engine.set_config(cfg)
         self.status.update(error="")
         log.info("pointer.json reloaded")
@@ -223,76 +196,46 @@ class Runtime:
         # which file we should be watching.
         await self._apply_layout(self.active_layout_path())
         self._watcher = FileWatcher(self._watched())
-        await self.server._send_state()
-        if self.rtc:
-            # Editing config while on the WebRTC transport used to reach the
-            # engine but never the phone, so appearance and recentre timing
-            # silently disagreed until the next reconnect.
-            self.rtc.notify_state()
+        # Appearance and recentre timing travel in the state message, so the
+        # phone must hear about an edit at once rather than at the next reconnect.
+        await self._push_state()
 
     async def _apply_layout(self, path: Path) -> None:
         try:
             layout = load_layout(path)
         except ConfigError as e:
-            log.error("layout.json rejected: %s", e)
+            log.error("%s rejected: %s", path.name, e)
             self.status.update(error=str(e))
             return
         self.layout = layout
+        self.engine.set_roles(layout.roles())
         self.status.update(error="")
-        log.info("layout.json reloaded")
-        await self.server.push_layout(layout)
+        log.info("%s reloaded", path.name)
         if self.rtc:
-            await self.rtc.push_layout(path.read_text())
+            await self.rtc.push_layout(layout.to_dict())
 
     async def _apply_theme(self, path: Path) -> None:
         log.info("theme.css reloaded")
-        await self.server.push_theme_changed()
         if self.rtc:
             await self.rtc.push_theme(path.read_text())
 
-    # ----- urls -------------------------------------------------------------
+    async def _push_state(self) -> None:
+        if self.rtc:
+            self.rtc.notify_state()
 
-    def _extra_origin_hosts(self) -> list[str]:
-        """Names beyond <host>.local that the page may legitimately be loaded from."""
-        hosts = local_ipv4s()
-        if self.tailnet:
-            hosts.append(self.tailnet)
-        return hosts
-
-    def _urls(self) -> tuple[str, str, bool, str | None, str | None]:
-        """(ca, pair, show_ca, ca_alt, pair_alt) -- primaries first, notes after.
-
-        On a tailnet the certificate is publicly trusted, so there is nothing to
-        install: one URL, no CA card, and it works from cellular because the
-        phone and Mac are peers on the tailnet rather than the local subnet.
-        Otherwise the IP form is primary, because .local needs mDNS and many
-        networks block it, and .local is demoted to a note.
-        """
-        token = self.pairing.mint_pairing_token()
-        if self.tailnet:
-            return (f"https://{self.tailnet}:{self.server.port}/",
-                    f"https://{self.tailnet}:{self.server.port}/?pair={token}",
-                    False, None, None)
-        local_ca = f"http://{self.host}.local:{self.setup.port}/ca.mobileconfig"
-        local_pair = f"https://{self.host}.local:{self.server.port}/?pair={token}"
-        ip = next(iter(local_ipv4s()), None)
-        if not ip:
-            return local_ca, local_pair, self.config.cert_mode == "auto", None, None
-        ca = f"http://{ip}:{self.setup.port}/ca.mobileconfig"
-        pair = f"https://{ip}:{self.server.port}/?pair={token}"
-        return ca, pair, self.config.cert_mode == "auto", local_ca, local_pair
+    # ----- status -----------------------------------------------------------
 
     def _debug_cursor(self) -> dict:
         """Loopback-only snapshot. The menu bar is the normal way to see this, but
         it can be invisible (a full menu bar on a notched Mac hides new items), and
         then there is otherwise no way to tell why the pointer is not moving."""
         d = dict(self.status.read())
-        if self.rtc:
-            d["rtc"] = {"frames": self.rtc.frames, "bad": self.rtc.bad_frames,
-                        "last_error": self.rtc.last_error,
-                        "channel": (self.rtc.channel.readyState
-                                    if self.rtc.channel else "none"),
-                        "state": self.rtc.pc.connectionState}
+        rtc = self.rtc
+        if rtc:
+            d["rtc"] = {"frames": rtc.frames, "bad": rtc.bad_frames,
+                        "last_error": rtc.last_error,
+                        "channel": rtc.channel.readyState if rtc.channel else "none",
+                        "state": rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
         d["layout"] = self.config.ui.layout or "custom"
         d["layouts"] = sorted(p.stem for p in self.paths.layouts.glob("*.json"))
@@ -301,14 +244,15 @@ class Runtime:
         # quietly disables itself because one side is empty is worse than no
         # check, and that is exactly what happened.
         d["client_expected"] = client_version()
-        d["client_reported"] = self.rtc.client_caps if self.rtc else ""
-        d["client_stale"] = bool(self.rtc and self.rtc.client_stale)
+        d["client_reported"] = rtc.client_caps if rtc else ""
+        d["client_stale"] = bool(rtc and rtc.client_stale)
+        d["signaling_url"] = self.config.signaling_url
         d["phone_url"] = f"{self.config.signaling_url}/app"
-        d["transport"] = self.config.transport
-        d["sensor_hz"] = round(self.rtc.hz if self.rtc and self.rtc.is_open
-                               else self.state.sensor_hz, 1)
-        d["phone_caps"] = self.state.caps
-        d["cert_mode"] = self.config.cert_mode
+        # True while the letterbox holds this session's offer and nobody has
+        # answered it. After a disconnect the previous offer lingers there until
+        # the fresh one is gathered and published; answering it fails ICE.
+        d["offer_ready"] = self.pairing.waiter is not None
+        d["sensor_hz"] = round(rtc.hz, 1) if rtc and rtc.is_open else 0.0
         d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):
             d.update(self.backend.summary())
@@ -318,13 +262,8 @@ class Runtime:
         d["phase"] = self.engine.phase.value
         return d
 
-    # ----- status -----------------------------------------------------------
-
     async def _status_loop(self) -> None:
         while True:
-            # Either transport can be the live one. Reading only state.client
-            # reported "not connected" through an entire working WebRTC session,
-            # which sent every diagnosis down the wrong path.
             phase = self.engine.phase.value
             if phase != self._last_logged_phase:
                 # Logged on the Mac, so "my button does nothing" can be answered
@@ -332,11 +271,10 @@ class Runtime:
                 # arrives and moves the pointer, or it never arrives at all.
                 log.info("pointer %s -> %s", self._last_logged_phase, phase)
                 self._last_logged_phase = phase
-            rtc_open = self.rtc is not None and self.rtc.is_open
-            self.status.update(connected=rtc_open or self.state.client is not None,
-                               device_name=(self.rtc.client_name if rtc_open
-                                            else self.state.client_name),
-                               phase=self.engine.phase.value)
+            rtc = self.rtc
+            open_ = rtc is not None and rtc.is_open
+            self.status.update(connected=open_, device_name=rtc.client_name if open_ else "",
+                               phase=phase)
             # Poll here rather than relying on the menu bar, which may never appear.
             if not isinstance(self.backend, FakeCursor):
                 self.set_accessibility(accessibility_trusted())
@@ -356,14 +294,11 @@ class Runtime:
         return True
 
     def set_accessibility(self, ok: bool) -> None:
-        # Keep the reported status in step unconditionally: ServerState defaults to
-        # True and Status to False, so gating the whole update on a change left the
-        # status stuck at False even while the permission was granted.
-        changed = ok != self.state.accessibility
-        self.state.accessibility = ok
+        """`accessibility` gates nothing here; it is reported to the phone."""
+        changed = ok != self.status.read()["accessibility"]
         self.status.update(accessibility=ok)
         if changed:
-            self._dispatch(self.server._send_state())
+            self._dispatch(self._push_state())
 
     def set_enabled(self, enabled: bool) -> None:
         self.engine.set_enabled(enabled)
@@ -371,19 +306,17 @@ class Runtime:
 
     def force_reload(self) -> None:
         """Menu action: re-read every config file regardless of mtime."""
-        self._watcher = FileWatcher([])  # forget mtimes so the next poll reloads everything
         for path, applier in ((self.paths.pointer_json, self._apply_pointer),
-                              (self.paths.layout_json, self._apply_layout),
+                              (self.active_layout_path(), self._apply_layout),
                               (self.paths.theme_css, self._apply_theme)):
-            if self._loop:
-                asyncio.run_coroutine_threadsafe(applier(path), self._loop)
-        self._watcher = FileWatcher([self.paths.pointer_json, self.paths.layout_json,
-                                     self.paths.theme_css])
+            self._dispatch(applier(path))
+        self._watcher = FileWatcher(self._watched())
+
+    # ----- recording --------------------------------------------------------
 
     def set_recording(self, on: bool) -> Path | None:
         if not on:
-            rec = self.state.recorder
-            self.state.recorder = None
+            rec, self.recorder = self.recorder, None
             if rec is not None:
                 try:
                     rec.close()
@@ -392,16 +325,20 @@ class Runtime:
             return None
         self.paths.sessions.mkdir(parents=True, exist_ok=True)
         path = self.paths.sessions / (time.strftime("%Y-%m-%dT%H-%M-%S") + ".jsonl")
-        self.state.recorder = path.open("w", encoding="utf-8", buffering=1)
+        self.recorder = path.open("w", encoding="utf-8", buffering=1)
         log.info("recording to %s", path)
         return path
 
-    def revoke_devices(self) -> None:
-        self.pairing.revoke_all()
-        if self.state.client:
-            self._dispatch(self.state.client.close(4003, "revoked"))
-
-    # ----- lifecycle --------------------------------------------------------
+    def record(self, raw: str) -> None:
+        """One inbound frame, as it arrived. tools/replay.py reads these back."""
+        rec = self.recorder
+        if rec is None:
+            return
+        try:
+            rec.write(json.dumps({"rx": time.monotonic(), "raw": raw}) + "\n")
+        except Exception:
+            log.warning("recording stopped", exc_info=True)
+            self.recorder = None
 
     # ----- calibration ------------------------------------------------------
 
@@ -455,6 +392,8 @@ class Runtime:
         self._close_calibration = True
         return {"ok": True}
 
+    # ----- windows ----------------------------------------------------------
+
     def request_panel_url(self, url: str, *, fullscreen: bool = False) -> None:
         self._panel_url = (url, fullscreen)
         self._panel_requested = True
@@ -479,17 +418,15 @@ class Runtime:
         url, self._panel_url = self._panel_url, None
         return url or True
 
+    # ----- settings written from the panel ----------------------------------
+
     def set_layout(self, value: str) -> bool:
         """Choose a layout preset by name, or "" to go back to layout.json."""
         if "/" in value or ".." in value:
             return False
         if value and not (self.paths.layouts / f"{value}.json").exists():
             return False
-        path = self.paths.pointer_json
-        data = json.loads(path.read_text())
-        data.setdefault("ui", {})["layout"] = value
-        path.write_text(json.dumps(data, indent=2) + "\n")
-        self._dispatch(self._apply_pointer(path))
+        self._write_ui("layout", value)
         return True
 
     def set_appearance(self, value: str) -> bool:
@@ -503,12 +440,15 @@ class Runtime:
         """
         if value not in APPEARANCES:
             return False
+        self._write_ui("appearance", value)
+        return True
+
+    def _write_ui(self, key: str, value: str) -> None:
         path = self.paths.pointer_json
         data = json.loads(path.read_text())
-        data.setdefault("ui", {})["appearance"] = value
+        data.setdefault("ui", {})[key] = value
         path.write_text(json.dumps(data, indent=2) + "\n")
         self._dispatch(self._apply_pointer(path))
-        return True
 
     def new_pair_code(self) -> None:
         """Drop the current code and republish under a fresh one.
@@ -530,46 +470,12 @@ class Runtime:
             # dead for exactly the user who needs it -- one whose phone is stuck.
             self._dispatch(self.rtc.close())
 
+    # ----- lifecycle --------------------------------------------------------
+
     async def _main(self) -> None:
-        if self.config.transport == "webrtc":
-            self.http_port = await asyncio.to_thread(self.setup.start)
-            log.info("webrtc transport; pairing code at http://127.0.0.1:%d/pair",
-                     self.http_port)
-            await asyncio.gather(signaling.run(self), self._watch_config(),
-                                 self._status_loop())
-            return
-        if self.config.cert_mode == "tailscale":
-            # Prefer the name recorded by `phice tailscale`. The GUI app's CLI
-            # cannot be reached from the launch agent (no GUI bootstrap
-            # namespace), so resolving it live would fail exactly where the
-            # service actually runs.
-            self.tailnet = self.config.tailscale_host or tailscale_dns_name()
-            if not self.tailnet:
-                raise CertError("cert_mode is 'tailscale' but no tailnet name is known; "
-                                "run 'phice tailscale' from a terminal")
-            try:
-                if ensure_tailscale_cert(self.cert_paths, self.tailnet):
-                    log.info("issued a trusted certificate for %s", self.tailnet)
-            except CertError as e:
-                # A tailnet certificate is good for 90 days. If it cannot be
-                # renewed right now, keep serving the valid one rather than
-                # refusing to start.
-                if not cert_covers(self.cert_paths.server_crt, self.tailnet):
-                    raise
-                log.warning("could not refresh the tailnet certificate (%s); "
-                            "serving the existing one", e)
-        elif self.config.cert_mode == "auto":
-            if ensure_server_cert(self.cert_paths, self.host):
-                log.info("issued a new server certificate for %s.local", self.host)
-        if self.tailnet:
-            self.server.tls_host = self.tailnet
-        self.tls_port = await self.server.start()
-        self.http_port = await asyncio.to_thread(self.setup.start)
-        name = self.tailnet or f"{self.host}.local"
-        self.status.update(tls_url=f"https://{name}:{self.tls_port}/")
-        log.info("listening: https://%s:%d  setup: http://127.0.0.1:%d/setup",
-                 name, self.tls_port, self.http_port)
-        await asyncio.gather(self._watch_config(), self._status_loop())
+        self.http_port = await asyncio.to_thread(self.control.start)
+        log.info("control panel at http://127.0.0.1:%d/panel", self.http_port)
+        await asyncio.gather(signaling.run(self), self._watch_config(), self._status_loop())
 
     def start_background(self) -> None:
         """Run the loop on a worker thread so AppKit can own the main thread."""
@@ -592,8 +498,9 @@ class Runtime:
 
     def stop(self) -> None:
         self.engine.disconnected()
-        self.setup.stop()
-        self._dispatch(self.server.stop())
+        self.control.stop()
+        if self.rtc:
+            self._dispatch(self.rtc.close())
 
     def run_forever(self) -> None:
         asyncio.run(self._main())

@@ -55,26 +55,24 @@ def test_every_screen_the_script_selects_is_stylable(html, js):
         assert f'body[data-screen="{name}"]' in html, f"no rule for screen {name!r}"
 
 
-def test_the_mac_and_the_hosted_page_serve_the_same_client():
-    """There used to be two copies. They drifted: the Mac's lost light and dark,
-    haptics and the screen split, because every phone change had to be made
-    twice and one copy quietly missed out."""
+def test_the_mac_reads_the_client_version_from_the_deployed_file():
+    """The Mac no longer serves the page, but it still needs to know which
+    client it expects so a phone running a cached copy can be named as such.
+    Reading the deployed file through the symlink keeps that in step with no
+    second copy of the number anywhere."""
     packaged = Path(__file__).resolve().parents[1] / "src" / "phice" / "web"
     assert packaged.is_symlink(), "the packaged client must not be a second copy"
     assert packaged.resolve() == WEB.resolve()
 
 
-def test_the_client_chooses_its_transport_rather_than_assuming_one(js):
-    """Served by the Mac it opens a socket; served by Vercel it pairs by code.
-    Only this seam may differ -- the wire protocol either side of it is one."""
-    assert 'fetch("/transport"' in js, "ask, do not guess which transport this is"
-    assert "new WebSocket(" in js and "RTCPeerConnection(" in js
-    # Nothing outside the seam may know which transport it got. The seam itself
-    # is wireChannel/openSocket and the wrappers they hand back.
-    seam = ("get open()", "channel.readyState", "ws.readyState")
-    outside = [ln for ln in js.splitlines()
-               if "readyState" in ln and not any(s in ln for s in seam)]
-    assert not outside, f"transport details leaked out of the seam: {outside}"
+def test_the_client_has_exactly_one_way_in(js):
+    """It used to open a WebSocket when served by the Mac and pair by code when
+    hosted. Nothing serves it from the Mac any more, and a second way in is a
+    second thing to keep in step -- they drifted last time."""
+    assert "RTCPeerConnection(" in js
+    assert "WebSocket" not in js
+    assert "/transport" not in js
+    assert "welcome" not in js and "phice.token" not in js, "no device tokens: the code pairs"
 
 
 def test_an_already_open_channel_still_starts_the_session(js):
