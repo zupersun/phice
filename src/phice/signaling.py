@@ -16,9 +16,11 @@ import json
 import logging
 import math
 import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -126,13 +128,22 @@ class SignalingClient:
     async def fetch_answer(self, code: str) -> dict | None:
         return await asyncio.to_thread(self._get_sync, "/api/answer", code)
 
-    async def wait_for_answer(self, code: str, timeout: float = 300.0,
-                              interval: float = 1.0) -> dict:
+    async def wait_for_answer(self, code: str, timeout: float = DEFAULT_OFFER_TTL_S,
+                              interval: float = 1.0, expires_at: float | None = None,
+                              clock: Callable[[], float] = time.time) -> dict:
         """Poll until the phone answers. Polling, not streaming, because the
-        whole exchange is two messages and serverless cannot hold a socket."""
+        whole exchange is two messages and serverless cannot hold a socket.
+
+        Two clocks, on purpose. `timeout` runs on the loop's monotonic clock,
+        which stops while the Mac sleeps; `expires_at` is compared against a
+        wall clock, which does not. After a sleep the letterbox has dropped the
+        offer, and only the wall clock knows.
+        """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
+            if expires_at is not None and clock() >= expires_at:
+                raise SignalingError("the offer expired at the letterbox")
             got = await self.fetch_answer(code)
             if got:
                 return got

@@ -167,3 +167,16 @@ def test_a_letterbox_that_says_nothing_about_lifetime_gets_the_default():
     assert offer_ttl({"expires_in": float("nan")}) == DEFAULT_OFFER_TTL_S
     assert offer_ttl({"expires_in": float("inf")}) == DEFAULT_OFFER_TTL_S
     assert offer_ttl(None) == DEFAULT_OFFER_TTL_S
+
+
+async def test_wait_for_answer_notices_a_wall_clock_that_moved_on(stub):
+    """time.monotonic is mach_absolute_time on macOS, which stops while the Mac
+    sleeps. The letterbox's clock does not. After a sleep the offer is gone,
+    and the wait must end at once rather than run out its remaining minutes
+    showing a dead code."""
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+    ticks = iter([1000.0, 1000.2, 4600.0])          # the third reading is after a sleep
+    with pytest.raises(SignalingError, match="expired"):
+        await c.wait_for_answer("ZZZZZZ", timeout=30.0, interval=0.02,
+                                expires_at=1000.5, clock=lambda: next(ticks))
