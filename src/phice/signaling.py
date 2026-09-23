@@ -137,7 +137,8 @@ class SignalingClient:
         Two clocks, on purpose. `timeout` runs on the loop's monotonic clock,
         which stops while the Mac sleeps; `expires_at` is compared against a
         wall clock, which does not. After a sleep the letterbox has dropped the
-        offer, and only the wall clock knows.
+        offer, and only the wall clock knows. `expires_at` must be a reading of
+        the same clock as `clock`, which is why the default is `time.time`.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout

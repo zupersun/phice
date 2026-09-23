@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -176,7 +177,30 @@ async def test_wait_for_answer_notices_a_wall_clock_that_moved_on(stub):
     showing a dead code."""
     base, _ = stub
     c = SignalingClient(base, allow_insecure=True)
-    ticks = iter([1000.0, 1000.2, 4600.0])          # the third reading is after a sleep
+    readings = [1000.0, 1000.2, 4600.0]          # the third reading is after a sleep
+
+    def clock():
+        return readings.pop(0) if len(readings) > 1 else readings[0]
+
     with pytest.raises(SignalingError, match="expired"):
         await c.wait_for_answer("ZZZZZZ", timeout=30.0, interval=0.02,
-                                expires_at=1000.5, clock=lambda: next(ticks))
+                                expires_at=1000.5, clock=clock)
+
+
+async def test_wait_for_answer_returns_before_expiry_when_not_yet_expired(stub):
+    """Kills two mutants that the test above lets through unnoticed: the
+    comparison inverted to `clock() <= expires_at`, and an implementation that
+    raises unconditionally whenever `expires_at` is set. Either way an answer
+    that arrives before expiry must still be returned."""
+    import asyncio
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+
+    async def later():
+        await asyncio.sleep(0.15)
+        await c.publish_answer("ABC234", {"sdp": "z", "type": "answer"})
+
+    asyncio.ensure_future(later())
+    got = await c.wait_for_answer("ABC234", timeout=3.0, interval=0.05,
+                                  expires_at=time.time() + 60)
+    assert got["sdp"] == "z"
