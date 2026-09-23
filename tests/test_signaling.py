@@ -31,7 +31,8 @@ def stub():
             data = json.loads(self.rfile.read(n))
             kind = self.path.strip("/").split("/")[-1]
             store[f"{kind}:{data['code']}"] = data
-            self._send(200, {"ok": True})
+            # offer.js reports the lifetime; answer.js does not.
+            self._send(200, {"ok": True, "expires_in": 7} if kind == "offer" else {"ok": True})
 
         def do_GET(self):
             path, _, q = self.path.partition("?")
@@ -115,3 +116,20 @@ async def test_missing_ice_endpoint_does_not_break_startup():
     it falls back rather than failing."""
     c = SignalingClient("http://127.0.0.1:1", allow_insecure=True)
     assert await c.fetch_ice_servers() is None
+
+
+async def test_publishing_an_offer_reports_how_long_the_letterbox_keeps_it(stub):
+    """The lifetime is the letterbox's to decide, and it says so in its reply.
+    Assuming 300 on the Mac meant the two could disagree without anyone noticing."""
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+    assert await c.publish_offer("ABC234", {"sdp": "x", "type": "offer"}) == 7.0
+
+
+def test_a_letterbox_that_says_nothing_about_lifetime_gets_the_default():
+    from phice.signaling import DEFAULT_OFFER_TTL_S, offer_ttl
+    assert offer_ttl({"ok": True, "expires_in": 7}) == 7.0
+    assert offer_ttl({"ok": True}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": "soon"}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": 0}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl(None) == DEFAULT_OFFER_TTL_S

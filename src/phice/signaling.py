@@ -33,6 +33,18 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 HTTP_TIMEOUT = 10.0
 
+#: What web/api/offer.js keeps an offer for, used only if the letterbox's reply
+#: does not say. The reply is authoritative: the two must never disagree.
+DEFAULT_OFFER_TTL_S = 300.0
+
+
+def offer_ttl(body: dict | None) -> float:
+    """The lifetime a letterbox reply promises, or the default if it is silent."""
+    value = (body or {}).get("expires_in")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return DEFAULT_OFFER_TTL_S
+    return float(value)
+
 
 class SignalingError(RuntimeError):
     """Raised when the letterbox cannot be reached or refuses a request."""
@@ -51,15 +63,20 @@ class SignalingClient:
 
     # ----- transport --------------------------------------------------------
 
-    def _post_sync(self, path: str, payload: dict) -> None:
+    def _post_sync(self, path: str, payload: dict) -> dict:
         body = json.dumps(payload).encode()
         req = urllib.request.Request(f"{self.base}{path}", data=body, method="POST",
                                      headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
-                r.read()
+                raw = r.read()
         except (urllib.error.URLError, OSError) as e:
             raise SignalingError(f"POST {path} failed: {e}") from e
+        try:
+            reply = json.loads(raw) if raw else {}
+        except ValueError:
+            reply = {}
+        return reply if isinstance(reply, dict) else {}
 
     def _get_sync(self, path: str, code: str) -> dict | None:
         q = urllib.parse.urlencode({"code": code})
@@ -90,8 +107,11 @@ class SignalingClient:
             return None
         return body["iceServers"]
 
-    async def publish_offer(self, code: str, offer: dict) -> None:
-        await asyncio.to_thread(self._post_sync, "/api/offer", {"code": code, **offer})
+    async def publish_offer(self, code: str, offer: dict) -> float:
+        """Post the offer under the code. Returns how many seconds the letterbox
+        will keep it, which is the letterbox's decision, not ours."""
+        reply = await asyncio.to_thread(self._post_sync, "/api/offer", {"code": code, **offer})
+        return offer_ttl(reply)
 
     async def fetch_offer(self, code: str) -> dict | None:
         return await asyncio.to_thread(self._get_sync, "/api/offer", code)
