@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import secrets
 import urllib.error
 import urllib.parse
@@ -41,7 +42,8 @@ DEFAULT_OFFER_TTL_S = 300.0
 def offer_ttl(body: dict | None) -> float:
     """The lifetime a letterbox reply promises, or the default if it is silent."""
     value = (body or {}).get("expires_in")
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value <= 0):
         return DEFAULT_OFFER_TTL_S
     return float(value)
 
@@ -72,6 +74,8 @@ class SignalingClient:
                 raw = r.read()
         except (urllib.error.URLError, OSError) as e:
             raise SignalingError(f"POST {path} failed: {e}") from e
+        # A POST's body is only an acknowledgement: a request that failed still
+        # raises above, so a garbled one here can safely fall back to the default.
         try:
             reply = json.loads(raw) if raw else {}
         except ValueError:
