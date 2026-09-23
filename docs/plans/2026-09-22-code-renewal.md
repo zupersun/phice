@@ -257,7 +257,10 @@ anything:
         async def wait_for_answer(self, code, **kw):
 ```
 
-The bodies stay as they are. Then append to `tests/test_rtc.py`:
+The bodies stay as they are. In the same classes, make every `publish_offer` return a
+number, as the real client now does, by adding `return 300.0` as its last line. The
+loop must not re-default a `None` here: `offer_ttl` already owns that rule, and two
+sites owning it would drift. Then append to `tests/test_rtc.py`:
 
 ```python
 async def test_the_loop_waits_as_long_as_the_letterbox_keeps_the_offer(tmp_path, monkeypatch):
@@ -449,8 +452,6 @@ In `run`, replace the block from `code = rt.pairing.code or new_pairing_code()` 
             await rt.rtc.close()
             await asyncio.sleep(RETRY_S)
             continue
-        # A fake in a test may hand back None; the letterbox never does.
-        ttl = float(ttl or DEFAULT_OFFER_TTL_S)
         rt.pairing.published_at = time.time()
         rt.pairing.ttl = ttl
         rt.status.update(pairing_error="")
@@ -517,7 +518,7 @@ In `_debug_cursor`, directly after the `offer_ready` line, add:
 - [ ] **Step 5: Run the tests**
 
 Run: `uv run pytest -q`
-Expected: all pass. The two older loop tests still pass: their fakes return `None` from `publish_offer`, which falls back to the default lifetime.
+Expected: all pass, including the four older loop tests whose fakes you widened.
 
 - [ ] **Step 6: Commit**
 
