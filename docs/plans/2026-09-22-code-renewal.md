@@ -464,9 +464,13 @@ In `run`, replace the block from `code = rt.pairing.code or new_pairing_code()` 
             code, timeout=ttl + 1.0, expires_at=rt.pairing.published_at + ttl))
         try:
             answer = await rt.pairing.waiter
-        except SignalingError:
+        except SignalingError as e:
+            # Say which way it ended: "expired at the letterbox" after a sleep
+            # looks nothing like "timed out" after an ordinary five minutes, and
+            # the log is the only place the difference is visible.
+            log.info("offer under %s lapsed (%s); publishing another", code, e)
             await rt.rtc.close()
-            continue            # the offer lapsed unused; publish another under the same code
+            continue
         except asyncio.CancelledError:
             # Two very different things arrive here: the panel asking for a
             # new code, and this whole task being shut down. Swallowing both
