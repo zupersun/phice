@@ -990,6 +990,7 @@ cross-thread mailbox that belongs with the windows, and moving them fixes the le
 
 **Files:**
 - Modify: `src/phice/window.py`, `src/phice/runtime.py`, `src/phice/menubar.py`
+- Modify: `CLAUDE.md`, `docs/configuration.md` (two wording touches from the Task 7 review)
 - Test: `tests/test_runtime.py`, `tests/test_menubar.py`, `tests/test_paths.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1125,16 +1126,26 @@ In `pump_windows`, replace `self.runtime.take_calibration_close()` with
 `self.runtime.windows.take_calibration_close()` and `self.runtime.take_panel_request()` with
 `self.runtime.windows.take_panel()`.
 
-- [ ] **Step 6: Run the gate**
+- [ ] **Step 6: Two wording touches from the Task 7 review**
+
+In `CLAUDE.md`, the `pairing_error` row's clause "While no phone is connected the panel and
+the menu bar both say so" becomes "While no phone is connected the panel says so, and the
+menu bar does too unless it is still asking for Accessibility" (a missing grant outranks
+everything in `describe()`). In `docs/configuration.md`, the sentence under the files
+table opens "Existing installs keep the layout, theme, panel and calibration files they
+have", since `pointer.json` is never restored.
+
+- [ ] **Step 7: Run the gate**
 
 Run: `uv run pytest -q && uv run ruff check .`
 Expected: all pass, and `wc -l src/phice/runtime.py` is under 500.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/phice/window.py src/phice/runtime.py src/phice/menubar.py \
-        tests/test_runtime.py tests/test_menubar.py tests/test_paths.py
+        tests/test_runtime.py tests/test_menubar.py tests/test_paths.py \
+        CLAUDE.md docs/configuration.md
 git commit -m "refactor: window requests live with the windows, and runtime.py is back under the limit"
 ```
 
