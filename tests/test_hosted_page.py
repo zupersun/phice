@@ -101,7 +101,12 @@ def test_the_phone_rides_through_a_renewal(js):
     that never changes."""
     m = re.search(r"attempt < (\d+) && !offer", js)
     assert m, "the retry loop moved"
-    assert int(m.group(1)) * 800 >= 20_000, "retry for at least twenty seconds"
+    loop = js[js.index("let offer = null"):js.index("if (!offer)")]
+    d = re.search(r"setTimeout\(r, (\d+)\)\)", loop)
+    assert d, "the retry delay moved"
+    assert int(m.group(1)) * int(d.group(1)) >= 20_000, "retry for at least twenty seconds"
     assert "fresh one" not in js
     assert "renews the code by itself" in js
-    assert 'CLIENT_VERSION = "11"' in js, "the client changed, so its version must"
+    v = re.search(r'CLIENT_VERSION = "(\d+)"', js)
+    assert v, "the client version constant moved"
+    assert int(v.group(1)) >= 11, "the client changed, so its version must"
