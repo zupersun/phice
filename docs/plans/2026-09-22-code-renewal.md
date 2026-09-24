@@ -975,6 +975,166 @@ git commit -m "docs: the pairing code's life, and why the wait ends on a wall cl
 
 ---
 
+### Task 8: Cleanup the reviews asked for, and `runtime.py` back under the limit
+
+Added after Tasks 1 to 7 were reviewed. Three residuals from those reviews, plus one
+convention the branch inherited already broken: `runtime.py` was 506 lines before this
+work and is 516 now, against the project's rule of files under 500 with `engine.py` the
+one deliberate exception. The four window-request methods and their three fields are a
+cross-thread mailbox that belongs with the windows, and moving them fixes the length.
+
+**Files:**
+- Modify: `src/phice/window.py`, `src/phice/runtime.py`, `src/phice/menubar.py`
+- Test: `tests/test_runtime.py`, `tests/test_menubar.py`, `tests/test_paths.py`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_runtime.py`:
+
+```python
+def test_window_requests_are_a_one_shot_mailbox():
+    """Raised on the runtime thread, honoured on the main one, and each one is
+    taken exactly once so a window is never opened twice for one ask."""
+    from phice.window import Requests
+
+    w = Requests()
+    assert w.take_panel() is False
+    w.show_panel()
+    assert w.take_panel() is True
+    assert w.take_panel() is False
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is False
+    assert w.take_calibration_close() is False
+    w.close_calibration()
+    assert w.take_calibration_close() is True
+    assert w.take_calibration_close() is False
+```
+
+In `test_code_life_never_shows_more_than_a_full_bar`, after the `code_life` assertion add:
+
+```python
+    assert rt._debug_cursor()["code_expires_in"] == 7, "the seconds agree with the bar"
+```
+
+In `tests/test_menubar.py`, import `TITLES` alongside `ICONS` and, in
+`test_every_combination_names_an_icon_in_the_table`, change the assertion to:
+
+```python
+        assert icon in ICONS and icon in TITLES, (acc, conn, phase, err)
+```
+
+Append to `tests/test_paths.py`:
+
+```python
+def test_every_module_but_the_engine_stays_under_the_limit():
+    """CLAUDE.md: files under 500 lines, engine.py the one deliberate exception."""
+    for path in sorted(paths.PACKAGE_DIR.glob("*.py")):
+        if path.name == "engine.py":
+            continue
+        assert sum(1 for _ in path.open()) <= 500, path.name
+```
+
+- [ ] **Step 2: Run them and watch them fail**
+
+Run: `uv run pytest tests/test_runtime.py tests/test_menubar.py tests/test_paths.py -q`
+Expected: four failures: no `Requests` in `phice.window`, `code_expires_in` is 12 not 7,
+no `TITLES` in `phice.menubar`, and `runtime.py` at 516 lines.
+
+- [ ] **Step 3: The mailbox moves to `window.py`**
+
+Add `from dataclasses import dataclass` to the imports of `src/phice/window.py`, and add
+after the `log = ...` line:
+
+```python
+@dataclass
+class Requests:
+    """Window requests raised on the runtime thread and honoured on the main one.
+
+    A window can only be created where AppKit lives, on the thread the menu bar
+    owns, so the runtime never opens one itself: it leaves a note here and the
+    menu bar's timer takes it. Each note is taken exactly once.
+    """
+
+    _panel: bool = False                     # the control panel, or the page below
+    _page: tuple[str, bool] | None = None    # (url, fullscreen) for a specific page
+    _close_calibration: bool = False
+
+    def show_panel(self) -> None:
+        self._panel = True
+
+    def show(self, url: str, *, fullscreen: bool = False) -> None:
+        self._page = (url, fullscreen)
+        self._panel = True
+
+    def close_calibration(self) -> None:
+        self._close_calibration = True
+
+    def take_panel(self) -> tuple[str, bool] | bool:
+        """(url, fullscreen) to open, True for the control panel, or False."""
+        if not self._panel:
+            return False
+        self._panel = False
+        page, self._page = self._page, None
+        return page or True
+
+    def take_calibration_close(self) -> bool:
+        done, self._close_calibration = self._close_calibration, False
+        return done
+```
+
+- [ ] **Step 4: `runtime.py` uses it, and clamps the seconds**
+
+In `src/phice/runtime.py`: add `from .window import Requests` to the imports. In
+`__init__`, add `self.windows = Requests()` before the `calibrate.Runner(...)` line, change
+the runner's `show=` lambda to
+`show=lambda: self.windows.show(f"http://127.0.0.1:{self.http_port}/calibrate", fullscreen=True)`,
+change the control action `"/debug/panel": self.request_panel` to
+`"/debug/panel": self.windows.show_panel`, and delete the three lines
+`self._panel_requested = False`, `self._panel_url: tuple[str, bool] | None = None` and
+`self._close_calibration = False`. In `cancel_calibration`, replace
+`self._close_calibration = True` with `self.windows.close_calibration()`. Delete the whole
+`# ----- windows ---` section: `request_panel_url`, `take_calibration_close`,
+`request_panel` and `take_panel_request`.
+
+In `_debug_cursor`, clamp the seconds to the lifetime so they agree with the bar:
+
+```python
+        p = self.pairing
+        remaining = (min(p.ttl, max(0.0, p.published_at + p.ttl - time.time()))
+                     if p.waiter else 0.0)
+        d["code_expires_in"] = round(remaining)
+        d["code_life"] = round(remaining / p.ttl, 3) if p.ttl else 0.0
+```
+
+- [ ] **Step 5: `menubar.py` takes from the mailbox and names its fallback titles**
+
+Next to `ICONS`, add:
+
+```python
+TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice\u00b7", "on": "Phice\u25cf"}
+```
+
+and in `_set_icon`, replace the inline dict in the `else` branch with `self.title = TITLES[name]`.
+In `pump_windows`, replace `self.runtime.take_calibration_close()` with
+`self.runtime.windows.take_calibration_close()` and `self.runtime.take_panel_request()` with
+`self.runtime.windows.take_panel()`.
+
+- [ ] **Step 6: Run the gate**
+
+Run: `uv run pytest -q && uv run ruff check .`
+Expected: all pass, and `wc -l src/phice/runtime.py` is under 500.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/phice/window.py src/phice/runtime.py src/phice/menubar.py \
+        tests/test_runtime.py tests/test_menubar.py tests/test_paths.py
+git commit -m "refactor: window requests live with the windows, and runtime.py is back under the limit"
+```
+
+---
+
 ## Definition of done
 
 1. `/debug/cursor` reports `code_expires_in` counting down from the letterbox's own lifetime, `code_life` between 1 and 0, and `pairing_error` when the letterbox is unreachable.
@@ -982,3 +1142,4 @@ git commit -m "docs: the pairing code's life, and why the wait ends on a wall cl
 3. Turning Wi-Fi off dims the code and names the problem in both the panel and the menu bar; turning it on clears both.
 4. A phone that types the code during a renewal sits on "Connecting…" for a few seconds and then connects.
 5. `uv run pytest -q`, `uv run ruff check .` and `node tests/client/run.mjs` stay green.
+6. Every module but `engine.py` is under 500 lines, and a test says so.
