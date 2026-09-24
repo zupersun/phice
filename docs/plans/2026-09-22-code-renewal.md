@@ -919,13 +919,13 @@ In `CLAUDE.md`, add two rows to the diagnosing table after the `rtc.bad` row:
 
 ```markdown
 | `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
-| `pairing_error` set | The letterbox cannot be reached. The code on screen is not live, and the panel and menu bar both say so. It clears on the next successful publish. |
+| `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel and the menu bar both say so; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
 ```
 
 Add a constraint at the end of the numbered list:
 
 ```markdown
-15. **The wait for an answer ends on a wall clock, not the loop's.** `time.monotonic`
+15. **The wait for an answer ends on a wall clock, stamped after the publish returns.** `time.monotonic`
     is `mach_absolute_time`, which stops while the Mac sleeps; the letterbox's clock does
     not. Without the wall-clock check a wake showed a dead code for up to five minutes.
     The stamp the wait counts from is taken *after* the publish returns, so by the time
@@ -941,12 +941,17 @@ In `docs/configuration.md`, change the `panel.css` row to:
 | `panel.css` | The Mac window: palette, the appearance switch, the pairing code's life bar, layout |
 ```
 
-and add under the table:
+correct the sentence under the table that lists what `reset-ui` restores so it names all
+five targets (`layout.json`, `theme.css`, `panel.css`, `calibrate.css` and `assets/`; the
+old text named three), and add under it:
 
 ```markdown
-Existing installs keep the `panel.css` they have. After an update that adds to it,
-`uv run phice reset-ui` restores the packaged one (backing yours up).
+Existing installs keep the files they have, so an update that adds to one of them is
+only picked up by `reset-ui`.
 ```
+
+The same three-name list is printed by `cmd_reset_ui` in `src/phice/cli.py`; correct that
+string to name all five as well.
 
 - [ ] **Step 2: Run the whole gate**
 
