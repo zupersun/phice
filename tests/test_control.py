@@ -103,7 +103,11 @@ def test_panel_theme_control_touches_only_the_data_theme_attribute(control):
     assert 'setAttribute("data-theme"' in html
     assert '"light"' in html and '"dark"' in html
     assert '"system"' not in html, "the system option was dropped"
+    # The properties the script may publish are numbers: the knob's position
+    # while a finger is on it, and the code's remaining life. What they look
+    # like is the stylesheet's business.
     assert 'setProperty("--knob-drag"' in html
+    assert 'setProperty("--code-life"' in html
 
 
 def test_the_appearance_slider_is_draggable_and_server_backed(control):
@@ -126,3 +130,23 @@ def test_the_panel_offers_calibration_without_needing_a_phone_first(control):
     html = get(control[1], "/panel")[2].decode()
     assert "/calibrate/start" in html
     assert "calibrated" in html, "say whether it has ever been run"
+
+
+def test_the_panel_publishes_the_codes_life_as_a_number_and_its_state_as_an_attribute(control):
+    """Same contract as the scroll strip and the knobs: the script sets a
+    number and an attribute, and panel.css decides what they look like. It
+    used to show the code alone, which looked identical whether the code was
+    live, being renewed, or dead because the letterbox was unreachable."""
+    html = get(control[1], "/panel")[2].decode()
+    assert 'setProperty("--code-life"' in html
+    assert "dataset.pairing" in html
+    assert "code_life" in html and "offer_ready" in html and "pairing_error" in html
+    assert 'id="code-hint"' in html
+    assert "style=" not in html, "no inline style; numbers and attributes only"
+
+
+def test_panel_css_styles_every_pairing_state():
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "--code-life" in css
+    for state in ("ready", "renewing", "error", "connected"):
+        assert f'body[data-pairing="{state}"]' in css, state

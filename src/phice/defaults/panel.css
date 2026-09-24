@@ -103,6 +103,26 @@ h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
         -webkit-user-select: all; user-select: all; }
 .code-hint { text-align: center; color: var(--dim); font-size: 12px; margin: 0; }
 
+/* The code's remaining life at the pairing service, published by the script as
+   --code-life (0..1), and its state as data-pairing on <body>: ready, renewing,
+   error or connected. The bar drains as the offer runs out and refills when the
+   Mac renews it under the same code. */
+.code-life { height: 3px; margin: 2px 28px 8px; border-radius: 2px;
+             background: var(--seg-track); overflow: hidden; }
+.code-life i { display: block; height: 100%; background: var(--accent);
+               width: calc(var(--code-life, 0) * 100%);
+               transition: width 1s linear, background 200ms ease-out; }
+body[data-pairing="ready"] .code-hint { color: var(--dim); }
+body[data-pairing="renewing"] .code-life i { width: 100%; animation: renew 1.2s ease-in-out infinite; }
+body[data-pairing="error"] .code { opacity: 0.35; }
+body[data-pairing="error"] .code-life i { width: 100%; background: var(--bad); }
+body[data-pairing="error"] .code-hint { color: var(--bad); }
+body[data-pairing="connected"] .code-life { opacity: 0; }
+@keyframes renew { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.8; } }
+@media (prefers-reduced-motion: reduce) {
+  body[data-pairing="renewing"] .code-life i { animation: none; opacity: 0.4; }
+}
+
 .url { font-size: 13px; color: var(--fg); word-break: break-all;
        -webkit-user-select: all; user-select: all; }
 

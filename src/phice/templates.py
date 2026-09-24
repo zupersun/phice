@@ -35,7 +35,8 @@ try {
 
 <div class="card" id="pair-card">
   <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
-  <p class="code-hint">Enter this on your phone</p>
+  <div class="code-life" aria-hidden="true"><i></i></div>
+  <p class="code-hint" id="code-hint">Enter this on your phone</p>
 </div>
 
 <div class="card">
@@ -97,6 +98,20 @@ async function refresh() {
     const d = await r.json();
     document.getElementById("code").textContent = d.pair_code || "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
     document.getElementById("url").textContent = d.phone_url || "\u2014";
+    // Which of four situations the code is in, and how much life it has left
+    // (0..1). Only a number and an attribute cross this line; panel.css draws.
+    const pairing = d.connected ? "connected"
+                  : d.pairing_error ? "error"
+                  : d.offer_ready ? "ready" : "renewing";
+    document.body.dataset.pairing = pairing;
+    document.body.style.setProperty("--code-life",
+                                    (pairing === "ready" ? (d.code_life || 0) : 0).toFixed(3));
+    document.getElementById("code-hint").textContent = {
+      connected: "Connected. The code stays valid for next time.",
+      error: "Can\u2019t reach the pairing service. Phice keeps trying.",
+      ready: "Enter this on your phone. It renews itself.",
+      renewing: "Renewing\u2026",
+    }[pairing];
     document.getElementById("sub").textContent =
       d.connected ? "Connected to " + (d.device_name || "your phone")
                   : "Waiting for your phone";
