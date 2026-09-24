@@ -878,12 +878,14 @@ In `CLAUDE.md`, add two rows to the diagnosing table after the `rtc.bad` row:
 Add a constraint at the end of the numbered list:
 
 ```markdown
-15. **The wait for an answer checks a wall clock, not only the loop's.** `time.monotonic`
+15. **The wait for an answer ends on a wall clock, not the loop's.** `time.monotonic`
     is `mach_absolute_time`, which stops while the Mac sleeps; the letterbox's clock does
     not. Without the wall-clock check a wake showed a dead code for up to five minutes.
-    And the wait runs one second *past* the letterbox's lifetime on purpose: an old offer
-    that is still fetchable gets answered, and that answer fails on the new peer
-    connection, whereas a missing offer is simply retried.
+    The stamp the wait counts from is taken *after* the publish returns, so by the time
+    it fires the letterbox has already dropped the offer: an old offer that is still
+    fetchable gets answered, and that answer fails on the new peer connection, whereas a
+    missing offer is simply retried. The monotonic bound of lifetime plus one second is
+    only a backstop for a wall clock that steps backwards.
 ```
 
 In `docs/configuration.md`, change the `panel.css` row to:
@@ -907,7 +909,7 @@ uv run pytest -q && uv run ruff check . && node tests/client/run.mjs
 
 Expected: everything green.
 
-- [ ] **Step 3: Deploy the page**
+- [ ] **Step 3: Deploy the page** (the user runs this; it publishes to Vercel)
 
 The phone change is not live until the hosted page is:
 
@@ -921,7 +923,7 @@ Expected: `app.js matches`. Then on the phone, open the page fresh (it fetches `
 
 ```bash
 git add CLAUDE.md docs/configuration.md
-git commit -m "docs: the pairing code's life, and why the wait outlives it by a second"
+git commit -m "docs: the pairing code's life, and why the wait ends on a wall clock"
 ```
 
 ---
