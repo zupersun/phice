@@ -241,6 +241,8 @@ async def run(rt: Runtime) -> None:
         except SignalingError as e:
             log.error("could not reach the pairing service: %s", e)
             rt.status.update(pairing_error=str(e))
+            rt.pairing.published_at = 0.0
+            rt.pairing.ttl = 0.0
             await rt.rtc.close()
             await asyncio.sleep(RETRY_S)
             continue
@@ -248,18 +250,20 @@ async def run(rt: Runtime) -> None:
         rt.pairing.ttl = ttl
         rt.status.update(pairing_error="")
         log.info("pairing code %s -- enter it at %s/app", code, rt.config.signaling_url)
-        # One second past the lifetime, so the letterbox has certainly dropped
-        # this offer before the next one is gathered: a phone that could still
-        # fetch the old offer would answer it, and that answer fails on the new
-        # peer connection. A missing offer it simply retries.
+        # Ends on the wall clock at published_at + ttl, taken after the POST returns --
+        # so the letterbox has already dropped the offer by then, with the time spent
+        # closing and republishing adding further margin. A phone must never still be
+        # able to fetch the old offer once the Mac has moved on, since that answer fails
+        # on the new peer connection while a missing offer is simply retried; `ttl + 1.0`
+        # on the monotonic clock is only a backstop for a wall clock stepping backward.
         rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(
             code, timeout=ttl + 1.0, expires_at=rt.pairing.published_at + ttl))
         try:
             answer = await rt.pairing.waiter
         except SignalingError as e:
-            # Say which way it ended: "expired at the letterbox" after a sleep
-            # looks nothing like "timed out" after an ordinary five minutes, and
-            # the log is the only place the difference is visible.
+            # Kept because it names the code and says another offer is coming; the
+            # reason text is what tells an ordinary lapse from a clock that stepped
+            # backward.
             log.info("offer under %s lapsed (%s); publishing another", code, e)
             await rt.rtc.close()
             continue

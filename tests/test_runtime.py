@@ -1,6 +1,7 @@
 """The runtime glue: what it reports, what it forwards to the phone, how it stops."""
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -123,3 +124,16 @@ async def test_offer_ready_means_the_letterbox_holds_the_current_offer(tmp_path)
     rt.pairing.waiter.cancel()
     rt.pairing.waiter = None
     assert rt._debug_cursor()["offer_ready"] is False
+
+
+async def test_code_life_never_shows_more_than_a_full_bar(tmp_path):
+    """A clock that steps backwards must not draw more than a full bar."""
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.pairing.waiter = asyncio.get_running_loop().create_future()
+    rt.pairing.ttl = 7.0
+    rt.pairing.published_at = time.time() + 5.0
+    assert rt._debug_cursor()["code_life"] == 1.0
+    rt.pairing.waiter.cancel()
+    rt.pairing.waiter = None

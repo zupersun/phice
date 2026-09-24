@@ -261,7 +261,7 @@ class Runtime:
         p = self.pairing
         remaining = max(0.0, p.published_at + p.ttl - time.time()) if p.waiter else 0.0
         d["code_expires_in"] = round(remaining)
-        d["code_life"] = round(remaining / p.ttl, 3) if p.ttl else 0.0
+        d["code_life"] = round(min(1.0, remaining / p.ttl), 3) if p.ttl else 0.0
         d["sensor_hz"] = round(rtc.hz, 1) if rtc and rtc.is_open else 0.0
         d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):
