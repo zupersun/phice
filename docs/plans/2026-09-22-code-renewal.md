@@ -593,7 +593,8 @@ def test_the_panel_publishes_the_codes_life_as_a_number_and_its_state_as_an_attr
 def test_panel_css_styles_every_pairing_state():
     css = (DEFAULTS_DIR / "panel.css").read_text()
     assert "--code-life" in css
-    for state in ("ready", "renewing", "error", "connected"):
+    # Ready is the base look and needs no rule of its own.
+    for state in ("renewing", "error", "connected"):
         assert f'body[data-pairing="{state}"]' in css, state
 ```
 
@@ -620,7 +621,7 @@ In `src/phice/templates.py`, replace the pairing card:
 <div class="card" id="pair-card">
   <div class="code" id="code">······</div>
   <div class="code-life" aria-hidden="true"><i></i></div>
-  <p class="code-hint" id="code-hint">Enter this on your phone</p>
+  <p class="code-hint" id="code-hint">Renewing…</p>
 </div>
 ```
 
@@ -634,13 +635,21 @@ In `refresh()`, directly after the line that sets `#url`, add:
                   : d.offer_ready ? "ready" : "renewing";
     document.body.dataset.pairing = pairing;
     document.body.style.setProperty("--code-life",
-                                    (pairing === "ready" ? (d.code_life || 0) : 0).toFixed(3));
+                                    (pairing === "ready" ? Number(d.code_life) || 0 : 0).toFixed(3));
     document.getElementById("code-hint").textContent = {
       connected: "Connected. The code stays valid for next time.",
       error: "Can’t reach the pairing service. Phice keeps trying.",
       ready: "Enter this on your phone. It renews itself.",
       renewing: "Renewing…",
     }[pairing];
+```
+
+At the bottom of the script, immediately before the existing first `refresh();` call, add:
+
+```javascript
+// The first poll has not landed. A pulsing full bar is honest, and the ready
+// state then steps down from it rather than filling up from empty.
+document.body.dataset.pairing = "renewing";
 ```
 
 - [ ] **Step 4: Style the states**
@@ -653,11 +662,11 @@ Append to `src/phice/defaults/panel.css`, after the `.code-hint` rule:
    error or connected. The bar drains as the offer runs out and refills when the
    Mac renews it under the same code. */
 .code-life { height: 3px; margin: 2px 28px 8px; border-radius: 2px;
-             background: var(--seg-track); overflow: hidden; }
+             background: var(--seg-track); overflow: hidden;
+             transition: opacity 200ms ease-out; }
 .code-life i { display: block; height: 100%; background: var(--accent);
                width: calc(var(--code-life, 0) * 100%);
                transition: width 1s linear, background 200ms ease-out; }
-body[data-pairing="ready"] .code-hint { color: var(--dim); }
 body[data-pairing="renewing"] .code-life i { width: 100%; animation: renew 1.2s ease-in-out infinite; }
 body[data-pairing="error"] .code { opacity: 0.35; }
 body[data-pairing="error"] .code-life i { width: 100%; background: var(--bad); }
