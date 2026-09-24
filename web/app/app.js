@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "10";
+  const CLIENT_VERSION = "11";
 
   const el = {
     body: document.body,
@@ -106,16 +106,18 @@
     });
 
     // The Mac shows a code the moment it mints one, before it has finished
-    // gathering ICE candidates, so a code can be real and its offer not posted
-    // yet. Give it a few seconds before declaring the code wrong.
+    // gathering ICE candidates, and it renews the offer under the same code
+    // every few minutes with a gap of a few seconds while it gathers the next
+    // one. Twenty seconds covers both.
     let offer = null;
-    for (let attempt = 0; attempt < 10 && !offer; attempt++) {
+    for (let attempt = 0; attempt < 25 && !offer; attempt++) {
       const res = await fetch(`/api/offer?code=${encodeURIComponent(code)}`);
       if (res.ok) { offer = await res.json(); break; }
       await new Promise((r) => setTimeout(r, 800));
     }
     if (!offer) {
-      fail("That code was not found. Codes expire after five minutes — check your Mac for a fresh one.");
+      fail("Your Mac isn’t offering that code right now. Check the Phice window on the Mac: "
+           + "it renews the code by itself, and it says so if it can’t reach the pairing service.");
       return;
     }
     await pc.setRemoteDescription(offer);
