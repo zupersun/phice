@@ -22,12 +22,12 @@ kills the pointer mid-use.
 | `sessions/` | Recordings, for offline tuning |
 | `logs/phice.log` | What the app is doing |
 
-Existing installs keep the `panel.css` they have. After an update that adds to it,
-`uv run phice reset-ui` restores the packaged one (backing yours up).
+Existing installs keep whichever of these files they already have. An update that adds
+to one is picked up the next time you run `uv run phice reset-ui`.
 
 `uv run phice paths` prints the directory. `uv run phice reset-ui` restores
-`layout.json`, `theme.css` and `assets/` from the packaged defaults, backing up
-whatever was there.
+`layout.json`, `theme.css`, `panel.css`, `calibrate.css` and `assets/` from the packaged
+defaults, backing up whatever was there.
 
 ### `pointer.json`
 
