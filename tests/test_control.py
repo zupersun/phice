@@ -148,5 +148,7 @@ def test_the_panel_publishes_the_codes_life_as_a_number_and_its_state_as_an_attr
 def test_panel_css_styles_every_pairing_state():
     css = (DEFAULTS_DIR / "panel.css").read_text()
     assert "--code-life" in css
-    for state in ("ready", "renewing", "error", "connected"):
+    # "ready" is the base look the other three states depart from, so it has
+    # no rule of its own -- only the states that differ from it need one.
+    for state in ("renewing", "error", "connected"):
         assert f'body[data-pairing="{state}"]' in css, state

@@ -36,7 +36,7 @@ try {
 <div class="card" id="pair-card">
   <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
   <div class="code-life" aria-hidden="true"><i></i></div>
-  <p class="code-hint" id="code-hint">Enter this on your phone</p>
+  <p class="code-hint" id="code-hint">Renewing\u2026</p>
 </div>
 
 <div class="card">
@@ -105,7 +105,7 @@ async function refresh() {
                   : d.offer_ready ? "ready" : "renewing";
     document.body.dataset.pairing = pairing;
     document.body.style.setProperty("--code-life",
-                                    (pairing === "ready" ? (d.code_life || 0) : 0).toFixed(3));
+                    (pairing === "ready" ? (Number(d.code_life) || 0) : 0).toFixed(3));
     document.getElementById("code-hint").textContent = {
       connected: "Connected. The code stays valid for next time.",
       error: "Can\u2019t reach the pairing service. Phice keeps trying.",
@@ -269,6 +269,10 @@ try {
   applyTheme(cached === "light" ? "light" : "dark");
 } catch (e) { applyTheme("dark"); }
 
+// The first poll has not landed yet. A pulsing full bar is an honest "still
+// checking"; the ready state then steps DOWN from it once a code is live,
+// rather than the empty-then-fill-up flash of starting from nothing.
+document.body.dataset.pairing = "renewing";
 refresh();
 setInterval(refresh, 1000);
 </script>

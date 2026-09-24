@@ -108,11 +108,13 @@ h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
    error or connected. The bar drains as the offer runs out and refills when the
    Mac renews it under the same code. */
 .code-life { height: 3px; margin: 2px 28px 8px; border-radius: 2px;
-             background: var(--seg-track); overflow: hidden; }
+             background: var(--seg-track); overflow: hidden;
+             transition: opacity 200ms ease-out; }
 .code-life i { display: block; height: 100%; background: var(--accent);
                width: calc(var(--code-life, 0) * 100%);
                transition: width 1s linear, background 200ms ease-out; }
-body[data-pairing="ready"] .code-hint { color: var(--dim); }
+/* "ready" has no rule of its own -- it is the base look above; the other
+   three states are what differ from it. */
 body[data-pairing="renewing"] .code-life i { width: 100%; animation: renew 1.2s ease-in-out infinite; }
 body[data-pairing="error"] .code { opacity: 0.35; }
 body[data-pairing="error"] .code-life i { width: 100%; background: var(--bad); }
