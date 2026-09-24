@@ -57,7 +57,7 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `rtc.frames` climbing, `sensor_hz: 0` | Buttons arrive, motion does not. The phone was refused sensor access; it reports what iOS answered in `phone connected: ... (caps: ...)`. |
 | `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
 | `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
-| `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel and the menu bar both say so; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
+| `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel says so, and the menu bar does too unless it is still asking for Accessibility; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
 
 The pointer switching itself off a second after it is armed is the packet timeout doing
 its job, not a bug: no packets are arriving.

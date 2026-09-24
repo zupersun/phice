@@ -10,8 +10,45 @@ running in the menu bar, and opening Phice again brings the panel back.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 log = logging.getLogger("phice.window")
+
+
+@dataclass
+class Requests:
+    """Window requests raised on the runtime thread and honoured on the main one.
+
+    A window can only be created where AppKit lives, on the thread the menu bar
+    owns, so the runtime never opens one itself: it leaves a note here and the
+    menu bar's timer takes it. Each note is taken exactly once.
+    """
+
+    _panel: bool = False                     # the control panel, or the page below
+    _page: tuple[str, bool] | None = None    # (url, fullscreen) for a specific page
+    _close_calibration: bool = False
+
+    def show_panel(self) -> None:
+        self._panel = True
+
+    def show(self, url: str, *, fullscreen: bool = False) -> None:
+        self._page = (url, fullscreen)
+        self._panel = True
+
+    def close_calibration(self) -> None:
+        self._close_calibration = True
+
+    def take_panel(self) -> tuple[str, bool] | bool:
+        """(url, fullscreen) to open, True for the control panel, or False."""
+        if not self._panel:
+            return False
+        self._panel = False
+        page, self._page = self._page, None
+        return page or True
+
+    def take_calibration_close(self) -> bool:
+        done, self._close_calibration = self._close_calibration, False
+        return done
 
 #: Built once, on first use: an Objective-C class cannot be defined twice under
 #: the same name, and AppKit is only imported inside the functions below.

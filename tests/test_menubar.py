@@ -5,7 +5,7 @@ the only place the suite runs.
 """
 import itertools
 
-from phice.menubar import ICONS, describe
+from phice.menubar import ICONS, TITLES, describe
 
 
 def _status(**kw) -> dict:
@@ -48,4 +48,4 @@ def test_every_combination_names_an_icon_in_the_table():
         s = _status(accessibility=accessibility, connected=connected, phase=phase,
                      pairing_error=pairing_error)
         icon, _ = describe(s)
-        assert icon in ICONS
+        assert icon in ICONS and icon in TITLES, (accessibility, connected, phase, pairing_error)

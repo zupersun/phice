@@ -22,8 +22,8 @@ kills the pointer mid-use.
 | `sessions/` | Recordings, for offline tuning |
 | `logs/phice.log` | What the app is doing |
 
-Existing installs keep whichever of these files they already have. An update that adds
-to one is picked up the next time you run `uv run phice reset-ui`.
+Existing installs keep the layout, theme, panel and calibration files they have. An update
+that adds to one is picked up the next time you run `uv run phice reset-ui`.
 
 `uv run phice paths` prints the directory. `uv run phice reset-ui` restores
 `layout.json`, `theme.css`, `panel.css`, `calibrate.css` and `assets/` from the packaged

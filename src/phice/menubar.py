@@ -17,6 +17,7 @@ log = logging.getLogger("phice.menubar")
 
 ICONS = {"warn": "menubar/warn.png", "disconnected": "menubar/disconnected.png",
          "off": "menubar/off.png", "on": "menubar/on.png"}
+TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice·", "on": "Phice●"}
 ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
                       "?Privacy_Accessibility")
 
@@ -160,13 +161,12 @@ class PhiceApp(rumps.App):
             self.title = None
         else:
             self.icon = None
-            self.title = {"warn": "Phice!", "disconnected": "Phice",
-                          "off": "Phice\u00b7", "on": "Phice\u25cf"}[name]
+            self.title = TITLES[name]
 
     def pump_windows(self, _):
-        if self.runtime.take_calibration_close():
+        if self.runtime.windows.take_calibration_close():
             window.close("calibrate")
-        wanted = self.runtime.take_panel_request()
+        wanted = self.runtime.windows.take_panel()
         if wanted is True:
             self.show_panel()
         elif wanted:

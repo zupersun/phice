@@ -135,5 +135,25 @@ async def test_code_life_never_shows_more_than_a_full_bar(tmp_path):
     rt.pairing.ttl = 7.0
     rt.pairing.published_at = time.time() + 5.0
     assert rt._debug_cursor()["code_life"] == 1.0
+    assert rt._debug_cursor()["code_expires_in"] == 7, "the seconds agree with the bar"
     rt.pairing.waiter.cancel()
     rt.pairing.waiter = None
+
+
+def test_window_requests_are_a_one_shot_mailbox():
+    """Raised on the runtime thread, honoured on the main one, and each one is
+    taken exactly once so a window is never opened twice for one ask."""
+    from phice.window import Requests
+
+    w = Requests()
+    assert w.take_panel() is False
+    w.show_panel()
+    assert w.take_panel() is True
+    assert w.take_panel() is False
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is False
+    assert w.take_calibration_close() is False
+    w.close_calibration()
+    assert w.take_calibration_close() is True
+    assert w.take_calibration_close() is False
