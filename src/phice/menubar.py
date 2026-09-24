@@ -28,6 +28,24 @@ def accessibility_trusted(prompt: bool = False) -> bool:
     return ok
 
 
+def describe(s: dict) -> tuple[str, str]:
+    """Icon name and status line for a status snapshot, most urgent first.
+
+    Pure, so the ordering is pinned by a test rather than by looking at the
+    menu bar, which may be invisible behind the notch.
+    """
+    if not s["accessibility"]:
+        return "warn", "Accessibility permission needed"
+    if s.get("pairing_error"):
+        return "warn", "Can't reach the pairing service"
+    if not s["connected"]:
+        return "disconnected", "No phone connected"
+    name = s["device_name"] or "Phone"
+    if s["phase"] in ("on", "hold", "held"):
+        return "on", f"{name} · pointer ON"
+    return "off", f"{name} · pointer off"
+
+
 class PhiceApp(rumps.App):
     def __init__(self, runtime: Runtime):
         super().__init__("Phice", quit_button=None)
@@ -163,18 +181,8 @@ class PhiceApp(rumps.App):
             # what the user needs to see.
             self.show_panel()
         s = self.runtime.status.read()
-        if not s["accessibility"]:
-            self._set_icon("warn")
-            label = "Accessibility permission needed"
-        elif not s["connected"]:
-            self._set_icon("disconnected")
-            label = "No phone connected"
-        elif s["phase"] in ("on", "hold", "held"):
-            self._set_icon("on")
-            label = f"{s['device_name'] or 'Phone'} · pointer ON"
-        else:
-            self._set_icon("off")
-            label = f"{s['device_name'] or 'Phone'} · pointer off"
+        icon, label = describe(s)
+        self._set_icon(icon)
         if s["error"]:
             label = f"Config error: {s['error'][:48]}"
         self.item_status.title = label
