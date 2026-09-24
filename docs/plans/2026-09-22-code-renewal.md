@@ -452,6 +452,10 @@ In `run`, replace the block from `code = rt.pairing.code or new_pairing_code()` 
             ttl = await client.publish_offer(code, offer)
         except SignalingError as e:
             log.error("could not reach the pairing service: %s", e)
+            # No offer is outstanding: keep the record saying so, rather than
+            # relying on every reader to check `waiter` first.
+            rt.pairing.published_at = 0.0
+            rt.pairing.ttl = 0.0
             rt.status.update(pairing_error=str(e))
             await rt.rtc.close()
             await asyncio.sleep(RETRY_S)
@@ -460,18 +464,22 @@ In `run`, replace the block from `code = rt.pairing.code or new_pairing_code()` 
         rt.pairing.ttl = ttl
         rt.status.update(pairing_error="")
         log.info("pairing code %s -- enter it at %s/app", code, rt.config.signaling_url)
-        # One second past the lifetime, so the letterbox has certainly dropped
-        # this offer before the next one is gathered: a phone that could still
-        # fetch the old offer would answer it, and that answer fails on the new
-        # peer connection. A missing offer it simply retries.
+        # The wait ends when the wall clock reaches published_at + ttl. That
+        # stamp was taken after the POST returned, so the letterbox's own clock
+        # started earlier and has already dropped the offer by then, and closing
+        # and gathering the next one adds more margin. A phone must never be
+        # able to fetch the old offer once the Mac has moved on: that answer
+        # fails on the new peer connection, whereas a missing offer is simply
+        # retried. The monotonic ttl + 1 is only a backstop for a wall clock
+        # that steps backwards.
         rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(
             code, timeout=ttl + 1.0, expires_at=rt.pairing.published_at + ttl))
         try:
             answer = await rt.pairing.waiter
         except SignalingError as e:
-            # Say which way it ended: "expired at the letterbox" after a sleep
-            # looks nothing like "timed out" after an ordinary five minutes, and
-            # the log is the only place the difference is visible.
+            # Kept for the code and the promise of another offer. The reason
+            # normally reads "expired at the letterbox"; "timed out" means the
+            # wall clock stepped backwards and the backstop fired instead.
             log.info("offer under %s lapsed (%s); publishing another", code, e)
             await rt.rtc.close()
             continue
@@ -520,7 +528,27 @@ In `_debug_cursor`, directly after the `offer_ready` line, add:
         p = self.pairing
         remaining = max(0.0, p.published_at + p.ttl - time.time()) if p.waiter else 0.0
         d["code_expires_in"] = round(remaining)
-        d["code_life"] = round(remaining / p.ttl, 3) if p.ttl else 0.0
+        d["code_life"] = round(min(1.0, remaining / p.ttl), 3) if p.ttl else 0.0
+```
+
+Add to `tests/test_runtime.py`, after `test_offer_ready_means_the_letterbox_holds_the_current_offer`:
+
+```python
+@pytest.mark.asyncio
+async def test_code_life_never_shows_more_than_a_full_bar(tmp_path):
+    """A wall clock that steps backwards makes the remaining life exceed the
+    lifetime. The panel draws the fraction, so it is clamped at one."""
+    import time
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.pairing.waiter = asyncio.get_running_loop().create_future()
+    rt.pairing.ttl = 7.0
+    rt.pairing.published_at = time.time() + 5.0
+    assert rt._debug_cursor()["code_life"] == 1.0
+    rt.pairing.waiter.cancel()
+    rt.pairing.waiter = None
 ```
 
 - [ ] **Step 5: Run the tests**
