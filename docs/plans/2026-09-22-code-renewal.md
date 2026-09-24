@@ -840,12 +840,16 @@ def test_the_phone_rides_through_a_renewal(js):
     few seconds to gather the new offer. Eight seconds of retries could miss
     that window, and the message then sent people to the Mac for a fresh code
     that never changes."""
-    m = re.search(r"attempt < (\d+) && !offer", js)
-    assert m, "the retry loop moved"
-    assert int(m.group(1)) * 800 >= 20_000, "retry for at least twenty seconds"
+    loop = js[js.index("let offer = null"):js.index("if (!offer)")]
+    m = re.search(r"attempt < (\d+) && !offer", loop)
+    d = re.search(r"setTimeout\(r, (\d+)\)", loop)
+    assert m and d, "the retry loop moved"
+    # Both numbers, not the bound alone: shrinking the sleep would reinstate the bug.
+    assert int(m.group(1)) * int(d.group(1)) >= 20_000, "retry for at least twenty seconds"
     assert "fresh one" not in js
     assert "renews the code by itself" in js
-    assert 'CLIENT_VERSION = "11"' in js, "the client changed, so its version must"
+    v = re.search(r'CLIENT_VERSION = "(\d+)"', js)
+    assert v and int(v.group(1)) >= 11, "the client changed, so its version must"
 ```
 
 - [ ] **Step 2: Run it and watch it fail**
@@ -867,16 +871,25 @@ Replace the retry loop and its failure in `pair()`:
     // The Mac shows a code the moment it mints one, before it has finished
     // gathering ICE candidates, and it renews the offer under the same code
     // every few minutes with a gap of a few seconds while it gathers the next
-    // one. Twenty seconds covers both.
+    // one. Twenty seconds covers both. A dropped request is a miss, not a
+    // verdict; only a 404 is worth waiting on, since nothing else changes.
     let offer = null;
     for (let attempt = 0; attempt < 25 && !offer; attempt++) {
-      const res = await fetch(`/api/offer?code=${encodeURIComponent(code)}`);
-      if (res.ok) { offer = await res.json(); break; }
+      try {
+        const res = await fetch(`/api/offer?code=${encodeURIComponent(code)}`);
+        if (res.ok) { offer = await res.json(); break; }
+        if (res.status !== 404) {
+          fail("The pairing service answered with an error (HTTP " + res.status
+               + "). Try again in a moment.");
+          return;
+        }
+      } catch (_) { /* a dropped request is a miss, not a verdict */ }
       await new Promise((r) => setTimeout(r, 800));
     }
     if (!offer) {
-      fail("Your Mac isn’t offering that code right now. Check the Phice window on the Mac: "
-           + "it renews the code by itself, and it says so if it can’t reach the pairing service.");
+      fail("Your Mac isn’t offering that code right now. The code doesn’t change: check the "
+           + "Phice window on the Mac, which renews the code by itself and says so if it "
+           + "can’t reach the pairing service.");
       return;
     }
 ```
