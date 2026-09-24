@@ -56,6 +56,8 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
 | `rtc.frames` climbing, `sensor_hz: 0` | Buttons arrive, motion does not. The phone was refused sensor access; it reports what iOS answered in `phone connected: ... (caps: ...)`. |
 | `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
+| `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
+| `pairing_error` set | The letterbox cannot be reached. The code on screen is not live, and the panel and menu bar both say so. It clears on the next successful publish. |
 
 The pointer switching itself off a second after it is armed is the packet timeout doing
 its job, not a bug: no packets are arriving.
@@ -198,6 +200,14 @@ These were each discovered the hard way. Changing them re-breaks the product.
 14. **The control server binds 127.0.0.1 and nothing else.** Nothing on it is for the
     phone. It once listened on every interface because the phone had to fetch a
     certificate from it; that reason is gone.
+15. **The wait for an answer ends on a wall clock, not the loop's.** `time.monotonic`
+    is `mach_absolute_time`, which stops while the Mac sleeps; the letterbox's clock does
+    not. Without the wall-clock check a wake showed a dead code for up to five minutes.
+    The stamp the wait counts from is taken *after* the publish returns, so by the time
+    it fires the letterbox has already dropped the offer: an old offer that is still
+    fetchable gets answered, and that answer fails on the new peer connection, whereas a
+    missing offer is simply retried. The monotonic bound of lifetime plus one second is
+    only a backstop for a wall clock that steps backwards.
 
 ## Why the page is hosted
 
