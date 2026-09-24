@@ -744,6 +744,30 @@ def test_the_ordinary_states():
     assert describe(_status(connected=True, device_name="iPhone", phase="on")) == (
         "on", "iPhone · pointer ON")
     assert describe(_status(connected=True, phase="off")) == ("off", "Phone · pointer off")
+
+
+def test_a_working_pointer_outranks_a_stale_letterbox_error():
+    """Once the phone is connected the Mac no longer needs the letterbox, so
+    claiming breakage while the pointer works would be wrong. Same precedence
+    as the panel: connected first, then error."""
+    assert describe(_status(connected=True, phase="on", pairing_error="x")) == (
+        "on", "Phone · pointer ON")
+
+
+def test_every_combination_names_an_icon_in_the_table():
+    """The names are chosen here and looked up in _set_icon; an unknown one
+    raises inside the refresh timer and kills the status tick. A fifth state
+    is a realistic next edit."""
+    from itertools import product
+
+    from phice.menubar import ICONS
+
+    for acc, conn, phase, err in product((True, False), (True, False),
+                                         ("disconnected", "off", "on", "hold", "held"),
+                                         ("", "x")):
+        icon, _ = describe(_status(accessibility=acc, connected=conn, phase=phase,
+                                   pairing_error=err))
+        assert icon in ICONS, (acc, conn, phase, err)
 ```
 
 - [ ] **Step 2: Run it and watch it fail**
@@ -760,18 +784,19 @@ def describe(s: dict) -> tuple[str, str]:
     """Icon name and status line for a status snapshot, most urgent first.
 
     Pure, so the ordering is pinned by a test rather than by looking at the
-    menu bar, which may be invisible behind the notch.
+    menu bar, which may be invisible behind the notch. A working pointer
+    outranks a letterbox the Mac no longer needs.
     """
     if not s["accessibility"]:
         return "warn", "Accessibility permission needed"
-    if s.get("pairing_error"):
+    if s["connected"]:
+        name = s["device_name"] or "Phone"
+        if s["phase"] in ("on", "hold", "held"):
+            return "on", f"{name} · pointer ON"
+        return "off", f"{name} · pointer off"
+    if s["pairing_error"]:
         return "warn", "Can't reach the pairing service"
-    if not s["connected"]:
-        return "disconnected", "No phone connected"
-    name = s["device_name"] or "Phone"
-    if s["phase"] in ("on", "hold", "held"):
-        return "on", f"{name} · pointer ON"
-    return "off", f"{name} · pointer off"
+    return "disconnected", "No phone connected"
 ```
 
 Replace the body of `refresh` from `s = self.runtime.status.read()` onward:
@@ -788,7 +813,7 @@ Replace the body of `refresh` from `s = self.runtime.status.read()` onward:
 - [ ] **Step 4: Run the tests**
 
 Run: `uv run pytest tests/test_menubar.py -q`
-Expected: 3 passed.
+Expected: 5 passed.
 
 - [ ] **Step 5: Commit**
 
