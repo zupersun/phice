@@ -32,18 +32,20 @@ def describe(s: dict) -> tuple[str, str]:
     """Icon name and status line for a status snapshot, most urgent first.
 
     Pure, so the ordering is pinned by a test rather than by looking at the
-    menu bar, which may be invisible behind the notch.
+    menu bar, which may be invisible behind the notch. A working pointer
+    outranks a letterbox error: once connected, the Mac no longer needs the
+    pairing service, so a stale `pairing_error` must not claim breakage.
     """
     if not s["accessibility"]:
         return "warn", "Accessibility permission needed"
-    if s.get("pairing_error"):
+    if s["connected"]:
+        name = s["device_name"] or "Phone"
+        if s["phase"] in ("on", "hold", "held"):
+            return "on", f"{name} · pointer ON"
+        return "off", f"{name} · pointer off"
+    if s["pairing_error"]:
         return "warn", "Can't reach the pairing service"
-    if not s["connected"]:
-        return "disconnected", "No phone connected"
-    name = s["device_name"] or "Phone"
-    if s["phase"] in ("on", "hold", "held"):
-        return "on", f"{name} · pointer ON"
-    return "off", f"{name} · pointer off"
+    return "disconnected", "No phone connected"
 
 
 class PhiceApp(rumps.App):
