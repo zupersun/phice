@@ -121,13 +121,13 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 Dependency order, and nothing may point backwards:
 
 ```
-orientation  filters  protocol  paths  templates  calibrate   (no dependencies)
+orientation  filters  protocol  paths  templates  calibrate  window   (no dependencies)
 config       <- paths
 engine       <- config cursor_backend filters orientation protocol
 rtc          <- engine paths protocol
 signaling    <- rtc
 control      <- templates
-runtime      <- calibrate config control engine paths rtc signaling
+runtime      <- calibrate config control engine paths rtc signaling window
 menubar cli  <- runtime
 ```
 

@@ -262,9 +262,9 @@ async def run(rt: Runtime) -> None:
             answer = await rt.pairing.waiter
         except SignalingError as e:
             # Kept because it names the code and says another offer is coming; the
-            # reason text is what tells an ordinary lapse from a clock that stepped
-            # backward.
-            log.info("offer under %s lapsed (%s); publishing another", code, e)
+            # reason text tells apart an ordinary expiry, a backwards clock step, and
+            # a poll that could not reach the letterbox.
+            log.info("offer under %s ended (%s); publishing another", code, e)
             await rt.rtc.close()
             continue
         except asyncio.CancelledError:
