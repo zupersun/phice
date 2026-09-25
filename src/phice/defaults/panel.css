@@ -1,20 +1,27 @@
-/* Phice control panel. Edit freely: the window reloads it live, exactly like the
-   phone's theme.css. Nothing here is compiled into the app.
+/* Phice control panel, "Carbon". Edit freely: the window reloads it live,
+   exactly like the phone's theme.css. Nothing here is compiled into the app.
 
    Appearance: the page sets data-theme="light" or "dark" on <html> for an explicit
    choice, or leaves it unset to follow the system via prefers-color-scheme. This
-   file is the only place that decides what those states look like. */
+   file is the only place that decides what those states look like.
+
+   One colour means "live": lime. Red means off or broken. Everything else is
+   carbon. The light appearance is white carbon, not a bleached dark one. */
 :root {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --accent: #007aff;
-  --accent-ink: #ffffff;
-  --ok: #34c759;
-  --warn: #ff9500;
-  --bad: #ff3b30;
+  --bg: #e8eaee;
+  --fg: #1c1f24;
+  --dim: #6b717a;
+  --accent: #b6ff2e;
+  --accent-ink: #0a0b0d;
+  /* Thin strokes in the accent: a deeper lime on white so a hairline reads. */
+  --accent-line: #8ee000;
+  --accent-glow: rgba(142, 224, 0, 0.30);
+  --ok: #8ee000;
+  --warn: #7c828b;
+  --bad: #ff2d55;
   --card: #ffffff;
-  --seg-track: #e3e9f0;
+  --weave: rgba(0, 0, 0, 0.03);
+  --seg-track: #dfe2e7;
   --seg-knob: #ffffff;
   --seg-spring-ms: 312ms;
   --seg-spring: linear(
@@ -27,116 +34,199 @@
     1.0328 75.0%, 1.0282 78.1%, 1.0236 81.2%, 1.0193 84.4%,
     1.0153 87.5%, 1.0117 90.6%, 1.0086 93.8%, 1.0060 96.9%,
     1.0038 100.0%);
-  --line: #dde3ea;
-  --btn-bg: #e3e8ee;
+  --line: #d3d7dd;
+  --btn-bg: #f3f5f8;
+  --code-fg: #1c1f24;
   --code-size: 46px;
-  --radius: 18px;
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --chamfer: 12px;
+  --chamfer-sm: 7px;
+  --font: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1a1a1a;
-    --fg: #d4d4d4;
-    --dim: #808080;
-    --accent: #4daafc;
-    --accent-ink: #0a1420;
-    --ok: #23d18b;
-    --warn: #cca700;
-    --bad: #f14c4c;
-    --card: #202020;
-  --seg-track: #141414;
-  --seg-knob: #3a3a3a;
-    --line: #333333;
-    --btn-bg: #2a2a2a;
+    --bg: #0a0b0d;
+    --fg: #c8ccd2;
+    --dim: #6d737b;
+    --accent: #b6ff2e;
+    --accent-ink: #0a0b0d;
+    --accent-line: #b6ff2e;
+    --accent-glow: rgba(182, 255, 46, 0.25);
+    --ok: #b6ff2e;
+    --warn: #d5d9de;
+    --bad: #ff2d55;
+    --card: #111316;
+    --weave: rgba(255, 255, 255, 0.025);
+    --seg-track: #0a0b0d;
+    --seg-knob: #2b3037;
+    --line: #22262b;
+    --btn-bg: #181b1f;
+    --code-fg: #b6ff2e;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #1a1a1a;
-  --fg: #d4d4d4;
-  --dim: #808080;
-  --accent: #4daafc;
-  --accent-ink: #0a1420;
-  --ok: #23d18b;
-  --warn: #cca700;
-  --bad: #f14c4c;
-  --card: #202020;
-  --seg-track: #141414;
-  --seg-knob: #3a3a3a;
-  --line: #333333;
-  --btn-bg: #2a2a2a;
+  --bg: #0a0b0d;
+  --fg: #c8ccd2;
+  --dim: #6d737b;
+  --accent: #b6ff2e;
+  --accent-ink: #0a0b0d;
+  --accent-line: #b6ff2e;
+  --accent-glow: rgba(182, 255, 46, 0.25);
+  --ok: #b6ff2e;
+  --warn: #d5d9de;
+  --bad: #ff2d55;
+  --card: #111316;
+  --weave: rgba(255, 255, 255, 0.025);
+  --seg-track: #0a0b0d;
+  --seg-knob: #2b3037;
+  --line: #22262b;
+  --btn-bg: #181b1f;
+  --code-fg: #b6ff2e;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --accent: #007aff;
-  --accent-ink: #ffffff;
-  --ok: #34c759;
-  --warn: #ff9500;
-  --bad: #ff3b30;
+  --bg: #e8eaee;
+  --fg: #1c1f24;
+  --dim: #6b717a;
+  --accent: #b6ff2e;
+  --accent-ink: #0a0b0d;
+  --accent-line: #8ee000;
+  --accent-glow: rgba(142, 224, 0, 0.30);
+  --ok: #8ee000;
+  --warn: #7c828b;
+  --bad: #ff2d55;
   --card: #ffffff;
-  --seg-track: #e3e9f0;
+  --weave: rgba(0, 0, 0, 0.03);
+  --seg-track: #dfe2e7;
   --seg-knob: #ffffff;
-  --line: #dde3ea;
-  --btn-bg: #e3e8ee;
+  --line: #d3d7dd;
+  --btn-bg: #f3f5f8;
+  --code-fg: #1c1f24;
   color-scheme: light;
 }
+
+/* Chamfers where the browser can cut them; plain rounding where it cannot. */
+@supports (corner-shape: bevel) {
+  .card, .seg, .knob, button, .code-life { corner-shape: bevel; }
+}
+
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 22px 20px 26px;
+  margin: 0; padding: 20px 20px 26px;
   background: var(--bg); color: var(--fg);
-  font: 14px/1.55 var(--font);
+  font: 14px/1.5 var(--font);
   -webkit-user-select: none; user-select: none;
 }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
-.sub { color: var(--dim); margin: 0 0 18px; font-size: 13px; }
+h1 {
+  font-size: 14px; font-weight: 700; margin: 0 0 2px;
+  letter-spacing: 0.22em; text-transform: uppercase;
+}
+.sub { color: var(--dim); margin: 0 0 16px; font-size: 12px; }
 
-.card { background: var(--card); border: 1px solid var(--line);
-        border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px; }
+.card {
+  position: relative;
+  background-color: var(--card);
+  background-image: repeating-linear-gradient(135deg, var(--weave) 0 2px, transparent 2px 6px);
+  border: 1px solid var(--line);
+  border-radius: var(--chamfer); padding: 16px 18px; margin-bottom: 12px;
+}
+/* The pair card alone carries a lime hairline along its flat top edge, stopping
+   at the chamfers: the one card that is "live". */
+#pair-card::before {
+  content: ""; position: absolute; top: -1px;
+  left: var(--chamfer); right: var(--chamfer); height: 2px;
+  background: var(--accent);
+}
 
-.code { font-size: var(--code-size); font-weight: 700; letter-spacing: 10px;
-        text-align: center; color: var(--accent); margin: 6px 0 4px;
-        -webkit-user-select: all; user-select: all; }
-.code-hint { text-align: center; color: var(--dim); font-size: 12px; margin: 0; }
+.code {
+  font-size: var(--code-size); font-weight: 700; letter-spacing: 0.2em;
+  /* letter-spacing trails the last glyph; pad the left so the code centres. */
+  padding-left: 0.2em;
+  text-align: center; color: var(--code-fg); margin: 8px 0 6px;
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: all; user-select: all;
+  transition: opacity 200ms ease-out;
+}
+.code-hint {
+  text-align: center; color: var(--dim); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; margin: 0;
+}
 
-.url { font-size: 13px; color: var(--fg); word-break: break-all;
+/* Code life: a thin bar under the code that empties as the code ages. The page
+   sets --code-life (1..0) on body and data-pairing for the state. */
+.code-life {
+  width: 60%; height: 2px; margin: 0 auto 12px;
+  background: var(--line); border-radius: 1px; overflow: hidden;
+  transition: opacity 200ms ease-out;
+}
+.code-life i {
+  display: block; height: 100%;
+  width: calc(var(--code-life, 0) * 100%);
+  background: var(--accent-line); box-shadow: 0 0 6px var(--accent);
+  transition: width 1s linear, background 200ms linear;
+}
+body[data-pairing="renewing"] .code-life i {
+  width: 100%;
+  animation: code-life-pulse 1.2s ease-in-out infinite;
+}
+body[data-pairing="error"] .code { opacity: 0.35; }
+body[data-pairing="error"] .code-life i {
+  width: 100%; background: var(--bad); box-shadow: 0 0 6px var(--bad);
+}
+body[data-pairing="error"] .code-hint { color: var(--bad); }
+body[data-pairing="connected"] .code-life { opacity: 0; }
+@keyframes code-life-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  body[data-pairing="renewing"] .code-life i { animation: none; }
+}
+
+.url { font: 12px/1.5 var(--mono); color: var(--fg); word-break: break-all;
        -webkit-user-select: all; user-select: all; }
 
-.row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
-.dot.ok { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
-.dot.warn { background: var(--warn); box-shadow: 0 0 7px var(--warn); }
-.dot.bad { background: var(--bad); box-shadow: 0 0 7px var(--bad); }
-.row .what { flex: 1; }
-.row .val { color: var(--dim); font-size: 13px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+.row .what { flex: 1; font-size: 13px; }
+.row .val {
+  color: var(--dim); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
 
 button {
-  font: inherit; font-size: 13px; font-weight: 600;
+  font: inherit; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
   background: var(--btn-bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 999px;
-  padding: 9px 14px; margin: 4px 6px 0 0;
+  border: 1px solid var(--line); border-radius: var(--chamfer-sm);
+  padding: 10px 14px; margin: 6px 6px 0 0;
+  transition: border-color 120ms linear, box-shadow 120ms linear;
 }
 button.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
-button:hover { border-color: var(--dim); }
+button:hover { border-color: var(--accent-line); }
+button.primary:hover { border-color: transparent; box-shadow: 0 0 16px var(--accent-glow); }
 button:active { transform: translateY(1px); }
 button[hidden] { display: none; }
 
-#theme { font-size: 12px; padding: 6px 10px; margin: 0; }
+#theme { font-size: 11px; padding: 6px 10px; margin: 0; }
 
 .note { color: var(--dim); font-size: 12px; margin: 12px 0 0; }
-.lede { color: var(--dim); font-size: 13px; margin: 7px 0 10px; }
+.lede { color: var(--dim); font-size: 13px; margin: 6px 0 10px; }
 .when { color: var(--dim); font-size: 12px; margin: 0 0 10px; }
 
 ol { margin: 8px 0 0; padding-left: 20px; color: var(--dim); font-size: 13px; }
 li { margin: 5px 0; }
 b { color: var(--fg); font-weight: 600; }
+/* Card titles are the section labels of a peripheral's app: small, spaced caps. */
+.card > b {
+  display: block; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+}
 
-/* Appearance: three stops on one track, draggable. The script publishes only a
-   number (--knob-drag, 0..2, while a finger is down); everything about how that
+/* Appearance: two stops on one track, draggable. The script publishes only a
+   number (--knob-drag, 0..1, while a finger is down); everything about how that
    looks is decided here. With no drag in progress the knob's position comes
    from data-theme on the root, so it also follows a change made elsewhere. */
 .appearance { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
@@ -148,13 +238,13 @@ b { color: var(--fg); font-weight: 600; }
   width: 104px;
   height: 26px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--chamfer-sm);
   background: var(--seg-track);
   border: 1px solid var(--line);
   cursor: pointer;
   touch-action: none;          /* the drag is ours, not the scroller's */
 }
-.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg:focus-visible { outline: 1px solid var(--accent-line); outline-offset: 2px; }
 .seg .stop { position: relative; z-index: 1; border-radius: 999px; }
 
 .knob {
@@ -163,13 +253,17 @@ b { color: var(--fg); font-weight: 600; }
   bottom: 3px;
   width: calc((100% - 6px) / 2);
   left: calc(3px + var(--knob-drag, var(--knob-i, 0)) * (100% - 6px) / 2);
-  border-radius: 999px;
+  border-radius: calc(var(--chamfer-sm) - 2px);
   background: var(--seg-knob);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transition: left var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out);
 }
-/* Following a finger, so no easing: the knob must be under it, not chasing. */
-.seg[data-dragging] .knob { transition: none; }
+/* Following a finger, so no easing: the knob must be under it, not chasing.
+   A lime edge says it is being held. */
+.seg[data-dragging] .knob {
+  transition: none;
+  box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 8px var(--accent-glow);
+}
 
 :root[data-theme="dark"] .knob { --knob-i: 0; }
 :root[data-theme="light"] .knob { --knob-i: 1; }
@@ -178,8 +272,9 @@ b { color: var(--fg); font-weight: 600; }
    than the document's theme. Two stops, so the same halves arithmetic applies. */
 #grip[data-v="standard"] .knob { --knob-i: 0; }
 #grip[data-v="one-handed"] .knob { --knob-i: 1; }
-#grip { width: 132px; margin-top: 10px; }
-#grip + .seg-labels { width: 132px; }
+/* Wider than the appearance switch: spaced caps need the room for TWO HANDS. */
+#grip { width: 150px; margin-top: 10px; }
+#grip + .seg-labels { width: 150px; }
 #grip[data-v="standard"] + .seg-labels span:nth-child(1),
 #grip[data-v="one-handed"] + .seg-labels span:nth-child(2) {
   color: var(--fg);
@@ -191,7 +286,8 @@ b { color: var(--fg); font-weight: 600; }
   grid-template-columns: repeat(2, 1fr);
   width: 104px;
   font-size: 10px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--dim);
   text-align: center;
 }
