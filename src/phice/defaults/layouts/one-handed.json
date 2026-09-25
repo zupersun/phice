@@ -1,9 +1,9 @@
 {
   "version": 1,
   "buttons": [
-    {"id": "left",     "role": "left",     "x": 3,  "y": 46, "w": 42, "h": 42, "label": ""},
-    {"id": "scroll",   "role": "scroll",   "x": 46, "y": 46, "w": 8,  "h": 42, "label": ""},
-    {"id": "right",    "role": "right",    "x": 55, "y": 46, "w": 42, "h": 42, "label": ""},
-    {"id": "power",    "role": "power",    "x": 42, "y": 91, "w": 16, "h": 7,  "label": ""}
+    {"id": "left",   "role": "left",   "x": 1,    "y": 48,   "w": 45.5, "h": 42,  "label": ""},
+    {"id": "scroll", "role": "scroll", "x": 47,   "y": 48,   "w": 6,    "h": 42,  "label": ""},
+    {"id": "right",  "role": "right",  "x": 53.5, "y": 48,   "w": 45.5, "h": 42,  "label": ""},
+    {"id": "power",  "role": "power",  "x": 43,   "y": 94.5, "w": 14,   "h": 4.5, "label": ""}
   ]
 }

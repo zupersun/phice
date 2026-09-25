@@ -4,22 +4,22 @@
    The page publishes only numbers -- where the target is, how far through the
    run you are -- and this file decides entirely what that looks like. */
 :root {
-  --bg: #0b0f14;
-  --fg: #e8eef5;
-  --dim: #7b8a9c;
-  --target: #3ea6ff;
+  --bg: #0f0f10;
+  --fg: #e2e2e5;
+  --dim: #8a8a90;
+  --target: #7a8fa6;
   --target-hit: #30d158;
-  --ring: rgba(62, 166, 255, 0.22);
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --ring: rgba(122, 143, 166, 0.22);
+  --font: -apple-system, system-ui, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --target: #007aff;
-  --target-hit: #34c759;
-  --ring: rgba(0, 122, 255, 0.18);
+  --bg: #f2f2f0;
+  --fg: #1c1c1e;
+  --dim: #5c5c60;
+  --target: #5b7290;
+  --target-hit: #30b452;
+  --ring: rgba(91, 114, 144, 0.18);
   color-scheme: light;
 }
 
