@@ -1,6 +1,7 @@
 """The runtime glue: what it reports, what it forwards to the phone, how it stops."""
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -103,6 +104,8 @@ def test_the_debug_snapshot_names_the_letterbox_and_the_phone_page(tmp_path):
     assert d["signaling_url"] == "https://phice.vercel.app"
     assert d["phone_url"] == "https://phice.vercel.app/app"
     assert d["offer_ready"] is False, "nothing published yet"
+    assert d["code_expires_in"] == 0 and d["code_life"] == 0.0
+    assert d["pairing_error"] == ""
     for gone in ("transport", "cert_mode", "phone_caps", "tls_url"):
         assert gone not in d
 
@@ -121,3 +124,43 @@ async def test_offer_ready_means_the_letterbox_holds_the_current_offer(tmp_path)
     rt.pairing.waiter.cancel()
     rt.pairing.waiter = None
     assert rt._debug_cursor()["offer_ready"] is False
+
+
+async def test_code_life_never_shows_more_than_a_full_bar(tmp_path):
+    """A clock that steps backwards must not draw more than a full bar."""
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.pairing.waiter = asyncio.get_running_loop().create_future()
+    rt.pairing.ttl = 7.0
+    rt.pairing.published_at = time.time() + 5.0
+    assert rt._debug_cursor()["code_life"] == 1.0
+    assert rt._debug_cursor()["code_expires_in"] == 7, "the seconds agree with the bar"
+    rt.pairing.waiter.cancel()
+    rt.pairing.waiter = None
+
+
+def test_window_requests_are_a_one_shot_mailbox():
+    """Raised on the runtime thread, honoured on the main one, and each one is
+    taken exactly once so a window is never opened twice for one ask."""
+    from phice.window import WindowRequests
+
+    w = WindowRequests()
+    assert w.take_panel() is False
+    w.show_panel()
+    assert w.take_panel() is True
+    assert w.take_panel() is False
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is False
+    assert w.take_calibration_close() is False
+    w.close_calibration()
+    assert w.take_calibration_close() is True
+    assert w.take_calibration_close() is False
+    # A page and a panel queued together must not swallow each other: both are
+    # delivered, one per tick, page first.
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    w.show_panel()
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is True
+    assert w.take_panel() is False

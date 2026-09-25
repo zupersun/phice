@@ -168,8 +168,9 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
         async def publish_offer(self, code, offer):
             published["code"] = code
             published["offer"] = offer
+            return 300.0
 
-        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+        async def wait_for_answer(self, code, **kw):
             await asyncio.sleep(3600)  # never answers, in this test
 
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
@@ -218,8 +219,9 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
 
         async def publish_offer(self, code, offer):
             codes.append(code)
+            return 300.0
 
-        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+        async def wait_for_answer(self, code, **kw):
             # Fail immediately so the loop mints the next offer straight away.
             from phice.signaling import SignalingError
             raise SignalingError("timed out")
@@ -346,8 +348,9 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
         async def publish_offer(self, code, offer):
             codes.append(code)
             self._offer = offer
+            return 300.0
 
-        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+        async def wait_for_answer(self, code, **kw):
             if len(codes) > 1:
                 await asyncio.sleep(3600)     # only the first code gets a phone
             phone = RTCPeerConnection(configuration=_no_stun())
@@ -619,8 +622,9 @@ async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_pat
 
         async def publish_offer(self, code, offer):
             published["code"] = code
+            return 300.0
 
-        async def wait_for_answer(self, code, timeout=300.0, interval=1.0):
+        async def wait_for_answer(self, code, **kw):
             await asyncio.sleep(3600)
 
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
@@ -636,6 +640,131 @@ async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_pat
         one_handed = load_layout(paths.layouts / "one-handed.json").to_dict()
         assert rt.rtc.layout == one_handed
         assert rt.rtc.layout != load_layout(paths.layout_json).to_dict()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if rt.rtc:
+            await rt.rtc.close()
+
+
+async def test_the_loop_waits_as_long_as_the_letterbox_keeps_the_offer(tmp_path, monkeypatch):
+    """The wait used to be a fixed 300 s, which happened to match the letterbox.
+    It now takes the lifetime from the reply, waits one second past it so the
+    letterbox has certainly dropped the old offer before a new one is gathered
+    (a fetchable old offer is worse than a missing one), and hands the wait a
+    wall-clock expiry."""
+    import json as _json
+    import time
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    seen: dict = {}
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            seen["published_at"] = time.time()
+            return 7.0
+
+        async def wait_for_answer(self, code, **kw):
+            seen["wait"] = kw
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc_ice_servers = ()
+    task = asyncio.ensure_future(signaling.run(rt))
+    try:
+        for _ in range(60):
+            if "wait" in seen:
+                break
+            await asyncio.sleep(0.1)
+        assert "wait" in seen, "the loop never got as far as waiting"
+        assert seen["wait"]["timeout"] == 8.0
+        assert abs(seen["wait"]["expires_at"] - (seen["published_at"] + 7.0)) < 0.5
+        assert rt.pairing.ttl == 7.0
+        assert abs(rt.pairing.published_at - seen["published_at"]) < 0.5
+        snap = rt._debug_cursor()
+        assert snap["offer_ready"] is True
+        assert 5 <= snap["code_expires_in"] <= 7
+        assert snap["code_life"] >= 0.7
+        assert snap["pairing_error"] == ""
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if rt.rtc:
+            await rt.rtc.close()
+
+
+async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_path, monkeypatch):
+    """The failure used to land in status.error, which the panel never showed
+    and the menu bar called a config error. It has its own field, and it is
+    cleared by the next successful publish, not by the next attempt. The retry
+    is held behind an event so the transient error state is observable rather
+    than raced: without it the fail-retry-succeed cycle finishes in a few tens
+    of milliseconds, faster than any poll could reliably catch."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+    from phice.signaling import SignalingError
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+
+    attempts: list[int] = []
+    proceed = asyncio.Event()
+
+    class FakeSignaling:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise SignalingError("POST /api/offer failed: no route to host")
+            await proceed.wait()      # hold the retry until the test has seen the error
+            return 300.0
+
+        async def wait_for_answer(self, code, **kw):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
+    monkeypatch.setattr("phice.signaling.RETRY_S", 0.05)
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc_ice_servers = ()
+    task = asyncio.ensure_future(signaling.run(rt))
+    try:
+        for _ in range(60):
+            if rt.status.read()["pairing_error"]:
+                break
+            await asyncio.sleep(0.1)
+        assert "no route to host" in rt.status.read()["pairing_error"]
+        assert rt.status.read()["error"] == "", "a letterbox failure is not a config error"
+        proceed.set()
+        for _ in range(60):
+            if len(attempts) >= 2 and not rt.status.read()["pairing_error"]:
+                break
+            await asyncio.sleep(0.1)
+        assert rt.status.read()["pairing_error"] == "", "cleared once a publish succeeds"
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

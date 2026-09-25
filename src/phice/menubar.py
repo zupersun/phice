@@ -17,6 +17,7 @@ log = logging.getLogger("phice.menubar")
 
 ICONS = {"warn": "menubar/warn.png", "disconnected": "menubar/disconnected.png",
          "off": "menubar/off.png", "on": "menubar/on.png"}
+TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice·", "on": "Phice●"}
 ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
                       "?Privacy_Accessibility")
 
@@ -26,6 +27,26 @@ def accessibility_trusted(prompt: bool = False) -> bool:
     if not ok and prompt:
         log.info("prompted for Accessibility")
     return ok
+
+
+def describe(s: dict) -> tuple[str, str]:
+    """Icon name and status line for a status snapshot, most urgent first.
+
+    Pure, so the ordering is pinned by a test rather than by looking at the
+    menu bar, which may be invisible behind the notch. A working pointer
+    outranks a letterbox error: once connected, the Mac no longer needs the
+    pairing service, so a stale `pairing_error` must not claim breakage.
+    """
+    if not s["accessibility"]:
+        return "warn", "Accessibility permission needed"
+    if s["connected"]:
+        name = s["device_name"] or "Phone"
+        if s["phase"] in ("on", "hold", "held"):
+            return "on", f"{name} · pointer ON"
+        return "off", f"{name} · pointer off"
+    if s["pairing_error"]:
+        return "warn", "Can't reach the pairing service"
+    return "disconnected", "No phone connected"
 
 
 class PhiceApp(rumps.App):
@@ -140,13 +161,12 @@ class PhiceApp(rumps.App):
             self.title = None
         else:
             self.icon = None
-            self.title = {"warn": "Phice!", "disconnected": "Phice",
-                          "off": "Phice\u00b7", "on": "Phice\u25cf"}[name]
+            self.title = TITLES[name]
 
     def pump_windows(self, _):
-        if self.runtime.take_calibration_close():
+        if self.runtime.windows.take_calibration_close():
             window.close("calibrate")
-        wanted = self.runtime.take_panel_request()
+        wanted = self.runtime.windows.take_panel()
         if wanted is True:
             self.show_panel()
         elif wanted:
@@ -163,18 +183,8 @@ class PhiceApp(rumps.App):
             # what the user needs to see.
             self.show_panel()
         s = self.runtime.status.read()
-        if not s["accessibility"]:
-            self._set_icon("warn")
-            label = "Accessibility permission needed"
-        elif not s["connected"]:
-            self._set_icon("disconnected")
-            label = "No phone connected"
-        elif s["phase"] in ("on", "hold", "held"):
-            self._set_icon("on")
-            label = f"{s['device_name'] or 'Phone'} · pointer ON"
-        else:
-            self._set_icon("off")
-            label = f"{s['device_name'] or 'Phone'} · pointer off"
+        icon, label = describe(s)
+        self._set_icon(icon)
         if s["error"]:
             label = f"Config error: {s['error'][:48]}"
         self.item_status.title = label
