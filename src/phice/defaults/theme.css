@@ -4,116 +4,122 @@
   initial-value: 0;
 }
 
-/* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
-   app.js never sets a colour, size or font of its own. */
+/* Phice theme -- "Rams". Less, but better: a warm paper body, buttons as raised
+   keys on a Braun calculator, and one orange lamp. Everything visual lives here:
+   edit freely, the page reloads it live. app.js never sets a colour, size or font
+   of its own.
+
+   Light is the primary appearance. The dark one is anthracite, not black. */
 :root {
-  --bg-off: #141414;
-  --bg-on: #1c1c1c;
-  --fg: #d4d4d4;
-  --fg-dim: #808080;
-  --accent: #4daafc;
-  --danger: #f14c4c;
+  --bg-off: #e6e3dc;
+  --bg-on: #ece9e2;
+  --fg: #2b2a27;
+  --fg-dim: #7d786e;
+  --accent: #f26b21;
+  --danger: #b8574a;
 
-  /* Corner radii are concentric: an inner shape's radius is its container's
-     radius minus the gap between them, so every curve shares a centre. Change
-     --screen-radius to match your device and the rest follows. */
-  --screen-radius: 55px;
-  --pad-margin: 8px;
-  --pad-radius: calc(var(--screen-radius) - var(--pad-margin));
-  --btn-inset: 12px;
+  /* Rectangles with a modest radius: 12px on the pads, 6px on small controls. */
+  --pad-radius: 12px;
+  --btn-radius: 12px;
+  --slot-radius: 6px;
+  --pad-margin: 0px;
 
-  /* Scroll thumb snap-back. A real damped spring (mass 1, stiffness 520,
-     damping 32 -> 4.4% overshoot, 312ms), sampled into linear() because CSS has
-     no spring of its own. Raise damping for a calmer return, stiffness for a
-     faster one. */
-  --scroll-spring: linear(
-    0.0000 0.0%, 0.0121 2.3%, 0.0450 4.5%, 0.0935 6.8%,
-    0.1533 9.1%, 0.2208 11.4%, 0.2929 13.6%, 0.3668 15.9%,
-    0.4405 18.2%, 0.5124 20.5%, 0.5810 22.7%, 0.6455 25.0%,
-    0.7052 27.3%, 0.7597 29.5%, 0.8087 31.8%, 0.8522 34.1%,
-    0.8904 36.4%, 0.9233 38.6%, 0.9514 40.9%, 0.9748 43.2%,
-    0.9941 45.5%, 1.0097 47.7%, 1.0218 50.0%, 1.0309 52.3%,
-    1.0375 54.5%, 1.0419 56.8%, 1.0444 59.1%, 1.0453 61.4%,
-    1.0450 63.6%, 1.0437 65.9%, 1.0416 68.2%, 1.0390 70.5%,
-    1.0360 72.7%, 1.0328 75.0%, 1.0295 77.3%, 1.0261 79.5%,
-    1.0228 81.8%, 1.0197 84.1%, 1.0167 86.4%, 1.0140 88.6%,
-    1.0114 90.9%, 1.0091 93.2%, 1.0071 95.5%, 1.0053 97.7%,
-    1.0038 100.0%);
-  --scroll-spring-ms: 312ms;
+  /* Scroll thumb return: a critically damped spring, so it settles with no
+     overshoot. Raise the time for a calmer return. */
+  --scroll-spring: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --scroll-spring-ms: 260ms;
 
-  --btn-bg: #252526;
-  --btn-bg-pressed: #37373d;
-  --btn-fg: #cccccc;
-  --btn-border: 1px solid #3c3c3c;
-  --btn-radius: calc(var(--pad-radius) - var(--btn-inset));
-  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #3a3a3c inset;
+  /* A key: one step darker than the body, a crisp 1px edge, and a bottom shadow
+     that lifts it off the surface. Pressed, the shadow goes and the key sits flat. */
+  --btn-bg: #dedad1;
+  --btn-bg-pressed: #d3cec4;
+  --btn-fg: #7d786e;
+  --btn-border: 1px solid #c9c4b8;
+  --btn-shadow: 0 2px 0 #c4bfb3, 0 3px 6px rgba(40, 35, 25, 0.10);
+  --key-press-ms: 80ms;
 
-  --scroll-bg: #1f1f1f;
-  --scroll-thumb: #4f4f4f;
-  --scroll-thumb-active: #4daafc;
-  --scroll-thumb-w: 4px;
-  --scroll-thumb-h: 34%;
-  /* Leeway at both ends: the thumb must stop short of the track's edge. */
-  --scroll-inset: 7px;
+  /* The scroll strip is a recessed groove with a small rectangular thumb. */
+  --scroll-bg: #d6d2c8;
+  --scroll-border: 1px solid #cbc6ba;
+  --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+  --scroll-thumb: #aaa59a;
+  --scroll-thumb-active: #f26b21;
+  --scroll-thumb-w: 8px;
+  --scroll-thumb-h: 11%;
+  --scroll-thumb-radius: 3px;
+  /* Leeway at both ends: the thumb must stop short of the groove's edge. */
+  --scroll-inset: 6px;
 
-  /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
-  --led-off: #f14c4c;
-  --led-on: #23d18b;
-  --power-bg: #1a1a1a;
-  --power-border: 1px solid #333333;
+  /* Power: a round push button like a Braun mains switch, the lamp in its centre.
+     Orange means the pointer is driving the cursor; brick means it is not. */
+  --led-off: #b8574a;
+  --led-on: #f26b21;
+  --power-bg: #dedad1;
+  --power-border: 1px solid #c9c4b8;
   --led-size: 9px;
 
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
-  --label-size: 15px;
+  --font: "Helvetica Neue", Helvetica, Arial, system-ui, "Segoe UI", sans-serif;
+  --label-size: 13px;
   --header-display: none;
-  --logo-height: 18px;
   --pad-bottom-margin: 12%;
-  --pad-gap: 10px;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
+  /* The recentre hold warms the surface toward this. Paper white in the light
+     appearance; 10% of the way was invisible on paper, so the share is higher. */
   --flash: #ffffff;
+  --hold-mix: 45%;
 }
 
-/* Light appearance. Chosen on the Mac and pushed down as data-appearance on the
+/* Dark appearance. Chosen on the Mac and pushed down as data-appearance on the
    root element; with no explicit choice the phone's own setting decides. Only
    the palette changes -- every rule below is written against these names. */
 :root[data-appearance="light"],
 :root:not([data-appearance="dark"]):not([data-appearance="light"]) {
   color-scheme: light dark;
 }
-@media (prefers-color-scheme: light) {
-  :root:not([data-appearance="dark"]) {
-    --bg-off: #eef1f5;
-    --bg-on: #f7f9fb;
-    --fg: #141a21;
-    --fg-dim: #6b7a8c;
-    --btn-bg: #ffffff;
-    --btn-bg-pressed: #e3e9f0;
-    --btn-fg: #55647a;
-    --btn-border: 1px solid #d6dde5;
-    --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-    --scroll-bg: #e6ebf1;
-    --scroll-thumb: #9aa8b8;
-    --power-bg: #ffffff;
-    --power-border: 1px solid #dde3ea;
-    --flash: #1a2330;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]) {
+    --bg-off: #262726;
+    --bg-on: #2a2b2a;
+    --fg: #e4e2dc;
+    --fg-dim: #9a978f;
+    --danger: #a8503c;
+    --btn-bg: #383937;
+    --btn-bg-pressed: #303130;
+    --btn-fg: #9a978f;
+    --btn-border: 1px solid #454643;
+    --btn-shadow: 0 2px 0 #1e1f1e, 0 3px 6px rgba(0, 0, 0, 0.28);
+    --scroll-bg: #222322;
+    --scroll-border: 1px solid #323331;
+    --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+    --scroll-thumb: #55564f;
+    --led-off: #a8503c;
+    --power-bg: #383937;
+    --power-border: 1px solid #454643;
+    --flash: #8a877f;
+    --hold-mix: 30%;
   }
 }
-:root[data-appearance="light"] {
-  --bg-off: #eef1f5;
-  --bg-on: #f7f9fb;
-  --fg: #141a21;
-  --fg-dim: #6b7a8c;
-  --btn-bg: #ffffff;
-  --btn-bg-pressed: #e3e9f0;
-  --btn-fg: #55647a;
-  --btn-border: 1px solid #d6dde5;
-  --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-  --scroll-bg: #e6ebf1;
-  --scroll-thumb: #9aa8b8;
-  --power-bg: #ffffff;
-  --power-border: 1px solid #dde3ea;
-  --flash: #1a2330;
+:root[data-appearance="dark"] {
+  --bg-off: #262726;
+  --bg-on: #2a2b2a;
+  --fg: #e4e2dc;
+  --fg-dim: #9a978f;
+  --danger: #a8503c;
+  --btn-bg: #383937;
+  --btn-bg-pressed: #303130;
+  --btn-fg: #9a978f;
+  --btn-border: 1px solid #454643;
+  --btn-shadow: 0 2px 0 #1e1f1e, 0 3px 6px rgba(0, 0, 0, 0.28);
+  --scroll-bg: #222322;
+  --scroll-border: 1px solid #323331;
+  --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+  --scroll-thumb: #55564f;
+  --led-off: #a8503c;
+  --power-bg: #383937;
+  --power-border: 1px solid #454643;
+  --flash: #8a877f;
+  --hold-mix: 30%;
 }
 
 * { box-sizing: border-box; }
@@ -136,7 +142,7 @@ html, body {
 
 body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
 
-/* Recentering: the surface brightens over the hold. The browser interpolates
+/* Recentering: the surface warms over the hold. The browser interpolates
    --recenter-progress itself for the full duration, so it is smooth at 60fps and
    independent of how often the Mac sends state. Fingers cover the buttons and the
    LED while holding, so the whole surface has to carry the feedback. */
@@ -148,7 +154,7 @@ body {
      Declared here, not on :root, because the page sets --recenter-ms on body --
      a var() resolves against the element the declaration sits on. */
   --recenter-delay: calc(var(--recenter-ms, 650ms) * 0.45);
-  /* Releasing before the hold completes fades the brightening away instead of
+  /* Releasing before the hold completes fades the warming away instead of
      cutting it. Background stays in this list: a second `transition` on body
      would replace this declaration, not extend it. */
   transition: background var(--dim-back-ms) ease-out,
@@ -158,39 +164,34 @@ body[data-state="hold"] {
   --recenter-progress: 1;
   /* Held back by --recenter-delay. Tapping power to switch off passes through
      this state for as long as the tap lasts, so without the delay every power
-     off began the brightening and then cut it short -- a flicker, not a
+     off began the warming and then cut it short -- a flicker, not a
      transition. The ramp still finishes at the same moment the Mac recentres. */
   transition: background var(--dim-back-ms) ease-out,
               --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
               ease-in var(--recenter-delay);
 }
 body[data-state="hold"] {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * var(--hold-mix)),
+                        var(--bg-on));
 }
-body[data-state="hold"] .btn {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
-  /* The base .btn rule transitions background over 60ms. Against a value that is
-     already being interpolated every frame that only adds lag, so drop it here
-     and let the property animation drive the colour directly. */
-  transition: transform 60ms linear;
+body[data-state="hold"] .btn,
+body[data-state="hold"] .role-power::before {
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * var(--hold-mix)),
+                        var(--btn-bg));
+  /* The base .btn rule transitions background over the key press. Against a
+     value that is already being interpolated every frame that only adds lag, so
+     drop it here and let the property animation drive the colour directly. */
+  transition: transform var(--key-press-ms) linear, box-shadow var(--key-press-ms) linear;
 }
+/* The groove and the power button's own box carry no surface of their own. */
+body[data-state="hold"] .role-scroll { background: var(--scroll-bg); }
+body[data-state="hold"] .role-power { background: none; }
 /* Land back on the resting colour rather than cutting out of the flash. */
-body[data-state="held"], body[data-state="held"] .btn {
+body[data-state="held"], body[data-state="held"] .btn, body[data-state="held"] .role-power::before {
   transition: background 220ms ease-out;
 }
 
-#header {
-  display: var(--header-display);
-  align-items: center;
-  gap: 8px;
-  padding: calc(env(safe-area-inset-top) + 8px) 14px 4px;
-  font-size: 12px;
-  color: var(--fg-dim);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-#logo { height: var(--logo-height); opacity: 0.8; }
-body[data-state="off"] #header { opacity: 0.35; }
+#header { display: var(--header-display); }
 
 #pad {
   position: relative;
@@ -202,12 +203,8 @@ body[data-state="off"] #header { opacity: 0.35; }
   border-radius: var(--pad-radius);
 }
 
-/* Apple's corners are continuous curvature, not circular arcs. Browsers that
-   have corner-shape get the real thing; the rest keep plain rounding. */
-@supports (corner-shape: squircle) {
-  #pad, .btn { corner-shape: squircle; }
-}
-
+/* A key. Pressed, it goes flat: the shadow disappears, it drops 2px and the fill
+   darkens one step. That is the whole animation. */
 .btn {
   position: absolute;
   display: flex;
@@ -219,20 +216,34 @@ body[data-state="off"] #header { opacity: 0.35; }
   border-radius: var(--btn-radius);
   box-shadow: var(--btn-shadow);
   font-size: var(--label-size);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.08em;
-  transition: background 60ms linear, transform 60ms linear;
+  text-transform: uppercase;
+  transition: background var(--key-press-ms) linear, transform var(--key-press-ms) linear,
+              box-shadow var(--key-press-ms) linear;
 }
-.btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
+.btn[data-pressed="1"] {
+  background: var(--btn-bg-pressed);
+  transform: translateY(2px);
+  box-shadow: none;
+}
 .btn img { height: 28%; opacity: 0.85; }
 
-/* Scroll strip. The thumb sits where --scroll-pos (0..1) puts it while a finger
-   is down, and springs back to the middle on release. app.js only supplies the
-   number; everything about how it looks is here. */
+/* Scroll strip: a recessed groove. The thumb sits where --scroll-pos (0..1) puts
+   it while a finger is down, and returns to the middle on release. app.js only
+   supplies the number; everything about how it looks is here. */
 .role-scroll {
   background: var(--scroll-bg);
-  border-radius: 999px;
+  border: var(--scroll-border);
+  border-radius: var(--slot-radius);
+  box-shadow: var(--scroll-shadow);
   overflow: hidden;
+}
+/* A groove is already sunk: it does not press. The thumb answers instead. */
+.role-scroll[data-pressed="1"] {
+  background: var(--scroll-bg);
+  transform: none;
+  box-shadow: var(--scroll-shadow);
 }
 .role-scroll::after {
   content: "";
@@ -240,7 +251,7 @@ body[data-state="off"] #header { opacity: 0.35; }
   left: 50%;
   width: var(--scroll-thumb-w);
   height: var(--scroll-thumb-h);
-  border-radius: 999px;
+  border-radius: var(--scroll-thumb-radius);
   background: var(--scroll-thumb);
   /* Centre it on the finger, but stop short of both ends rather than letting it
      touch: a thumb flush against the edge reads as broken. */
@@ -256,74 +267,48 @@ body[data-state="off"] #header { opacity: 0.35; }
   transition: top 0s, background 120ms linear;
 }
 
-/* Power: a small unobtrusive button whose only job is to carry the LED. */
+/* Power: a round push button whose only job is to carry the lamp. The layout
+   gives it a near-square box; the face is drawn as a circle inside that box, so
+   it stays round whatever the screen's proportions do to the percentages. */
 .role-power {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.role-power::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
   background: var(--power-bg);
   border: var(--power-border);
-  border-radius: 999px;
-  box-shadow: none;
+  box-shadow: var(--btn-shadow);
+  transition: background var(--key-press-ms) linear, box-shadow var(--key-press-ms) linear;
 }
 .role-power::after {
   content: "";
+  position: relative;
   width: var(--led-size);
   height: var(--led-size);
   border-radius: 50%;
   background: var(--led-off);
-  box-shadow: 0 0 7px var(--led-off), 0 0 2px #000 inset;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35);
   transition: background 140ms linear, box-shadow 140ms linear;
 }
-/* Green once the pointer is actually driving the cursor. */
+/* Orange once the pointer is actually driving the cursor. */
 body[data-state="on"] .role-power::after,
 body[data-state="hold"] .role-power::after,
 body[data-state="held"] .role-power::after {
   background: var(--led-on);
-  box-shadow: 0 0 9px var(--led-on), 0 0 2px #000 inset;
+  box-shadow: 0 0 8px var(--led-on), inset 0 0 1px rgba(0, 0, 0, 0.2);
 }
-.role-power[data-pressed="1"] { transform: scale(0.97); }
+.role-power[data-pressed="1"] { background: none; box-shadow: none; }
+.role-power[data-pressed="1"]::before { background: var(--btn-bg-pressed); box-shadow: none; }
 
 /* The recenter ring used to draw here. Removed: a coloured wedge sweeping around
    the button read as a defect rather than progress, and fingers cover it anyway. */
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.92);
-  padding: 24px;
-  text-align: center;
-}
-body[data-state="loading"] #ov-start,
-body[data-state="nopermission"] #ov-denied { display: flex; }
-@media (orientation: landscape) { #ov-landscape { display: flex; } }
-
-.card h1 { font-size: 20px; margin: 0 0 8px; }
-.card p { color: var(--fg-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
-.cta, .ghost {
-  font: inherit;
-  font-size: 16px;
-  padding: 14px 30px;
-  border-radius: 14px;
-  border: none;
-  margin: 4px;
-}
-.cta { background: var(--accent); color: #04121f; font-weight: 700; }
-.ghost { background: transparent; color: var(--fg-dim); border: var(--btn-border); }
-
-#banner {
-  position: fixed;
-  left: 0; right: 0;
-  bottom: calc(env(safe-area-inset-bottom) + 6px);
-  text-align: center;
-  font-size: 12px;
-  color: var(--danger);
-  display: none;
-}
-body[data-state="disconnected"] #banner { display: block; }
-
-/* The haptic switch must really be rendered for iOS to fire the tick, so it is
-   made imperceptible rather than hidden. opacity:0, visibility:hidden and
-   display:none all silently disable it. */
-#haptic-label { position: fixed; bottom: 0; left: 0; width: 18px; height: 18px;
-  opacity: 0.002; pointer-events: none; z-index: -1; }
