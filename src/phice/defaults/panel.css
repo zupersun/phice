@@ -1,21 +1,28 @@
-/* Phice control panel. Edit freely: the window reloads it live, exactly like the
-   phone's theme.css. Nothing here is compiled into the app.
+/* Phice control panel -- "Instrument". Edit freely: the window reloads it live,
+   exactly like the phone's theme.css. Nothing here is compiled into the app.
+
+   An instrument panel: a matte ground, outlined cards with their titles cut into
+   the top border, monospace readouts, square lamps, one signal colour.
 
    Appearance: the page sets data-theme="light" or "dark" on <html> for an explicit
    choice, or leaves it unset to follow the system via prefers-color-scheme. This
    file is the only place that decides what those states look like. */
 :root {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --accent: #007aff;
-  --accent-ink: #ffffff;
-  --ok: #34c759;
-  --warn: #ff9500;
-  --bad: #ff3b30;
-  --card: #ffffff;
-  --seg-track: #e3e9f0;
-  --seg-knob: #ffffff;
+  --bg: #d9d9d4;
+  --fg: #1e2022;
+  --dim: #5c6165;
+  --line: #2a2c2e;
+  --line-dim: #8e9093;
+  --accent: #ff5c00;
+  --accent-ink: #1b1d1f;
+  --ok: #ff5c00;
+  --warn: #ffd23f;
+  --bad: #c22f25;
+  --card: #e6e6e1;
+  --display: #c9c9c3;
+  --lamp-off: #bdbdb7;
+  --seg-track: transparent;
+  --seg-knob: #2a2c2e;
   --seg-spring-ms: 312ms;
   --seg-spring: linear(
     0.0000 0.0%, 0.0223 3.1%, 0.0801 6.2%, 0.1614 9.4%,
@@ -27,118 +34,201 @@
     1.0328 75.0%, 1.0282 78.1%, 1.0236 81.2%, 1.0193 84.4%,
     1.0153 87.5%, 1.0117 90.6%, 1.0086 93.8%, 1.0060 96.9%,
     1.0038 100.0%);
-  --line: #dde3ea;
-  --btn-bg: #e3e8ee;
-  --code-size: 46px;
-  --radius: 18px;
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --btn-bg: transparent;
+  --hatch: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 92, 0, 0.22) 3px 4px);
+  --code-size: 34px;
+  --radius: 6px;
+  --stroke-w: 1.5px;
+  --font: -apple-system, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Cascadia Mono", monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1a1a1a;
-    --fg: #d4d4d4;
-    --dim: #808080;
-    --accent: #4daafc;
-    --accent-ink: #0a1420;
-    --ok: #23d18b;
-    --warn: #cca700;
-    --bad: #f14c4c;
-    --card: #202020;
-  --seg-track: #141414;
-  --seg-knob: #3a3a3a;
-    --line: #333333;
-    --btn-bg: #2a2a2a;
+    --bg: #1b1d1f;
+    --fg: #d2d5d8;
+    --dim: #7d8287;
+    --line: #8a8f94;
+    --line-dim: #565b60;
+    --accent: #ff5c00;
+    --accent-ink: #1b1d1f;
+    --ok: #ff5c00;
+    --warn: #ffd23f;
+    --bad: #e03c31;
+    --card: #1b1d1f;
+    --display: #101214;
+    --lamp-off: #2c2f32;
+    --seg-track: transparent;
+    --seg-knob: #8a8f94;
+    --btn-bg: transparent;
+    --hatch: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 92, 0, 0.18) 3px 4px);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #1a1a1a;
-  --fg: #d4d4d4;
-  --dim: #808080;
-  --accent: #4daafc;
-  --accent-ink: #0a1420;
-  --ok: #23d18b;
-  --warn: #cca700;
-  --bad: #f14c4c;
-  --card: #202020;
-  --seg-track: #141414;
-  --seg-knob: #3a3a3a;
-  --line: #333333;
-  --btn-bg: #2a2a2a;
+  --bg: #1b1d1f;
+  --fg: #d2d5d8;
+  --dim: #7d8287;
+  --line: #8a8f94;
+  --line-dim: #565b60;
+  --accent: #ff5c00;
+  --accent-ink: #1b1d1f;
+  --ok: #ff5c00;
+  --warn: #ffd23f;
+  --bad: #e03c31;
+  --card: #1b1d1f;
+  --display: #101214;
+  --lamp-off: #2c2f32;
+  --seg-track: transparent;
+  --seg-knob: #8a8f94;
+  --btn-bg: transparent;
+  --hatch: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 92, 0, 0.18) 3px 4px);
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --accent: #007aff;
-  --accent-ink: #ffffff;
-  --ok: #34c759;
-  --warn: #ff9500;
-  --bad: #ff3b30;
-  --card: #ffffff;
-  --seg-track: #e3e9f0;
-  --seg-knob: #ffffff;
-  --line: #dde3ea;
-  --btn-bg: #e3e8ee;
+  --bg: #d9d9d4;
+  --fg: #1e2022;
+  --dim: #5c6165;
+  --line: #2a2c2e;
+  --line-dim: #8e9093;
+  --accent: #ff5c00;
+  --accent-ink: #1b1d1f;
+  --ok: #ff5c00;
+  --warn: #ffd23f;
+  --bad: #c22f25;
+  --card: #e6e6e1;
+  --display: #c9c9c3;
+  --lamp-off: #bdbdb7;
+  --seg-track: transparent;
+  --seg-knob: #2a2c2e;
+  --btn-bg: transparent;
+  --hatch: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 92, 0, 0.22) 3px 4px);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 22px 20px 26px;
+  margin: 0; padding: 18px 16px 24px;
   background: var(--bg); color: var(--fg);
-  font: 14px/1.55 var(--font);
+  font: 13px/1.5 var(--font);
   -webkit-user-select: none; user-select: none;
 }
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -0.01em; }
-.sub { color: var(--dim); margin: 0 0 18px; font-size: 13px; }
 
-.card { background: var(--card); border: 1px solid var(--line);
-        border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px; }
+/* Labels are uppercase and tracked; readouts are monospace. */
+.label, h1, .what, .code-hint, .seg-labels, button, .card > b {
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding-bottom: 12px; margin-bottom: 12px;
+  border-bottom: var(--stroke-w) solid var(--line);
+}
+h1 { font-size: 12px; font-weight: 700; letter-spacing: 0.18em; margin: 0; }
+.sub { font: 11px/1.4 var(--mono); color: var(--dim); margin: 0 0 16px; }
 
-.code { font-size: var(--code-size); font-weight: 700; letter-spacing: 10px;
-        text-align: center; color: var(--accent); margin: 6px 0 4px;
-        -webkit-user-select: all; user-select: all; }
-.code-hint { text-align: center; color: var(--dim); font-size: 12px; margin: 0; }
+/* An outlined box. A leading <b> is its title, a chip cut into the top border:
+   the chip paints ground above the line and card below it, so it reads the same
+   whether the card is filled (light) or open (dark). Cards without one are plain. */
+.card {
+  position: relative;
+  background: var(--card); border: var(--stroke-w) solid var(--line);
+  border-radius: var(--radius); padding: 16px 16px 14px; margin-bottom: 16px;
+}
+.card > b {
+  position: absolute; top: -9px; left: 12px;
+  height: 16px; padding: 0 6px;
+  font-size: 10px; line-height: 16px; color: var(--fg);
+  background: linear-gradient(var(--bg) 50%, var(--card) 50%);
+}
 
-.url { font-size: 13px; color: var(--fg); word-break: break-all;
+/* The pairing code on an inset display. */
+.code {
+  display: block;
+  font: 500 var(--code-size)/1 var(--mono);
+  letter-spacing: 0.3em; text-indent: 0.3em;
+  text-align: center; color: var(--accent);
+  background: var(--display); border-radius: 4px;
+  padding: 18px 8px 16px; margin: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28) inset, 0 2px 4px rgba(0, 0, 0, 0.22) inset;
+  -webkit-user-select: all; user-select: all;
+  transition: opacity 200ms ease-out;
+}
+.code-hint { text-align: center; color: var(--dim); font-size: 10px; margin: 10px 0 0; }
+
+/* Code life: a thin bar under the display, the share of the code's life that
+   remains. The page publishes only --code-life (0..1) and data-pairing on body. */
+.code-life {
+  height: 3px; margin: 6px 0 0;
+  background: var(--display); border-radius: 1px; overflow: hidden;
+}
+.code-life i {
+  display: block; height: 100%;
+  width: calc(var(--code-life, 0) * 100%);
+  background: var(--accent);
+  transition: width 1s linear;
+}
+body[data-pairing="renewing"] .code-life i {
+  width: 100%;
+  animation: code-pulse 1.2s ease-in-out infinite;
+}
+body[data-pairing="error"] .code { opacity: 0.35; }
+body[data-pairing="error"] .code-life i { width: 100%; background: var(--bad); }
+body[data-pairing="error"] .code-hint { color: var(--bad); }
+body[data-pairing="connected"] .code-life { visibility: hidden; }
+@keyframes code-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  body[data-pairing="renewing"] .code-life i { animation: none; }
+}
+
+.url { font: 12px/1.5 var(--mono); color: var(--fg); word-break: break-all;
        -webkit-user-select: all; user-select: all; }
 
-.row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
-.dot.ok { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
-.dot.warn { background: var(--warn); box-shadow: 0 0 7px var(--warn); }
-.dot.bad { background: var(--bad); box-shadow: 0 0 7px var(--bad); }
-.row .what { flex: 1; }
-.row .val { color: var(--dim); font-size: 13px; }
-
-button {
-  font: inherit; font-size: 13px; font-weight: 600;
-  background: var(--btn-bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 999px;
-  padding: 9px 14px; margin: 4px 6px 0 0;
+/* Status rows: a square lamp, a label, a monospace readout. */
+.row { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.row + .row { border-top: 1px solid color-mix(in srgb, var(--line) 22%, transparent); }
+.dot {
+  width: 10px; height: 10px; border-radius: 2px; flex: none;
+  background: var(--lamp-off); border: 1px solid var(--line-dim);
+  transition: background 140ms linear, box-shadow 140ms linear;
 }
-button.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
-button:hover { border-color: var(--dim); }
-button:active { transform: translateY(1px); }
+.dot.ok { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.dot.warn { background: var(--warn); border-color: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.dot.bad { background: var(--bad); border-color: var(--bad); box-shadow: 0 0 6px var(--bad); }
+.row .what { flex: 1; font-size: 11px; }
+.row .val { font: 12px var(--mono); color: var(--dim); }
+
+/* Buttons are outlined rectangles; the primary one is filled with the signal
+   colour. Pressing hatches the fill, like the phone's buttons. */
+button {
+  font-size: 11px;
+  background: var(--btn-bg); color: var(--fg);
+  border: var(--stroke-w) solid var(--line); border-radius: var(--radius);
+  padding: 9px 14px; margin: 8px 8px 0 0;
+  transition: border-color 80ms linear, color 80ms linear;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.primary:hover { color: var(--accent-ink); filter: brightness(1.06); }
+button:active { background-image: var(--hatch); }
 button[hidden] { display: none; }
 
-#theme { font-size: 12px; padding: 6px 10px; margin: 0; }
+#theme { font-size: 10px; padding: 6px 10px; margin: 0; }
 
 .note { color: var(--dim); font-size: 12px; margin: 12px 0 0; }
-.lede { color: var(--dim); font-size: 13px; margin: 7px 0 10px; }
-.when { color: var(--dim); font-size: 12px; margin: 0 0 10px; }
+.lede { color: var(--dim); font-size: 12.5px; margin: 8px 0 10px; }
+.when { font: 11px/1.5 var(--mono); color: var(--dim); margin: 0 0 8px; }
 
-ol { margin: 8px 0 0; padding-left: 20px; color: var(--dim); font-size: 13px; }
+ol { margin: 8px 0 0; padding-left: 18px; color: var(--dim); font-size: 12.5px; }
 li { margin: 5px 0; }
 b { color: var(--fg); font-weight: 600; }
 
-/* Appearance: three stops on one track, draggable. The script publishes only a
-   number (--knob-drag, 0..2, while a finger is down); everything about how that
+/* Appearance: two stops on one track, draggable. The script publishes only a
+   number (--knob-drag, 0..1, while a finger is down); everything about how that
    looks is decided here. With no drag in progress the knob's position comes
-   from data-theme on the root, so it also follows a change made elsewhere. */
+   from data-theme on the root, so it also follows a change made elsewhere.
+   An outlined track with a solid square knob: a slide switch. */
 .appearance { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
 
 .seg {
@@ -148,14 +238,14 @@ b { color: var(--fg); font-weight: 600; }
   width: 104px;
   height: 26px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--seg-track);
-  border: 1px solid var(--line);
+  border: var(--stroke-w) solid var(--line);
   cursor: pointer;
   touch-action: none;          /* the drag is ours, not the scroller's */
 }
 .seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.seg .stop { position: relative; z-index: 1; border-radius: 999px; }
+.seg .stop { position: relative; z-index: 1; border-radius: 2px; }
 
 .knob {
   position: absolute;
@@ -163,9 +253,8 @@ b { color: var(--fg); font-weight: 600; }
   bottom: 3px;
   width: calc((100% - 6px) / 2);
   left: calc(3px + var(--knob-drag, var(--knob-i, 0)) * (100% - 6px) / 2);
-  border-radius: 999px;
+  border-radius: 2px;
   background: var(--seg-knob);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
   transition: left var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out);
 }
 /* Following a finger, so no easing: the knob must be under it, not chasing. */
@@ -178,26 +267,27 @@ b { color: var(--fg); font-weight: 600; }
    than the document's theme. Two stops, so the same halves arithmetic applies. */
 #grip[data-v="standard"] .knob { --knob-i: 0; }
 #grip[data-v="one-handed"] .knob { --knob-i: 1; }
-#grip { width: 132px; margin-top: 10px; }
-#grip + .seg-labels { width: 132px; }
+#grip { width: 156px; margin-top: 10px; }
+#grip + .seg-labels { width: 156px; }
 #grip[data-v="standard"] + .seg-labels span:nth-child(1),
 #grip[data-v="one-handed"] + .seg-labels span:nth-child(2) {
   color: var(--fg);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .seg-labels {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   width: 104px;
-  font-size: 10px;
-  letter-spacing: 0.02em;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   color: var(--dim);
   text-align: center;
 }
-.seg-labels span { padding-top: 1px; }
+.seg-labels span { padding-top: 2px; white-space: nowrap; }
 :root[data-theme="dark"] .seg-labels span:nth-child(1),
 :root[data-theme="light"] .seg-labels span:nth-child(2) {
   color: var(--fg);
-  font-weight: 600;
+  font-weight: 700;
 }
