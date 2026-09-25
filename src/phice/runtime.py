@@ -30,7 +30,7 @@ from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .paths import Paths, client_version
 from .rtc import RTCTransport
-from .window import Requests
+from .window import WindowRequests
 
 log = logging.getLogger("phice")
 
@@ -89,7 +89,7 @@ class Runtime:
         self.rtc: RTCTransport | None = None
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self.recorder = None                                 # an open text file while recording
-        self.windows = Requests()
+        self.windows = WindowRequests()
         self.calibration = calibrate.Runner(
             paths, backend, self.engine,
             show=lambda: self.windows.show(

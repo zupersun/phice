@@ -143,9 +143,9 @@ async def test_code_life_never_shows_more_than_a_full_bar(tmp_path):
 def test_window_requests_are_a_one_shot_mailbox():
     """Raised on the runtime thread, honoured on the main one, and each one is
     taken exactly once so a window is never opened twice for one ask."""
-    from phice.window import Requests
+    from phice.window import WindowRequests
 
-    w = Requests()
+    w = WindowRequests()
     assert w.take_panel() is False
     w.show_panel()
     assert w.take_panel() is True
@@ -157,3 +157,10 @@ def test_window_requests_are_a_one_shot_mailbox():
     w.close_calibration()
     assert w.take_calibration_close() is True
     assert w.take_calibration_close() is False
+    # A page and a panel queued together must not swallow each other: both are
+    # delivered, one per tick, page first.
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    w.show_panel()
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is True
+    assert w.take_panel() is False
