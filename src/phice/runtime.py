@@ -30,6 +30,7 @@ from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .paths import Paths, client_version
 from .rtc import RTCTransport
+from .window import WindowRequests
 
 log = logging.getLogger("phice")
 
@@ -56,12 +57,16 @@ class Status:
     pair_code: str = ""
     enabled: bool = True
     error: str = ""
+    #: Set while the letterbox cannot be reached. Separate from `error`, which is
+    #: about the config files: the panel and the menu bar say different things.
+    pairing_error: str = ""
 
     def read(self) -> dict:
         with self.lock:
             return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
                         accessibility=self.accessibility, enabled=self.enabled,
-                        pair_code=self.pair_code, error=self.error)
+                        pair_code=self.pair_code, error=self.error,
+                        pairing_error=self.pairing_error)
 
     def update(self, **kw) -> None:
         with self.lock:
@@ -84,9 +89,10 @@ class Runtime:
         self.rtc: RTCTransport | None = None
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self.recorder = None                                 # an open text file while recording
+        self.windows = WindowRequests()
         self.calibration = calibrate.Runner(
             paths, backend, self.engine,
-            show=lambda: self.request_panel_url(
+            show=lambda: self.windows.show(
                 f"http://127.0.0.1:{self.http_port}/calibrate", fullscreen=True))
         self.control = ControlServer(
             http_port,
@@ -96,7 +102,7 @@ class Runtime:
                      # Prompting from this process is what makes macOS list *this*
                      # binary; asking from a terminal would add the terminal.
                      "/debug/grant": lambda: {"accessibility": accessibility_trusted(prompt=True)},
-                     "/debug/panel": self.request_panel,
+                     "/debug/panel": self.windows.show_panel,
                      "/debug/newcode": self.new_pair_code,
                      "/calibrate/state": self.calibration_state,
                      "/calibrate/start": self.start_calibration,
@@ -105,9 +111,6 @@ class Runtime:
                      "/calibrate/cancel": self.cancel_calibration},
             settings={"/debug/layout": self.set_layout,
                       "/debug/appearance": self.set_appearance})
-        self._panel_requested = False
-        self._panel_url: tuple[str, bool] | None = None
-        self._close_calibration = False
         self._last_logged_phase = "disconnected"
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -252,6 +255,13 @@ class Runtime:
         # answered it. After a disconnect the previous offer lingers there until
         # the fresh one is gathered and published; answering it fails ICE.
         d["offer_ready"] = self.pairing.waiter is not None
+        # The code's remaining life at the letterbox, from the wall clock so a
+        # sleep shows as expired rather than paused. The panel draws code_life.
+        p = self.pairing
+        remaining = (min(p.ttl, max(0.0, p.published_at + p.ttl - time.time()))
+                     if p.waiter else 0.0)
+        d["code_expires_in"] = round(remaining)
+        d["code_life"] = round(remaining / p.ttl, 3) if p.ttl else 0.0
         d["sensor_hz"] = round(rtc.hz, 1) if rtc and rtc.is_open else 0.0
         d["mapping"] = self.config.mapping
         if isinstance(self.backend, FakeCursor):
@@ -389,34 +399,8 @@ class Runtime:
         A borderless full-screen window with no title bar has no close button,
         so there must be a way out that does not involve the menu bar."""
         self.calibration.cancel()
-        self._close_calibration = True
+        self.windows.close_calibration()
         return {"ok": True}
-
-    # ----- windows ----------------------------------------------------------
-
-    def request_panel_url(self, url: str, *, fullscreen: bool = False) -> None:
-        self._panel_url = (url, fullscreen)
-        self._panel_requested = True
-
-    def take_calibration_close(self) -> bool:
-        done, self._close_calibration = self._close_calibration, False
-        return done
-
-    def request_panel(self) -> None:
-        """Ask for the control panel window. Thread safe by design.
-
-        The window can only be created on the main thread, which the menu bar
-        owns, so this only raises a flag; the menu bar's timer picks it up.
-        """
-        self._panel_requested = True
-
-    def take_panel_request(self) -> tuple[str, bool] | bool:
-        """(url, fullscreen) to show, True for the default panel, or False."""
-        if not self._panel_requested:
-            return False
-        self._panel_requested = False
-        url, self._panel_url = self._panel_url, None
-        return url or True
 
     # ----- settings written from the panel ----------------------------------
 

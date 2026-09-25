@@ -1,10 +1,17 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from phice.signaling import SignalingClient, SignalingError, new_pairing_code
+from phice.signaling import (
+    DEFAULT_OFFER_TTL_S,
+    SignalingClient,
+    SignalingError,
+    new_pairing_code,
+    offer_ttl,
+)
 
 
 @pytest.fixture
@@ -18,20 +25,30 @@ def stub():
         def log_message(self, *a):
             pass
 
-        def _send(self, code, obj):
-            body = json.dumps(obj).encode()
+        def _send_bytes(self, code, body: bytes):
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
 
+        def _send(self, code, obj):
+            self._send_bytes(code, json.dumps(obj).encode())
+
         def do_POST(self):
             n = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(n))
             kind = self.path.strip("/").split("/")[-1]
             store[f"{kind}:{data['code']}"] = data
-            self._send(200, {"ok": True})
+            # Two codes are reserved to make the letterbox answer with a reply
+            # publish_offer must survive: an empty body, and one that is not JSON.
+            if kind == "offer" and data["code"] == "EMPTY2":
+                self._send_bytes(200, b"")
+            elif kind == "offer" and data["code"] == "BADJS2":
+                self._send_bytes(200, b"not json")
+            else:
+                # offer.js reports the lifetime; answer.js does not.
+                self._send(200, {"ok": True, "expires_in": 7} if kind == "offer" else {"ok": True})
 
         def do_GET(self):
             path, _, q = self.path.partition("?")
@@ -115,3 +132,75 @@ async def test_missing_ice_endpoint_does_not_break_startup():
     it falls back rather than failing."""
     c = SignalingClient("http://127.0.0.1:1", allow_insecure=True)
     assert await c.fetch_ice_servers() is None
+
+
+async def test_publishing_an_offer_reports_how_long_the_letterbox_keeps_it(stub):
+    """The lifetime is the letterbox's to decide, and it says so in its reply.
+    Assuming 300 on the Mac meant the two could disagree without anyone noticing."""
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+    assert await c.publish_offer("ABC234", {"sdp": "x", "type": "offer"}) == 7.0
+
+
+async def test_a_garbled_or_empty_reply_falls_back_to_the_default(stub):
+    """The reply is only an acknowledgement: the offer landed either way, so a
+    reply that cannot be read must not fail the publish."""
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+    assert await c.publish_offer("EMPTY2", {"sdp": "x", "type": "offer"}) == DEFAULT_OFFER_TTL_S
+    assert await c.publish_offer("BADJS2", {"sdp": "x", "type": "offer"}) == DEFAULT_OFFER_TTL_S
+
+
+async def test_publish_offer_raises_when_the_letterbox_is_unreachable():
+    """Unlike a garbled reply, an unreachable letterbox must not be swallowed
+    into a default lifetime -- the caller needs to know the offer never landed."""
+    c = SignalingClient("http://127.0.0.1:1", allow_insecure=True)
+    with pytest.raises(SignalingError):
+        await c.publish_offer("ABC234", {"sdp": "x", "type": "offer"})
+
+
+def test_a_letterbox_that_says_nothing_about_lifetime_gets_the_default():
+    assert offer_ttl({"ok": True, "expires_in": 7}) == 7.0
+    assert offer_ttl({"ok": True}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": "soon"}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": 0}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": True}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": float("nan")}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl({"expires_in": float("inf")}) == DEFAULT_OFFER_TTL_S
+    assert offer_ttl(None) == DEFAULT_OFFER_TTL_S
+
+
+async def test_wait_for_answer_notices_a_wall_clock_that_moved_on(stub):
+    """time.monotonic is mach_absolute_time on macOS, which stops while the Mac
+    sleeps. The letterbox's clock does not. After a sleep the offer is gone,
+    and the wait must end at once rather than run out its remaining minutes
+    showing a dead code."""
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+    readings = [1000.0, 1000.2, 4600.0]          # the third reading is after a sleep
+
+    def clock():
+        return readings.pop(0) if len(readings) > 1 else readings[0]
+
+    with pytest.raises(SignalingError, match="expired"):
+        await c.wait_for_answer("ZZZZZZ", timeout=30.0, interval=0.02,
+                                expires_at=1000.5, clock=clock)
+
+
+async def test_wait_for_answer_returns_before_expiry_when_not_yet_expired(stub):
+    """Kills two mutants that the test above lets through unnoticed: the
+    comparison inverted to `clock() <= expires_at`, and an implementation that
+    raises unconditionally whenever `expires_at` is set. Either way an answer
+    that arrives before expiry must still be returned."""
+    import asyncio
+    base, _ = stub
+    c = SignalingClient(base, allow_insecure=True)
+
+    async def later():
+        await asyncio.sleep(0.15)
+        await c.publish_answer("ABC234", {"sdp": "z", "type": "answer"})
+
+    asyncio.ensure_future(later())
+    got = await c.wait_for_answer("ABC234", timeout=3.0, interval=0.05,
+                                  expires_at=time.time() + 60)
+    assert got["sdp"] == "z"
