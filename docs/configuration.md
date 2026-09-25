@@ -16,15 +16,18 @@ kills the pointer mid-use.
 | `pointer.json` | All pointer feel and behaviour — the table below |
 | `layout.json` | Which buttons exist on the phone, where, how big, what they do |
 | `theme.css` | Every colour, size, font and radius on the phone page |
-| `panel.css` | The Mac window: palette, the appearance switch, layout |
+| `panel.css` | The Mac window: palette, the appearance switch, the pairing code's life bar, layout |
 | `calibrate.css` | The calibration screen |
 | `assets/` | Menu-bar icons and the logo |
 | `sessions/` | Recordings, for offline tuning |
 | `logs/phice.log` | What the app is doing |
 
+Existing installs keep the layout, theme, panel and calibration files they have. An update
+that adds to one is picked up the next time you run `uv run phice reset-ui`.
+
 `uv run phice paths` prints the directory. `uv run phice reset-ui` restores
-`layout.json`, `theme.css` and `assets/` from the packaged defaults, backing up
-whatever was there.
+`layout.json`, `theme.css`, `panel.css`, `calibrate.css` and `assets/` from the packaged
+defaults, backing up whatever was there.
 
 ### `pointer.json`
 

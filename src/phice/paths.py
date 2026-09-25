@@ -95,7 +95,8 @@ class Paths:
         write_defaults(self.assets)
 
     def reset_ui(self) -> list[Path]:
-        """Restore layout/theme/assets from package defaults, backing up existing files."""
+        """Restore layout, theme, panel and calibration files and assets/ from package
+        defaults, backing up existing files."""
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backed_up: list[Path] = []
         for name in UI_FILES:
