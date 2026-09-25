@@ -1000,16 +1000,22 @@ Append to `tests/test_runtime.py`:
 ```python
 def test_window_requests_are_a_one_shot_mailbox():
     """Raised on the runtime thread, honoured on the main one, and each one is
-    taken exactly once so a window is never opened twice for one ask."""
-    from phice.window import Requests
+    taken exactly once so a window is never opened twice for one ask. A page
+    and a panel asked for together are both delivered, page first."""
+    from phice.window import WindowRequests
 
-    w = Requests()
+    w = WindowRequests()
     assert w.take_panel() is False
     w.show_panel()
     assert w.take_panel() is True
     assert w.take_panel() is False
     w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
     assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is False
+    w.show("http://127.0.0.1:1/calibrate", fullscreen=True)
+    w.show_panel()
+    assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
+    assert w.take_panel() is True
     assert w.take_panel() is False
     assert w.take_calibration_close() is False
     w.close_calibration()
@@ -1035,17 +1041,19 @@ Append to `tests/test_paths.py`:
 ```python
 def test_every_module_but_the_engine_stays_under_the_limit():
     """CLAUDE.md: files under 500 lines, engine.py the one deliberate exception."""
-    for path in sorted(paths.PACKAGE_DIR.glob("*.py")):
-        if path.name == "engine.py":
+    modules = sorted(paths.PACKAGE_DIR.glob("*.py"))
+    assert modules
+    for module in modules:
+        if module.name == "engine.py":
             continue
-        assert sum(1 for _ in path.open()) <= 500, path.name
+        assert module.read_text().count("\n") <= 500, module.name
 ```
 
 - [ ] **Step 2: Run them and watch them fail**
 
 Run: `uv run pytest tests/test_runtime.py tests/test_menubar.py tests/test_paths.py -q`
-Expected: four failures: no `Requests` in `phice.window`, `code_expires_in` is 12 not 7,
-no `TITLES` in `phice.menubar`, and `runtime.py` at 516 lines.
+Expected: four failures: no `WindowRequests` in `phice.window`, `code_expires_in` is 12
+not 7, no `TITLES` in `phice.menubar`, and `runtime.py` at 516 lines.
 
 - [ ] **Step 3: The mailbox moves to `window.py`**
 
@@ -1054,15 +1062,16 @@ after the `log = ...` line:
 
 ```python
 @dataclass
-class Requests:
+class WindowRequests:
     """Window requests raised on the runtime thread and honoured on the main one.
 
     A window can only be created where AppKit lives, on the thread the menu bar
     owns, so the runtime never opens one itself: it leaves a note here and the
-    menu bar's timer takes it. Each note is taken exactly once.
+    menu bar's timer takes it. Each note is taken exactly once; a page and a
+    panel asked for together are delivered one per tick, page first.
     """
 
-    _panel: bool = False                     # the control panel, or the page below
+    _panel: bool = False                     # the control panel
     _page: tuple[str, bool] | None = None    # (url, fullscreen) for a specific page
     _close_calibration: bool = False
 
@@ -1071,18 +1080,19 @@ class Requests:
 
     def show(self, url: str, *, fullscreen: bool = False) -> None:
         self._page = (url, fullscreen)
-        self._panel = True
 
     def close_calibration(self) -> None:
         self._close_calibration = True
 
     def take_panel(self) -> tuple[str, bool] | bool:
         """(url, fullscreen) to open, True for the control panel, or False."""
-        if not self._panel:
-            return False
-        self._panel = False
-        page, self._page = self._page, None
-        return page or True
+        if self._page is not None:
+            page, self._page = self._page, None
+            return page
+        if self._panel:
+            self._panel = False
+            return True
+        return False
 
     def take_calibration_close(self) -> bool:
         done, self._close_calibration = self._close_calibration, False
@@ -1091,8 +1101,8 @@ class Requests:
 
 - [ ] **Step 4: `runtime.py` uses it, and clamps the seconds**
 
-In `src/phice/runtime.py`: add `from .window import Requests` to the imports. In
-`__init__`, add `self.windows = Requests()` before the `calibrate.Runner(...)` line, change
+In `src/phice/runtime.py`: add `from .window import WindowRequests` to the imports. In
+`__init__`, add `self.windows = WindowRequests()` before the `calibrate.Runner(...)` line, change
 the runner's `show=` lambda to
 `show=lambda: self.windows.show(f"http://127.0.0.1:{self.http_port}/calibrate", fullscreen=True)`,
 change the control action `"/debug/panel": self.request_panel` to
