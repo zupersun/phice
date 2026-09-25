@@ -30,35 +30,45 @@
 <style id="shell">
   /* The pairing chrome follows the appearance chosen on the Mac. Before a
      connection exists there is nothing to ask, so it falls back to the phone's
-     own setting; once the Mac tells us, data-appearance overrides it. */
-  :root{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;--sh-field:#111a24;
-       --sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+     own setting; once the Mac tells us, data-appearance overrides it. It is
+     cut from the same shell as the pad: matte, tonal, one slate accent. */
+  :root{--sh-bg:#0f0f10;--sh-fg:#e2e2e5;--sh-dim:#8a8a90;--sh-field:#0a0a0b;
+       --sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.6) inset;
+       --sh-accent:#7a8fa6;--sh-ink:#0f0f10}
   @media (prefers-color-scheme: light){
-    :root:not([data-appearance="dark"]){--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-      --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
+    :root:not([data-appearance="dark"]){--sh-bg:#f2f2f0;--sh-fg:#1c1c1e;--sh-dim:#5c5c60;
+      --sh-field:#e4e4e2;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
+      --sh-accent:#5b7290;--sh-ink:#ffffff}
   }
-  :root[data-appearance="light"]{--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-    --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
-  :root[data-appearance="dark"]{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;
-    --sh-field:#111a24;--sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+  :root[data-appearance="light"]{--sh-bg:#f2f2f0;--sh-fg:#1c1c1e;--sh-dim:#5c5c60;
+    --sh-field:#e4e4e2;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
+    --sh-accent:#5b7290;--sh-ink:#ffffff}
+  :root[data-appearance="dark"]{--sh-bg:#0f0f10;--sh-fg:#e2e2e5;--sh-dim:#8a8a90;
+    --sh-field:#0a0a0b;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.6) inset;
+    --sh-accent:#7a8fa6;--sh-ink:#0f0f10}
   html,body{height:100%;margin:0;background:var(--sh-bg);color:var(--sh-fg);
-            font:16px -apple-system,system-ui,sans-serif;
+            font:16px -apple-system,system-ui,"Segoe UI",sans-serif;
             touch-action:none;-webkit-user-select:none;user-select:none;
             transition:background 200ms ease-out,color 200ms ease-out}
   .screen{position:fixed;inset:0;z-index:10;display:none;
           align-items:center;justify-content:center;
           padding:24px;text-align:center;background:var(--sh-bg);
           transition:background 200ms ease-out}
+  .screen h1{font-size:22px;font-weight:500;letter-spacing:.02em;margin:0 0 8px}
   body[data-screen="pair"] #screen-pair,
   body[data-screen="connecting"] #screen-connecting,
   body[data-screen="failed"] #screen-failed,
   body[data-screen="start"] #screen-start{display:flex}
-  #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
+  /* The code field is a recess in the shell, not a box drawn on it. */
+  #code{font-size:30px;font-weight:500;letter-spacing:.3em;text-indent:.3em;
+        text-align:center;width:100%;
         background:var(--sh-field);color:var(--sh-fg);border:1px solid var(--sh-line);
-        border-radius:12px;padding:14px;text-transform:uppercase}
-  .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;
-                 border-radius:13px;background:var(--sh-accent);color:var(--sh-ink);
-                 font-weight:700;margin-top:16px}
+        box-shadow:var(--sh-inset);border-radius:14px;padding:14px;
+        text-transform:uppercase;outline:none;-webkit-appearance:none;appearance:none}
+  #code:focus{box-shadow:var(--sh-inset),0 0 0 1px var(--sh-accent)}
+  .screen button{font:inherit;font-size:17px;font-weight:500;padding:15px 32px;border:none;
+                 border-radius:999px;background:var(--sh-accent);color:var(--sh-ink);
+                 margin-top:16px}
   .screen p{color:var(--sh-dim);line-height:1.5}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
@@ -66,12 +76,12 @@
      few seconds to find a Mac across networks, and a still screen for that long
      is indistinguishable from a stuck one. */
   .pulse{position:relative;width:96px;height:96px;margin:0 auto 22px}
-  .pulse i{position:absolute;inset:0;border-radius:50%;border:2px solid var(--sh-accent);
+  .pulse i{position:absolute;inset:0;border-radius:50%;border:1px solid var(--sh-accent);
            opacity:0;animation:pulse 2.4s cubic-bezier(.22,.61,.36,1) infinite}
   .pulse i:nth-child(2){animation-delay:.8s}
   .pulse i:nth-child(3){animation-delay:1.6s}
-  .pulse::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;
-                margin:-7px 0 0 -7px;border-radius:50%;background:var(--sh-accent);
+  .pulse::after{content:"";position:absolute;left:50%;top:50%;width:10px;height:10px;
+                margin:-5px 0 0 -5px;border-radius:50%;background:var(--sh-accent);
                 animation:breathe 2.4s ease-in-out infinite}
   @keyframes pulse{
     0%{transform:scale(.18);opacity:0}
