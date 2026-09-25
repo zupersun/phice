@@ -87,7 +87,7 @@ def cmd_paths(args) -> int:
 def cmd_reset_ui(args) -> int:
     for b in _paths(args).reset_ui():
         print(f"backed up {b}")
-    print("restored layout.json, theme.css and assets/ from defaults")
+    print("restored layout.json, theme.css, panel.css, calibrate.css and assets/ from defaults")
     return 0
 
 

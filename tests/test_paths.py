@@ -34,3 +34,13 @@ def test_resource_dir_falls_back_when_frozen_without_meipass(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     assert (paths.resource_dir() / "defaults" / "pointer.json").exists()
+
+
+def test_every_module_but_the_engine_stays_under_the_limit():
+    """CLAUDE.md: files under 500 lines, engine.py the one deliberate exception."""
+    modules = sorted(paths.PACKAGE_DIR.glob("*.py"))
+    assert modules
+    for module in modules:
+        if module.name == "engine.py":
+            continue
+        assert module.read_text().count("\n") <= 500, module.name

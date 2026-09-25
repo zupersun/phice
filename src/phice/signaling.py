@@ -14,10 +14,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import secrets
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -32,6 +35,22 @@ log = logging.getLogger("phice.signaling")
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 HTTP_TIMEOUT = 10.0
+
+#: What web/api/offer.js keeps an offer for, used only if the letterbox's reply
+#: does not say. The reply is authoritative: the two must never disagree.
+DEFAULT_OFFER_TTL_S = 300.0
+
+#: How long to wait before trying the letterbox again after it refused a publish.
+RETRY_S = 10.0
+
+
+def offer_ttl(body: dict | None) -> float:
+    """The lifetime a letterbox reply promises, or the default if it is silent."""
+    value = (body or {}).get("expires_in")
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value <= 0):
+        return DEFAULT_OFFER_TTL_S
+    return float(value)
 
 
 class SignalingError(RuntimeError):
@@ -51,15 +70,22 @@ class SignalingClient:
 
     # ----- transport --------------------------------------------------------
 
-    def _post_sync(self, path: str, payload: dict) -> None:
+    def _post_sync(self, path: str, payload: dict) -> dict:
         body = json.dumps(payload).encode()
         req = urllib.request.Request(f"{self.base}{path}", data=body, method="POST",
                                      headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
-                r.read()
+                raw = r.read()
         except (urllib.error.URLError, OSError) as e:
             raise SignalingError(f"POST {path} failed: {e}") from e
+        # A POST's body is only an acknowledgement: a request that failed still
+        # raises above, so a garbled one here can safely fall back to the default.
+        try:
+            reply = json.loads(raw) if raw else {}
+        except ValueError:
+            reply = {}
+        return reply if isinstance(reply, dict) else {}
 
     def _get_sync(self, path: str, code: str) -> dict | None:
         q = urllib.parse.urlencode({"code": code})
@@ -90,8 +116,11 @@ class SignalingClient:
             return None
         return body["iceServers"]
 
-    async def publish_offer(self, code: str, offer: dict) -> None:
-        await asyncio.to_thread(self._post_sync, "/api/offer", {"code": code, **offer})
+    async def publish_offer(self, code: str, offer: dict) -> float:
+        """Post the offer under the code. Returns how many seconds the letterbox
+        will keep it, which is the letterbox's decision, not ours."""
+        reply = await asyncio.to_thread(self._post_sync, "/api/offer", {"code": code, **offer})
+        return offer_ttl(reply)
 
     async def fetch_offer(self, code: str) -> dict | None:
         return await asyncio.to_thread(self._get_sync, "/api/offer", code)
@@ -102,13 +131,23 @@ class SignalingClient:
     async def fetch_answer(self, code: str) -> dict | None:
         return await asyncio.to_thread(self._get_sync, "/api/answer", code)
 
-    async def wait_for_answer(self, code: str, timeout: float = 300.0,
-                              interval: float = 1.0) -> dict:
+    async def wait_for_answer(self, code: str, timeout: float = DEFAULT_OFFER_TTL_S,
+                              interval: float = 1.0, expires_at: float | None = None,
+                              clock: Callable[[], float] = time.time) -> dict:
         """Poll until the phone answers. Polling, not streaming, because the
-        whole exchange is two messages and serverless cannot hold a socket."""
+        whole exchange is two messages and serverless cannot hold a socket.
+
+        Two clocks, on purpose. `timeout` runs on the loop's monotonic clock,
+        which stops while the Mac sleeps; `expires_at` is compared against a
+        wall clock, which does not. After a sleep the letterbox has dropped the
+        offer, and only the wall clock knows. `expires_at` must be a reading of
+        the same clock as `clock`, which is why the default is `time.time`.
+        """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
+            if expires_at is not None and clock() >= expires_at:
+                raise SignalingError("the offer expired at the letterbox")
             got = await self.fetch_answer(code)
             if got:
                 return got
@@ -123,9 +162,9 @@ class Pairing:
     """The pairing code and the wait for an answer, shared between this loop and
     whoever asks for a fresh code from the panel.
 
-    A small named thing rather than three loose attributes on the runtime: they
-    are only meaningful together, and `rotate` in particular has to be read in
-    the same breath as `waiter` -- it is what tells a cancellation of that wait
+    A small named thing rather than loose attributes on the runtime: they are
+    only meaningful together, and `rotate` in particular has to be read in the
+    same breath as `waiter` -- it is what tells a cancellation of that wait
     apart from the whole task being shut down.
     """
 
@@ -135,6 +174,11 @@ class Pairing:
     code: str = ""
     waiter: asyncio.Task | None = None
     rotate: bool = False
+    #: When the current offer was accepted by the letterbox (wall clock) and for
+    #: how many seconds it promised to keep it. Together they are the code's
+    #: remaining life, which the panel draws.
+    published_at: float = 0.0
+    ttl: float = 0.0
 
 
 def ice_servers(rt: Runtime) -> tuple | None:
@@ -189,24 +233,40 @@ async def run(rt: Runtime) -> None:
         # page's remembered code was always the dead one.
         code = rt.pairing.code or new_pairing_code()
         rt.pairing.code = code
-        rt.status.update(pair_code=code, error="")
+        rt.status.update(pair_code=code)
 
         offer = await rt.rtc.create_offer()
         try:
-            await client.publish_offer(code, offer)
+            ttl = await client.publish_offer(code, offer)
         except SignalingError as e:
             log.error("could not reach the pairing service: %s", e)
-            rt.status.update(error=str(e))
+            rt.status.update(pairing_error=str(e))
+            rt.pairing.published_at = 0.0
+            rt.pairing.ttl = 0.0
             await rt.rtc.close()
-            await asyncio.sleep(10)
+            await asyncio.sleep(RETRY_S)
             continue
+        rt.pairing.published_at = time.time()
+        rt.pairing.ttl = ttl
+        rt.status.update(pairing_error="")
         log.info("pairing code %s -- enter it at %s/app", code, rt.config.signaling_url)
-        rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(code))
+        # Ends on the wall clock at published_at + ttl, taken after the POST returns --
+        # so the letterbox has already dropped the offer by then, with the time spent
+        # closing and republishing adding further margin. A phone must never still be
+        # able to fetch the old offer once the Mac has moved on, since that answer fails
+        # on the new peer connection while a missing offer is simply retried; `ttl + 1.0`
+        # on the monotonic clock is only a backstop for a wall clock stepping backward.
+        rt.pairing.waiter = asyncio.ensure_future(client.wait_for_answer(
+            code, timeout=ttl + 1.0, expires_at=rt.pairing.published_at + ttl))
         try:
             answer = await rt.pairing.waiter
-        except SignalingError:
+        except SignalingError as e:
+            # Kept because it names the code and says another offer is coming; the
+            # reason text tells apart an ordinary expiry, a backwards clock step, and
+            # a poll that could not reach the letterbox.
+            log.info("offer under %s ended (%s); publishing another", code, e)
             await rt.rtc.close()
-            continue            # the code expired unused; mint another
+            continue
         except asyncio.CancelledError:
             # Two very different things arrive here: the panel asking for a
             # new code, and this whole task being shut down. Swallowing both
