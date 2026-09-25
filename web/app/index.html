@@ -30,36 +30,51 @@
 <style id="shell">
   /* The pairing chrome follows the appearance chosen on the Mac. Before a
      connection exists there is nothing to ask, so it falls back to the phone's
-     own setting; once the Mac tells us, data-appearance overrides it. */
-  :root{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;--sh-field:#111a24;
-       --sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+     own setting; once the Mac tells us, data-appearance overrides it.
+     Same material as the pad: the grouped ground, glass fields, system blue. */
+  :root{--sh-bg:#111113;--sh-top:rgba(255,255,255,.05);--sh-fg:#f5f5f7;--sh-dim:#8e8e93;
+       --sh-field:rgba(255,255,255,.08);--sh-line:rgba(255,255,255,.1);
+       --sh-accent:#0a84ff;--sh-ink:#fff;--sh-ring:rgba(10,132,255,.35)}
   @media (prefers-color-scheme: light){
-    :root:not([data-appearance="dark"]){--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-      --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
+    :root:not([data-appearance="dark"]){--sh-bg:#f2f2f7;--sh-top:rgba(255,255,255,.55);
+      --sh-fg:#1d1d1f;--sh-dim:#6e6e73;--sh-field:#fff;--sh-line:rgba(60,60,67,.18);
+      --sh-accent:#007aff;--sh-ink:#fff;--sh-ring:rgba(0,122,255,.3)}
   }
-  :root[data-appearance="light"]{--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-    --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
-  :root[data-appearance="dark"]{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;
-    --sh-field:#111a24;--sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+  :root[data-appearance="light"]{--sh-bg:#f2f2f7;--sh-top:rgba(255,255,255,.55);
+    --sh-fg:#1d1d1f;--sh-dim:#6e6e73;--sh-field:#fff;--sh-line:rgba(60,60,67,.18);
+    --sh-accent:#007aff;--sh-ink:#fff;--sh-ring:rgba(0,122,255,.3)}
+  :root[data-appearance="dark"]{--sh-bg:#111113;--sh-top:rgba(255,255,255,.05);--sh-fg:#f5f5f7;
+    --sh-dim:#8e8e93;--sh-field:rgba(255,255,255,.08);--sh-line:rgba(255,255,255,.1);
+    --sh-accent:#0a84ff;--sh-ink:#fff;--sh-ring:rgba(10,132,255,.35)}
   html,body{height:100%;margin:0;background:var(--sh-bg);color:var(--sh-fg);
-            font:16px -apple-system,system-ui,sans-serif;
+            font:16px -apple-system,system-ui,"SF Pro Text","Segoe UI",sans-serif;
+            -webkit-font-smoothing:antialiased;
             touch-action:none;-webkit-user-select:none;user-select:none;
             transition:background 200ms ease-out,color 200ms ease-out}
   .screen{position:fixed;inset:0;z-index:10;display:none;
           align-items:center;justify-content:center;
-          padding:24px;text-align:center;background:var(--sh-bg);
+          padding:24px;text-align:center;
+          background:linear-gradient(to bottom,var(--sh-top),transparent 55%) var(--sh-bg);
           transition:background 200ms ease-out}
+  .screen>div{width:100%;max-width:320px}
+  .screen h1{font-size:28px;font-weight:600;letter-spacing:-0.01em;margin:0 0 6px}
   body[data-screen="pair"] #screen-pair,
   body[data-screen="connecting"] #screen-connecting,
   body[data-screen="failed"] #screen-failed,
   body[data-screen="start"] #screen-start{display:flex}
-  #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
+  #code{font:600 32px/1 -apple-system,system-ui,"SF Pro Text","Segoe UI",sans-serif;
+        font-variant-numeric:tabular-nums;letter-spacing:8px;text-align:center;width:100%;
         background:var(--sh-field);color:var(--sh-fg);border:1px solid var(--sh-line);
-        border-radius:12px;padding:14px;text-transform:uppercase}
-  .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;
-                 border-radius:13px;background:var(--sh-accent);color:var(--sh-ink);
-                 font-weight:700;margin-top:16px}
-  .screen p{color:var(--sh-dim);line-height:1.5}
+        border-radius:16px;padding:16px 8px 16px 16px;margin-top:8px;text-transform:uppercase;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 6px 18px rgba(0,0,0,.08);
+        outline:none;transition:box-shadow 160ms ease-out}
+  #code:focus{box-shadow:0 0 0 4px var(--sh-ring),inset 0 1px 0 rgba(255,255,255,.12)}
+  .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;width:100%;
+                 border-radius:14px;background:var(--sh-accent);color:var(--sh-ink);
+                 font-weight:600;margin-top:16px;
+                 transition:transform 120ms cubic-bezier(.2,.8,.2,1),filter 120ms ease-out}
+  .screen button:active{transform:scale(.97);filter:brightness(.92)}
+  .screen p{color:var(--sh-dim);line-height:1.45;margin:0 0 6px}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
   /* Connecting. Three rings leaving the centre, one after another: it takes a
@@ -72,6 +87,7 @@
   .pulse i:nth-child(3){animation-delay:1.6s}
   .pulse::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;
                 margin:-7px 0 0 -7px;border-radius:50%;background:var(--sh-accent);
+                box-shadow:0 0 0 6px var(--sh-ring);
                 animation:breathe 2.4s ease-in-out infinite}
   @keyframes pulse{
     0%{transform:scale(.18);opacity:0}
@@ -84,7 +100,7 @@
     .pulse i:first-child{opacity:.4;transform:scale(1)}
   }
   #link-note{position:fixed;left:0;right:0;bottom:8px;z-index:11;text-align:center;
-             font-size:12px;color:#ffb340;margin:0}
+             font-size:12px;color:#ff9f0a;margin:0}
   body[data-link="unstable"] #link-note{display:block}
   body:not([data-link="unstable"]) #link-note{display:none}
 </style>
