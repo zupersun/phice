@@ -4,22 +4,23 @@
    The page publishes only numbers -- where the target is, how far through the
    run you are -- and this file decides entirely what that looks like. */
 :root {
-  --bg: #0b0f14;
-  --fg: #e8eef5;
-  --dim: #7b8a9c;
-  --target: #3ea6ff;
-  --target-hit: #30d158;
-  --ring: rgba(62, 166, 255, 0.22);
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --bg: #0a0b0d;
+  --fg: #c8ccd2;
+  --dim: #6d737b;
+  /* Carbon: the target is neutral until you are on it, then lime means live. */
+  --target: #c8ccd2;
+  --target-hit: #b6ff2e;
+  --ring: rgba(200, 204, 210, 0.10);
+  --font: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #eef2f6;
-  --fg: #161d25;
-  --dim: #5c6b7a;
-  --target: #007aff;
-  --target-hit: #34c759;
-  --ring: rgba(0, 122, 255, 0.18);
+  --bg: #e8eaee;
+  --fg: #1c1f24;
+  --dim: #6b717a;
+  --target: #1c1f24;
+  --target-hit: #8ee000;
+  --ring: rgba(28, 31, 36, 0.08);
   color-scheme: light;
 }
 

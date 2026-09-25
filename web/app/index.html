@@ -30,19 +30,24 @@
 <style id="shell">
   /* The pairing chrome follows the appearance chosen on the Mac. Before a
      connection exists there is nothing to ask, so it falls back to the phone's
-     own setting; once the Mac tells us, data-appearance overrides it. */
-  :root{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;--sh-field:#111a24;
-       --sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+     own setting; once the Mac tells us, data-appearance overrides it.
+     Carbon: one lime that means live, deeper on white so strokes still read. */
+  :root{--sh-bg:#0a0b0d;--sh-fg:#c8ccd2;--sh-dim:#6d737b;--sh-field:#111316;
+       --sh-line:#26292e;--sh-accent:#b6ff2e;--sh-stroke:#b6ff2e;--sh-ink:#0a0b0d;
+       --sh-glow:rgba(182,255,46,.22)}
   @media (prefers-color-scheme: light){
-    :root:not([data-appearance="dark"]){--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-      --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
+    :root:not([data-appearance="dark"]){--sh-bg:#e8eaee;--sh-fg:#1c1f24;--sh-dim:#6b717a;
+      --sh-field:#ffffff;--sh-line:#d3d7dd;--sh-accent:#b6ff2e;--sh-stroke:#8ee000;
+      --sh-ink:#0a0b0d;--sh-glow:rgba(142,224,0,.25)}
   }
-  :root[data-appearance="light"]{--sh-bg:#f5f7fa;--sh-fg:#141a21;--sh-dim:#5c6b7a;
-    --sh-field:#ffffff;--sh-line:#d6dde5;--sh-accent:#007aff;--sh-ink:#ffffff}
-  :root[data-appearance="dark"]{--sh-bg:#000;--sh-fg:#e8eef5;--sh-dim:#6b7a8c;
-    --sh-field:#111a24;--sh-line:#233;--sh-accent:#3ea6ff;--sh-ink:#04121f}
+  :root[data-appearance="light"]{--sh-bg:#e8eaee;--sh-fg:#1c1f24;--sh-dim:#6b717a;
+    --sh-field:#ffffff;--sh-line:#d3d7dd;--sh-accent:#b6ff2e;--sh-stroke:#8ee000;
+    --sh-ink:#0a0b0d;--sh-glow:rgba(142,224,0,.25)}
+  :root[data-appearance="dark"]{--sh-bg:#0a0b0d;--sh-fg:#c8ccd2;--sh-dim:#6d737b;
+    --sh-field:#111316;--sh-line:#26292e;--sh-accent:#b6ff2e;--sh-stroke:#b6ff2e;
+    --sh-ink:#0a0b0d;--sh-glow:rgba(182,255,46,.22)}
   html,body{height:100%;margin:0;background:var(--sh-bg);color:var(--sh-fg);
-            font:16px -apple-system,system-ui,sans-serif;
+            font:16px -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
             touch-action:none;-webkit-user-select:none;user-select:none;
             transition:background 200ms ease-out,color 200ms ease-out}
   .screen{position:fixed;inset:0;z-index:10;display:none;
@@ -53,12 +58,21 @@
   body[data-screen="connecting"] #screen-connecting,
   body[data-screen="failed"] #screen-failed,
   body[data-screen="start"] #screen-start{display:flex}
-  #code{font-size:34px;letter-spacing:10px;text-align:center;width:100%;
+  .screen h1{font-size:18px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+             margin:0 0 10px}
+  /* Chamfers where the browser can cut them; plain rounding where it cannot. */
+  @supports (corner-shape: bevel){#code,.screen button{corner-shape:bevel}}
+  #code{font-size:34px;font-weight:700;letter-spacing:.2em;text-align:center;width:100%;
         background:var(--sh-field);color:var(--sh-fg);border:1px solid var(--sh-line);
-        border-radius:12px;padding:14px;text-transform:uppercase}
-  .screen button{font:inherit;font-size:17px;padding:15px 32px;border:none;
-                 border-radius:13px;background:var(--sh-accent);color:var(--sh-ink);
-                 font-weight:700;margin-top:16px}
+        border-radius:12px;padding:14px 14px 14px calc(14px + .2em);text-transform:uppercase;
+        caret-color:var(--sh-stroke);outline:none;
+        transition:border-color 120ms linear,box-shadow 120ms linear}
+  #code:focus{border-color:var(--sh-stroke);
+              box-shadow:inset 0 0 0 1px var(--sh-stroke),0 0 18px var(--sh-glow)}
+  .screen button{font:inherit;font-size:12px;font-weight:600;letter-spacing:.14em;
+                 text-transform:uppercase;padding:15px 32px;border:none;
+                 border-radius:9px;background:var(--sh-accent);color:var(--sh-ink);
+                 margin-top:16px}
   .screen p{color:var(--sh-dim);line-height:1.5}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
@@ -66,12 +80,13 @@
      few seconds to find a Mac across networks, and a still screen for that long
      is indistinguishable from a stuck one. */
   .pulse{position:relative;width:96px;height:96px;margin:0 auto 22px}
-  .pulse i{position:absolute;inset:0;border-radius:50%;border:2px solid var(--sh-accent);
+  .pulse i{position:absolute;inset:0;border-radius:50%;border:2px solid var(--sh-stroke);
            opacity:0;animation:pulse 2.4s cubic-bezier(.22,.61,.36,1) infinite}
   .pulse i:nth-child(2){animation-delay:.8s}
   .pulse i:nth-child(3){animation-delay:1.6s}
   .pulse::after{content:"";position:absolute;left:50%;top:50%;width:14px;height:14px;
-                margin:-7px 0 0 -7px;border-radius:50%;background:var(--sh-accent);
+                margin:-7px 0 0 -7px;border-radius:50%;background:var(--sh-stroke);
+                box-shadow:0 0 12px var(--sh-accent);
                 animation:breathe 2.4s ease-in-out infinite}
   @keyframes pulse{
     0%{transform:scale(.18);opacity:0}
@@ -84,7 +99,8 @@
     .pulse i:first-child{opacity:.4;transform:scale(1)}
   }
   #link-note{position:fixed;left:0;right:0;bottom:8px;z-index:11;text-align:center;
-             font-size:12px;color:#ffb340;margin:0}
+             font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+             color:var(--sh-fg);margin:0}
   body[data-link="unstable"] #link-note{display:block}
   body:not([data-link="unstable"]) #link-note{display:none}
 </style>

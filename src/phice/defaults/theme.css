@@ -4,23 +4,33 @@
   initial-value: 0;
 }
 
-/* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
-   app.js never sets a colour, size or font of its own. */
-:root {
-  --bg-off: #141414;
-  --bg-on: #1c1c1c;
-  --fg: #d4d4d4;
-  --fg-dim: #808080;
-  --accent: #4daafc;
-  --danger: #f14c4c;
+/* Phice theme, "Carbon". Everything visual lives here: edit freely, the page
+   reloads it live. app.js never sets a colour, size or font of its own.
 
-  /* Corner radii are concentric: an inner shape's radius is its container's
-     radius minus the gap between them, so every curve shares a centre. Change
-     --screen-radius to match your device and the rest follows. */
-  --screen-radius: 55px;
+   The look: a carbon-black ground, pads in deep charcoal with a faint diagonal
+   weave, chamfered corners, and exactly one colour -- lime -- that means "live".
+   Red is the only other hue and it means the pointer is off. */
+:root {
+  --bg-off: #0a0b0d;
+  --bg-on: #0e0f12;
+  --fg: #c8ccd2;
+  --fg-dim: #6d737b;
+  --accent: #b6ff2e;
+  /* Thin strokes in the accent: the same lime on dark, a deeper lime on white so
+     a 1.5px line still reads. Fills always use --accent with dark text. */
+  --accent-line: #b6ff2e;
+  --accent-glow: rgba(182, 255, 46, 0.25);
+  --danger: #ff2d55;
+
+  /* Chamfered geometry. Browsers with corner-shape get real bevels and a bigger
+     cut; the rest get plain rounding. Outer corners take --chamfer, the corners
+     facing the scroll strip take --chamfer-sm, and the two slim controls take
+     --chamfer-xs, so all four controls share one family of cuts. */
+  --chamfer: 14px;
+  --chamfer-sm: 8px;
+  --chamfer-xs: 5px;
   --pad-margin: 8px;
-  --pad-radius: calc(var(--screen-radius) - var(--pad-margin));
-  --btn-inset: 12px;
+  --pad-radius: var(--chamfer);
 
   /* Scroll thumb snap-back. A real damped spring (mass 1, stiffness 520,
      damping 32 -> 4.4% overshoot, 312ms), sampled into linear() because CSS has
@@ -41,79 +51,96 @@
     1.0038 100.0%);
   --scroll-spring-ms: 312ms;
 
-  --btn-bg: #252526;
-  --btn-bg-pressed: #37373d;
-  --btn-fg: #cccccc;
-  --btn-border: 1px solid #3c3c3c;
-  --btn-radius: calc(var(--pad-radius) - var(--btn-inset));
-  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #3a3a3c inset;
+  --btn-bg: #15171a;
+  --btn-bg-pressed: #1b1e22;
+  --btn-fg: #c8ccd2;
+  --edge: #26292e;
+  /* The weave: a diagonal micro-texture faint enough to read as material, not
+     pattern. Fingers never see it; eyes do. */
+  --weave: rgba(255, 255, 255, 0.025);
+  --btn-shadow: none;
+  --btn-shadow-pressed: inset 0 0 0 1.5px var(--accent-line), 0 0 18px var(--accent-glow);
 
-  --scroll-bg: #1f1f1f;
-  --scroll-thumb: #4f4f4f;
-  --scroll-thumb-active: #4daafc;
-  --scroll-thumb-w: 4px;
-  --scroll-thumb-h: 34%;
+  --scroll-bg: #0e0f11;
+  --scroll-thumb: #4a4f57;
+  --scroll-thumb-active: var(--accent-line);
+  --scroll-thumb-w: 3px;
+  --scroll-thumb-h: 30%;
   /* Leeway at both ends: the thumb must stop short of the track's edge. */
-  --scroll-inset: 7px;
+  --scroll-inset: 9px;
 
-  /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
-  --led-off: #f14c4c;
-  --led-on: #23d18b;
-  --power-bg: #1a1a1a;
-  --power-border: 1px solid #333333;
-  --led-size: 9px;
+  /* Status LED: a glowing strip across a slim bar, not a dot in a button. */
+  --led-off: #ff2d55;
+  --led-on: #b6ff2e;
+  --led-on-glow: #b6ff2e;
+  --led-w: 60%;
+  --led-h: 3px;
+  --power-bg: #111316;
+  --power-edge: #26292e;
 
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
-  --label-size: 15px;
+  --font: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --label-size: 11px;
   --header-display: none;
   --logo-height: 18px;
   --pad-bottom-margin: 12%;
-  --pad-gap: 10px;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
-  --flash: #ffffff;
+  /* The recentre charge tints everything toward this. */
+  --flash: #b6ff2e;
 }
 
-/* Light appearance. Chosen on the Mac and pushed down as data-appearance on the
-   root element; with no explicit choice the phone's own setting decides. Only
-   the palette changes -- every rule below is written against these names. */
+@supports (corner-shape: bevel) {
+  :root { --chamfer: 22px; --chamfer-sm: 11px; --chamfer-xs: 7px; }
+  #pad, .btn, .cta, .ghost { corner-shape: bevel; }
+}
+
+/* Light appearance, "white carbon". Chosen on the Mac and pushed down as
+   data-appearance on the root element; with no explicit choice the phone's own
+   setting decides. Only the palette changes -- every rule below is written
+   against these names. */
 :root[data-appearance="light"],
 :root:not([data-appearance="dark"]):not([data-appearance="light"]) {
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-appearance="dark"]) {
-    --bg-off: #eef1f5;
-    --bg-on: #f7f9fb;
-    --fg: #141a21;
-    --fg-dim: #6b7a8c;
+    --bg-off: #e8eaee;
+    --bg-on: #edeff2;
+    --fg: #1c1f24;
+    --fg-dim: #6b717a;
+    --accent-line: #8ee000;
+    --accent-glow: rgba(142, 224, 0, 0.30);
     --btn-bg: #ffffff;
-    --btn-bg-pressed: #e3e9f0;
-    --btn-fg: #55647a;
-    --btn-border: 1px solid #d6dde5;
-    --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-    --scroll-bg: #e6ebf1;
-    --scroll-thumb: #9aa8b8;
+    --btn-bg-pressed: #f3f5f8;
+    --btn-fg: #1c1f24;
+    --edge: #d3d7dd;
+    --weave: rgba(0, 0, 0, 0.03);
+    --btn-shadow: 0 1px 2px rgba(28, 31, 36, 0.06);
+    --scroll-bg: #dfe2e7;
+    --scroll-thumb: #9aa0a9;
+    --led-on: #8ee000;
     --power-bg: #ffffff;
-    --power-border: 1px solid #dde3ea;
-    --flash: #1a2330;
+    --power-edge: #d3d7dd;
   }
 }
 :root[data-appearance="light"] {
-  --bg-off: #eef1f5;
-  --bg-on: #f7f9fb;
-  --fg: #141a21;
-  --fg-dim: #6b7a8c;
+  --bg-off: #e8eaee;
+  --bg-on: #edeff2;
+  --fg: #1c1f24;
+  --fg-dim: #6b717a;
+  --accent-line: #8ee000;
+  --accent-glow: rgba(142, 224, 0, 0.30);
   --btn-bg: #ffffff;
-  --btn-bg-pressed: #e3e9f0;
-  --btn-fg: #55647a;
-  --btn-border: 1px solid #d6dde5;
-  --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-  --scroll-bg: #e6ebf1;
-  --scroll-thumb: #9aa8b8;
+  --btn-bg-pressed: #f3f5f8;
+  --btn-fg: #1c1f24;
+  --edge: #d3d7dd;
+  --weave: rgba(0, 0, 0, 0.03);
+  --btn-shadow: 0 1px 2px rgba(28, 31, 36, 0.06);
+  --scroll-bg: #dfe2e7;
+  --scroll-thumb: #9aa0a9;
+  --led-on: #8ee000;
   --power-bg: #ffffff;
-  --power-border: 1px solid #dde3ea;
-  --flash: #1a2330;
+  --power-edge: #d3d7dd;
 }
 
 * { box-sizing: border-box; }
@@ -136,10 +163,11 @@ html, body {
 
 body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
 
-/* Recentering: the surface brightens over the hold. The browser interpolates
-   --recenter-progress itself for the full duration, so it is smooth at 60fps and
-   independent of how often the Mac sends state. Fingers cover the buttons and the
-   LED while holding, so the whole surface has to carry the feedback. */
+/* Recentering: the surface charges toward the lime over the hold. The browser
+   interpolates --recenter-progress itself for the full duration, so it is
+   smooth at 60fps and independent of how often the Mac sends state. Fingers
+   cover the buttons and the LED while holding, so the whole surface has to
+   carry the feedback. */
 body {
   --recenter-progress: 0;
   /* A share of the hold, not a fixed time: a deliberate tap to switch off can
@@ -148,7 +176,7 @@ body {
      Declared here, not on :root, because the page sets --recenter-ms on body --
      a var() resolves against the element the declaration sits on. */
   --recenter-delay: calc(var(--recenter-ms, 650ms) * 0.45);
-  /* Releasing before the hold completes fades the brightening away instead of
+  /* Releasing before the hold completes fades the charge away instead of
      cutting it. Background stays in this list: a second `transition` on body
      would replace this declaration, not extend it. */
   transition: background var(--dim-back-ms) ease-out,
@@ -158,25 +186,29 @@ body[data-state="hold"] {
   --recenter-progress: 1;
   /* Held back by --recenter-delay. Tapping power to switch off passes through
      this state for as long as the tap lasts, so without the delay every power
-     off began the brightening and then cut it short -- a flicker, not a
+     off began the charge and then cut it short -- a flicker, not a
      transition. The ramp still finishes at the same moment the Mac recentres. */
   transition: background var(--dim-back-ms) ease-out,
               --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
               ease-in var(--recenter-delay);
 }
 body[data-state="hold"] {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 7%), var(--bg-on));
 }
 body[data-state="hold"] .btn {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
+  background-color: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 7%),
+                              var(--btn-bg));
+  /* The edge brightens with the charge: the clearest part of the signal. */
+  border-color: color-mix(in srgb, var(--accent-line) calc(var(--recenter-progress, 0) * 75%),
+                          var(--edge));
   /* The base .btn rule transitions background over 60ms. Against a value that is
      already being interpolated every frame that only adds lag, so drop it here
      and let the property animation drive the colour directly. */
   transition: transform 60ms linear;
 }
-/* Land back on the resting colour rather than cutting out of the flash. */
+/* Land back on the resting colour rather than cutting out of the charge. */
 body[data-state="held"], body[data-state="held"] .btn {
-  transition: background 220ms ease-out;
+  transition: background-color 220ms ease-out, border-color 220ms ease-out;
 }
 
 #header {
@@ -184,9 +216,9 @@ body[data-state="held"], body[data-state="held"] .btn {
   align-items: center;
   gap: 8px;
   padding: calc(env(safe-area-inset-top) + 8px) 14px 4px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--fg-dim);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 #logo { height: var(--logo-height); opacity: 0.8; }
@@ -202,36 +234,44 @@ body[data-state="off"] #header { opacity: 0.35; }
   border-radius: var(--pad-radius);
 }
 
-/* Apple's corners are continuous curvature, not circular arcs. Browsers that
-   have corner-shape get the real thing; the rest keep plain rounding. */
-@supports (corner-shape: squircle) {
-  #pad, .btn { corner-shape: squircle; }
-}
-
 .btn {
   position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--btn-bg);
+  background-color: var(--btn-bg);
+  background-image: repeating-linear-gradient(135deg, var(--weave) 0 2px, transparent 2px 6px);
   color: var(--btn-fg);
-  border: var(--btn-border);
-  border-radius: var(--btn-radius);
+  border: 1px solid var(--edge);
+  border-radius: var(--chamfer);
   box-shadow: var(--btn-shadow);
   font-size: var(--label-size);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  transition: background 60ms linear, transform 60ms linear;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background-color 60ms linear, transform 60ms linear,
+              box-shadow 60ms linear, border-color 60ms linear;
 }
-.btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
+/* The corners facing the scroll strip take the smaller cut. */
+.role-left { border-radius: var(--chamfer) var(--chamfer-sm) var(--chamfer-sm) var(--chamfer); }
+.role-right { border-radius: var(--chamfer-sm) var(--chamfer) var(--chamfer) var(--chamfer-sm); }
+/* Pressed: the fill lifts one step and a lime edge lights inside the cut. */
+.btn[data-pressed="1"] {
+  background-color: var(--btn-bg-pressed);
+  box-shadow: var(--btn-shadow-pressed);
+  transform: scale(0.985);
+}
 .btn img { height: 28%; opacity: 0.85; }
 
-/* Scroll strip. The thumb sits where --scroll-pos (0..1) puts it while a finger
-   is down, and springs back to the middle on release. app.js only supplies the
-   number; everything about how it looks is here. */
+/* Scroll strip: a dark slot with a slim thumb. The thumb sits where
+   --scroll-pos (0..1) puts it while a finger is down, and springs back to the
+   middle on release. app.js only supplies the number; everything about how it
+   looks is here. */
 .role-scroll {
-  background: var(--scroll-bg);
-  border-radius: 999px;
+  background-color: var(--scroll-bg);
+  background-image: none;
+  border-radius: var(--chamfer-xs);
+  box-shadow: none;
   overflow: hidden;
 }
 .role-scroll::after {
@@ -240,7 +280,7 @@ body[data-state="off"] #header { opacity: 0.35; }
   left: 50%;
   width: var(--scroll-thumb-w);
   height: var(--scroll-thumb-h);
-  border-radius: 999px;
+  border-radius: 2px;
   background: var(--scroll-thumb);
   /* Centre it on the finger, but stop short of both ends rather than letting it
      touch: a thumb flush against the edge reads as broken. */
@@ -248,38 +288,53 @@ body[data-state="off"] #header { opacity: 0.35; }
              calc(var(--scroll-pos, 0.5) * 100% - var(--scroll-thumb-h) / 2),
              calc(100% - var(--scroll-thumb-h) - var(--scroll-inset)));
   transform: translateX(-50%);
-  transition: top var(--scroll-spring-ms) var(--scroll-spring), background 120ms linear;
+  transition: top var(--scroll-spring-ms) var(--scroll-spring),
+              background 120ms linear, box-shadow 120ms linear;
 }
-/* While dragging, follow the finger with no easing, then ease back on release. */
+/* While dragging, follow the finger with no easing, then ease back on release.
+   The slot itself does not light up; only the thumb goes live. */
+.role-scroll[data-pressed="1"] {
+  background-color: var(--scroll-bg);
+  box-shadow: none;
+  transform: none;
+}
 .role-scroll[data-pressed="1"]::after {
   background: var(--scroll-thumb-active);
-  transition: top 0s, background 120ms linear;
+  box-shadow: 0 0 6px var(--accent);
+  transition: top 0s, background 120ms linear, box-shadow 120ms linear;
 }
 
-/* Power: a small unobtrusive button whose only job is to carry the LED. */
+/* Power: a slim bar under the pads whose only job is to carry the LED, a
+   glowing strip across most of its width. Low profile on purpose: it is found
+   when looked for and never hit while pointing. */
 .role-power {
-  background: var(--power-bg);
-  border: var(--power-border);
-  border-radius: 999px;
+  background-color: var(--power-bg);
+  background-image: none;
+  border: 1px solid var(--power-edge);
+  border-radius: var(--chamfer-xs);
   box-shadow: none;
 }
 .role-power::after {
   content: "";
-  width: var(--led-size);
-  height: var(--led-size);
-  border-radius: 50%;
+  width: var(--led-w);
+  height: var(--led-h);
+  border-radius: 2px;
   background: var(--led-off);
-  box-shadow: 0 0 7px var(--led-off), 0 0 2px #000 inset;
+  box-shadow: 0 0 8px var(--led-off), 0 0 2px var(--led-off);
   transition: background 140ms linear, box-shadow 140ms linear;
 }
-/* Green once the pointer is actually driving the cursor. */
+/* Lime once the pointer is actually driving the cursor. */
 body[data-state="on"] .role-power::after,
 body[data-state="hold"] .role-power::after,
 body[data-state="held"] .role-power::after {
   background: var(--led-on);
-  box-shadow: 0 0 9px var(--led-on), 0 0 2px #000 inset;
+  box-shadow: 0 0 10px var(--led-on-glow), 0 0 3px var(--led-on-glow);
 }
-.role-power[data-pressed="1"] { transform: scale(0.97); }
+.role-power[data-pressed="1"] {
+  background-color: var(--power-bg);
+  box-shadow: none;
+  transform: scale(0.97);
+}
 
 /* The recenter ring used to draw here. Removed: a coloured wedge sweeping around
    the button read as a defect rather than progress, and fingers cover it anyway. */
@@ -290,7 +345,7 @@ body[data-state="held"] .role-power::after {
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.92);
+  background: rgba(10, 11, 13, 0.94);
   padding: 24px;
   text-align: center;
 }
@@ -298,25 +353,30 @@ body[data-state="loading"] #ov-start,
 body[data-state="nopermission"] #ov-denied { display: flex; }
 @media (orientation: landscape) { #ov-landscape { display: flex; } }
 
-.card h1 { font-size: 20px; margin: 0 0 8px; }
+.card h1 { font-size: 18px; margin: 0 0 8px; letter-spacing: 0.06em; text-transform: uppercase; }
 .card p { color: var(--fg-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
 .cta, .ghost {
   font: inherit;
-  font-size: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   padding: 14px 30px;
-  border-radius: 14px;
-  border: none;
+  border-radius: var(--chamfer-sm);
+  border: 1px solid transparent;
   margin: 4px;
 }
-.cta { background: var(--accent); color: #04121f; font-weight: 700; }
-.ghost { background: transparent; color: var(--fg-dim); border: var(--btn-border); }
+.cta { background: var(--accent); color: #0a0b0d; }
+.ghost { background: var(--btn-bg); color: var(--fg); border-color: var(--edge); }
 
 #banner {
   position: fixed;
   left: 0; right: 0;
   bottom: calc(env(safe-area-inset-bottom) + 6px);
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--danger);
   display: none;
 }
