@@ -4,15 +4,25 @@
   initial-value: 0;
 }
 
-/* Phice theme. Everything visual lives here: edit freely, the page reloads it live.
-   app.js never sets a colour, size or font of its own. */
+/* Phice theme, "Cupertino". Everything visual lives here: edit freely, the page
+   reloads it live. app.js never sets a colour, size or font of its own.
+
+   The look is layered material: a softly gradiented ground, and on it the
+   buttons as frosted-glass slabs -- a translucent fill, a one-pixel highlight
+   along the top edge, and an ambient shadow underneath. Pressing brightens the
+   glass and settles it down by three percent, the way an iOS control does. */
 :root {
-  --bg-off: #141414;
-  --bg-on: #1c1c1c;
-  --fg: #d4d4d4;
-  --fg-dim: #808080;
-  --accent: #4daafc;
-  --danger: #f14c4c;
+  --bg-off: #111113;
+  --bg-on: #1c1c1e;
+  /* The ground is not flat: a faint light from the top, fading out by the
+     middle. Alpha, so the solid colour underneath can still fade between states. */
+  --ground-top: rgba(255, 255, 255, 0.05);
+  --ground-bottom: rgba(255, 255, 255, 0);
+  --fg: #f5f5f7;
+  --fg-dim: #8e8e93;
+  --accent: #0a84ff;
+  --accent-ink: #ffffff;
+  --danger: #ff453a;
 
   /* Corner radii are concentric: an inner shape's radius is its container's
      radius minus the gap between them, so every curve shares a centre. Change
@@ -20,7 +30,7 @@
   --screen-radius: 55px;
   --pad-margin: 8px;
   --pad-radius: calc(var(--screen-radius) - var(--pad-margin));
-  --btn-inset: 12px;
+  --btn-inset: 13px;
 
   /* Scroll thumb snap-back. A real damped spring (mass 1, stiffness 520,
      damping 32 -> 4.4% overshoot, 312ms), sampled into linear() because CSS has
@@ -41,29 +51,41 @@
     1.0038 100.0%);
   --scroll-spring-ms: 312ms;
 
-  --btn-bg: #252526;
-  --btn-bg-pressed: #37373d;
-  --btn-fg: #cccccc;
-  --btn-border: 1px solid #3c3c3c;
+  /* Glass. The fill is translucent so the ground's gradient shows through it;
+     the highlight is the light catching the top edge of the slab. */
+  --btn-bg: rgba(255, 255, 255, 0.08);
+  --btn-bg-pressed: rgba(255, 255, 255, 0.16);
+  --btn-fg: #f5f5f7;
+  --btn-border: 1px solid rgba(255, 255, 255, 0.06);
   --btn-radius: calc(var(--pad-radius) - var(--btn-inset));
-  --btn-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, 0 1px 0 #3a3a3c inset;
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --btn-shadow-pressed: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 3px 10px rgba(0, 0, 0, 0.3);
+  --btn-blur: 20px;
+  /* Spring-ish ease-out: quick to arrive, soft to settle. */
+  --press-ms: 120ms;
+  --press-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  --scroll-bg: #1f1f1f;
-  --scroll-thumb: #4f4f4f;
-  --scroll-thumb-active: #4daafc;
-  --scroll-thumb-w: 4px;
+  --scroll-bg: rgba(255, 255, 255, 0.06);
+  --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  --scroll-thumb: rgba(255, 255, 255, 0.6);
+  --scroll-thumb-active: #0a84ff;
+  --scroll-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --scroll-thumb-w: 6px;
   --scroll-thumb-h: 34%;
   /* Leeway at both ends: the thumb must stop short of the track's edge. */
   --scroll-inset: 7px;
 
-  /* Status LED, after the G Pro Superlight: a small lamp in a subtle button. */
-  --led-off: #f14c4c;
-  --led-on: #23d18b;
-  --power-bg: #1a1a1a;
-  --power-border: 1px solid #333333;
+  /* Status LED in a small glass pill, like a toggle at rest. */
+  --led-off: #ff453a;
+  --led-on: #30d158;
+  --power-bg: rgba(255, 255, 255, 0.08);
+  --power-border: 1px solid rgba(255, 255, 255, 0.06);
+  --power-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 3px 10px rgba(0, 0, 0, 0.3);
   --led-size: 9px;
+  --led-glow: 7px;
 
-  --font: -apple-system, system-ui, "SF Pro Text", sans-serif;
+  --overlay-bg: rgba(17, 17, 19, 0.94);
+  --font: -apple-system, system-ui, "SF Pro Text", "Segoe UI", sans-serif;
   --label-size: 15px;
   --header-display: none;
   --logo-height: 18px;
@@ -71,49 +93,78 @@
   --pad-gap: 10px;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
-  --flash: #ffffff;
+  /* Recentring tints the surface toward the accent, not toward white. */
+  --flash: #0a84ff;
 }
 
 /* Light appearance. Chosen on the Mac and pushed down as data-appearance on the
    root element; with no explicit choice the phone's own setting decides. Only
-   the palette changes -- every rule below is written against these names. */
+   the palette changes -- every rule below is written against these names.
+   Light is iOS's grouped background with white glass on it: the slabs are
+   nearly opaque, the shadow is soft and low, the highlight is a white edge. */
 :root[data-appearance="light"],
 :root:not([data-appearance="dark"]):not([data-appearance="light"]) {
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-appearance="dark"]) {
-    --bg-off: #eef1f5;
-    --bg-on: #f7f9fb;
-    --fg: #141a21;
-    --fg-dim: #6b7a8c;
-    --btn-bg: #ffffff;
-    --btn-bg-pressed: #e3e9f0;
-    --btn-fg: #55647a;
-    --btn-border: 1px solid #d6dde5;
-    --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-    --scroll-bg: #e6ebf1;
-    --scroll-thumb: #9aa8b8;
-    --power-bg: #ffffff;
-    --power-border: 1px solid #dde3ea;
-    --flash: #1a2330;
+    --bg-off: #f2f2f7;
+    --bg-on: #f8f8fb;
+    --ground-top: rgba(255, 255, 255, 0.55);
+    --ground-bottom: rgba(255, 255, 255, 0);
+    --fg: #1d1d1f;
+    --fg-dim: #6e6e73;
+    --accent: #007aff;
+    --danger: #ff3b30;
+    --btn-bg: rgba(255, 255, 255, 0.72);
+    --btn-bg-pressed: rgba(255, 255, 255, 0.95);
+    --btn-fg: #1d1d1f;
+    --btn-border: 1px solid rgba(0, 0, 0, 0.04);
+    --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px rgba(0, 0, 0, 0.08);
+    --btn-shadow-pressed: inset 0 1px 0 rgba(255, 255, 255, 1), 0 2px 8px rgba(0, 0, 0, 0.06);
+    --scroll-bg: rgba(0, 0, 0, 0.05);
+    --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+    --scroll-thumb: #ffffff;
+    --scroll-thumb-active: #007aff;
+    --scroll-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    --led-off: #ff3b30;
+    --led-on: #34c759;
+    --power-bg: rgba(255, 255, 255, 0.72);
+    --power-border: 1px solid rgba(0, 0, 0, 0.04);
+    --power-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 3px 10px rgba(0, 0, 0, 0.07);
+    --led-glow: 5px;
+    --overlay-bg: rgba(242, 242, 247, 0.94);
+    --flash: #007aff;
   }
 }
 :root[data-appearance="light"] {
-  --bg-off: #eef1f5;
-  --bg-on: #f7f9fb;
-  --fg: #141a21;
-  --fg-dim: #6b7a8c;
-  --btn-bg: #ffffff;
-  --btn-bg-pressed: #e3e9f0;
-  --btn-fg: #55647a;
-  --btn-border: 1px solid #d6dde5;
-  --btn-shadow: 0 1px 2px rgba(16, 24, 32, 0.07), 0 0 0 1px rgba(16, 24, 32, 0.02);
-  --scroll-bg: #e6ebf1;
-  --scroll-thumb: #9aa8b8;
-  --power-bg: #ffffff;
-  --power-border: 1px solid #dde3ea;
-  --flash: #1a2330;
+  --bg-off: #f2f2f7;
+  --bg-on: #f8f8fb;
+  --ground-top: rgba(255, 255, 255, 0.55);
+  --ground-bottom: rgba(255, 255, 255, 0);
+  --fg: #1d1d1f;
+  --fg-dim: #6e6e73;
+  --accent: #007aff;
+  --danger: #ff3b30;
+  --btn-bg: rgba(255, 255, 255, 0.72);
+  --btn-bg-pressed: rgba(255, 255, 255, 0.95);
+  --btn-fg: #1d1d1f;
+  --btn-border: 1px solid rgba(0, 0, 0, 0.04);
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 6px 18px rgba(0, 0, 0, 0.08);
+  --btn-shadow-pressed: inset 0 1px 0 rgba(255, 255, 255, 1), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --scroll-bg: rgba(0, 0, 0, 0.05);
+  --scroll-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  --scroll-thumb: #ffffff;
+  --scroll-thumb-active: #007aff;
+  --scroll-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --led-off: #ff3b30;
+  --led-on: #34c759;
+  --power-bg: rgba(255, 255, 255, 0.72);
+  --power-border: 1px solid rgba(0, 0, 0, 0.04);
+  --power-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 3px 10px rgba(0, 0, 0, 0.07);
+  --led-glow: 5px;
+  --overlay-bg: rgba(242, 242, 247, 0.94);
+  --flash: #007aff;
 }
 
 * { box-sizing: border-box; }
@@ -121,7 +172,10 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: var(--bg-off);
+  /* Colour and gradient are separate longhands on purpose: the state rules below
+     change only the colour, so the gradient stays put and the colour still fades. */
+  background-color: var(--bg-off);
+  background-image: linear-gradient(to bottom, var(--ground-top), var(--ground-bottom) 55%);
   color: var(--fg);
   font-family: var(--font);
   overscroll-behavior: none;
@@ -131,15 +185,16 @@ html, body {
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
   /* Easing out, so switching off settles rather than snapping. */
-  transition: background var(--dim-back-ms) ease-out;
+  transition: background-color var(--dim-back-ms) ease-out;
 }
 
-body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
+body[data-state="on"], body[data-state="held"] { background-color: var(--bg-on); }
 
-/* Recentering: the surface brightens over the hold. The browser interpolates
-   --recenter-progress itself for the full duration, so it is smooth at 60fps and
-   independent of how often the Mac sends state. Fingers cover the buttons and the
-   LED while holding, so the whole surface has to carry the feedback. */
+/* Recentering: the surface tints toward the accent over the hold. The browser
+   interpolates --recenter-progress itself for the full duration, so it is smooth
+   at 60fps and independent of how often the Mac sends state. Fingers cover the
+   buttons and the LED while holding, so the whole surface has to carry the
+   feedback. */
 body {
   --recenter-progress: 0;
   /* A share of the hold, not a fixed time: a deliberate tap to switch off can
@@ -148,31 +203,33 @@ body {
      Declared here, not on :root, because the page sets --recenter-ms on body --
      a var() resolves against the element the declaration sits on. */
   --recenter-delay: calc(var(--recenter-ms, 650ms) * 0.45);
-  /* Releasing before the hold completes fades the brightening away instead of
-     cutting it. Background stays in this list: a second `transition` on body
-     would replace this declaration, not extend it. */
-  transition: background var(--dim-back-ms) ease-out,
+  /* Releasing before the hold completes fades the tint away instead of cutting
+     it. Background stays in this list: a second `transition` on body would
+     replace this declaration, not extend it. */
+  transition: background-color var(--dim-back-ms) ease-out,
               --recenter-progress var(--recenter-drop-ms) ease-out;
 }
 body[data-state="hold"] {
   --recenter-progress: 1;
   /* Held back by --recenter-delay. Tapping power to switch off passes through
      this state for as long as the tap lasts, so without the delay every power
-     off began the brightening and then cut it short -- a flicker, not a
-     transition. The ramp still finishes at the same moment the Mac recentres. */
-  transition: background var(--dim-back-ms) ease-out,
+     off began the tint and then cut it short -- a flicker, not a transition.
+     The ramp still finishes at the same moment the Mac recentres. */
+  transition: background-color var(--dim-back-ms) ease-out,
               --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
               ease-in var(--recenter-delay);
 }
 body[data-state="hold"] {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 13%), var(--bg-on));
+  background-color: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 10%),
+                              var(--bg-on));
 }
 body[data-state="hold"] .btn {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 9%), var(--btn-bg));
-  /* The base .btn rule transitions background over 60ms. Against a value that is
-     already being interpolated every frame that only adds lag, so drop it here
-     and let the property animation drive the colour directly. */
-  transition: transform 60ms linear;
+  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * 10%),
+                        var(--btn-bg));
+  /* The base .btn rule transitions background. Against a value that is already
+     being interpolated every frame that only adds lag, so drop it here and let
+     the property animation drive the colour directly. */
+  transition: transform var(--press-ms) var(--press-ease);
 }
 /* Land back on the resting colour rather than cutting out of the flash. */
 body[data-state="held"], body[data-state="held"] .btn {
@@ -218,21 +275,36 @@ body[data-state="off"] #header { opacity: 0.35; }
   border: var(--btn-border);
   border-radius: var(--btn-radius);
   box-shadow: var(--btn-shadow);
+  -webkit-backdrop-filter: blur(var(--btn-blur));
+  backdrop-filter: blur(var(--btn-blur));
   font-size: var(--label-size);
   font-weight: 600;
-  letter-spacing: 0.08em;
-  transition: background 60ms linear, transform 60ms linear;
+  letter-spacing: -0.01em;
+  transition: background var(--press-ms) ease-out, transform var(--press-ms) var(--press-ease),
+              box-shadow var(--press-ms) ease-out;
 }
-.btn[data-pressed="1"] { background: var(--btn-bg-pressed); transform: scale(0.985); }
+.btn[data-pressed="1"] {
+  background: var(--btn-bg-pressed);
+  box-shadow: var(--btn-shadow-pressed);
+  transform: scale(0.97);
+}
 .btn img { height: 28%; opacity: 0.85; }
 
-/* Scroll strip. The thumb sits where --scroll-pos (0..1) puts it while a finger
-   is down, and springs back to the middle on release. app.js only supplies the
-   number; everything about how it looks is here. */
+/* Scroll strip: a translucent capsule with a glassy thumb. The thumb sits where
+   --scroll-pos (0..1) puts it while a finger is down, and springs back to the
+   middle on release. app.js only supplies the number; everything about how it
+   looks is here. */
 .role-scroll {
   background: var(--scroll-bg);
   border-radius: 999px;
+  box-shadow: var(--scroll-shadow);
   overflow: hidden;
+}
+/* The track holds still under a finger; the thumb is what answers. */
+.role-scroll[data-pressed="1"] {
+  background: var(--scroll-bg);
+  box-shadow: var(--scroll-shadow);
+  transform: none;
 }
 .role-scroll::after {
   content: "";
@@ -242,6 +314,7 @@ body[data-state="off"] #header { opacity: 0.35; }
   height: var(--scroll-thumb-h);
   border-radius: 999px;
   background: var(--scroll-thumb);
+  box-shadow: var(--scroll-thumb-shadow);
   /* Centre it on the finger, but stop short of both ends rather than letting it
      touch: a thumb flush against the edge reads as broken. */
   top: clamp(var(--scroll-inset),
@@ -256,12 +329,12 @@ body[data-state="off"] #header { opacity: 0.35; }
   transition: top 0s, background 120ms linear;
 }
 
-/* Power: a small unobtrusive button whose only job is to carry the LED. */
+/* Power: a small glass pill, a toggle at rest, whose only job is to carry the LED. */
 .role-power {
   background: var(--power-bg);
   border: var(--power-border);
   border-radius: 999px;
-  box-shadow: none;
+  box-shadow: var(--power-shadow);
 }
 .role-power::after {
   content: "";
@@ -269,7 +342,7 @@ body[data-state="off"] #header { opacity: 0.35; }
   height: var(--led-size);
   border-radius: 50%;
   background: var(--led-off);
-  box-shadow: 0 0 7px var(--led-off), 0 0 2px #000 inset;
+  box-shadow: 0 0 var(--led-glow) var(--led-off), 0 0 2px rgba(0, 0, 0, 0.5) inset;
   transition: background 140ms linear, box-shadow 140ms linear;
 }
 /* Green once the pointer is actually driving the cursor. */
@@ -277,9 +350,9 @@ body[data-state="on"] .role-power::after,
 body[data-state="hold"] .role-power::after,
 body[data-state="held"] .role-power::after {
   background: var(--led-on);
-  box-shadow: 0 0 9px var(--led-on), 0 0 2px #000 inset;
+  box-shadow: 0 0 calc(var(--led-glow) + 2px) var(--led-on), 0 0 2px rgba(0, 0, 0, 0.5) inset;
 }
-.role-power[data-pressed="1"] { transform: scale(0.97); }
+.role-power[data-pressed="1"] { transform: scale(0.96); box-shadow: var(--power-shadow); }
 
 /* The recenter ring used to draw here. Removed: a coloured wedge sweeping around
    the button read as a defect rather than progress, and fingers cover it anyway. */
@@ -290,7 +363,9 @@ body[data-state="held"] .role-power::after {
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.92);
+  background: var(--overlay-bg);
+  -webkit-backdrop-filter: blur(var(--btn-blur));
+  backdrop-filter: blur(var(--btn-blur));
   padding: 24px;
   text-align: center;
 }
@@ -298,18 +373,19 @@ body[data-state="loading"] #ov-start,
 body[data-state="nopermission"] #ov-denied { display: flex; }
 @media (orientation: landscape) { #ov-landscape { display: flex; } }
 
-.card h1 { font-size: 20px; margin: 0 0 8px; }
-.card p { color: var(--fg-dim); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+.card h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+.card p { color: var(--fg-dim); font-size: 15px; line-height: 1.45; margin: 0 0 18px; }
 .cta, .ghost {
   font: inherit;
-  font-size: 16px;
+  font-size: 17px;
+  font-weight: 600;
   padding: 14px 30px;
   border-radius: 14px;
   border: none;
   margin: 4px;
 }
-.cta { background: var(--accent); color: #04121f; font-weight: 700; }
-.ghost { background: transparent; color: var(--fg-dim); border: var(--btn-border); }
+.cta { background: var(--accent); color: var(--accent-ink); }
+.ghost { background: var(--btn-bg); color: var(--fg); border: var(--btn-border); }
 
 #banner {
   position: fixed;
