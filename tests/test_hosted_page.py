@@ -3,6 +3,7 @@
 The page is plain files with no build step and no JS test runner, so these check
 the few invariants that have actually broken in the field.
 """
+import re
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,21 @@ def test_the_message_listener_is_attached_before_anything_can_arrive(js):
     body = body[:body.index("\n  }")]
     assert body.index('addEventListener("message"') < body.index("const ready"), \
         "the message listener must come first"
+
+
+def test_the_phone_rides_through_a_renewal(js):
+    """The Mac republishes under the same code every five minutes and needs a
+    few seconds to gather the new offer. Eight seconds of retries could miss
+    that window, and the message then sent people to the Mac for a fresh code
+    that never changes."""
+    m = re.search(r"attempt < (\d+) && !offer", js)
+    assert m, "the retry loop moved"
+    loop = js[js.index("let offer = null"):js.index("if (!offer)")]
+    d = re.search(r"setTimeout\(r, (\d+)\)\)", loop)
+    assert d, "the retry delay moved"
+    assert int(m.group(1)) * int(d.group(1)) >= 20_000, "retry for at least twenty seconds"
+    assert "fresh one" not in js
+    assert "renews the code by itself" in js
+    v = re.search(r'CLIENT_VERSION = "(\d+)"', js)
+    assert v, "the client version constant moved"
+    assert int(v.group(1)) >= 11, "the client changed, so its version must"
