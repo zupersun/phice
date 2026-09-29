@@ -1,25 +1,27 @@
-/* Phice control panel -- "Superlight". Edit freely: the window reloads it live,
-   exactly like the phone's theme.css. Nothing here is compiled into the app.
+/* Phice control panel -- "Superlight" in Cupertino's colours. Edit freely: the
+   window reloads it live, exactly like the phone's theme.css. Nothing here is
+   compiled into the app.
 
-   Monochrome, tonal, seamless: cards are a step up from the ground with no
-   edge, rows are parted by hairlines, switches are grooves with a matte knob.
-   The one colour is a cool slate, spent only on the code and the primary
-   button; the status dots are the LEDs.
+   Tonal, seamless: cards are a step up from the ground with no edge, rows are
+   parted by hairlines, switches are grooves with a matte knob. The palette is
+   iOS: the system grouped background and greys, system blue on the code, the
+   tinted buttons and the primary button, the system red, orange and green for
+   the status dots.
 
    Appearance: the page sets data-theme="light" or "dark" on <html> for an explicit
    choice, or leaves it unset to follow the system via prefers-color-scheme. This
    file is the only place that decides what those states look like. */
 :root {
-  --bg: #f2f2f0;
-  --fg: #1c1c1e;
-  --dim: #5c5c60;
-  --accent: #5b7290;
+  --bg: #f2f2f7;
+  --fg: #1d1d1f;
+  --dim: #6e6e73;
+  --accent: #007aff;
   --accent-ink: #ffffff;
-  --ok: #30b452;
-  --warn: #c98a1e;
-  --bad: #e0352b;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --bad: #ff3b30;
   --card: #ffffff;
-  --seg-track: #e4e4e2;
+  --seg-track: #e3e3e8;
   --seg-knob: #ffffff;
   --groove: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
   --knob-edge: 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -34,9 +36,9 @@
     1.0328 75.0%, 1.0282 78.1%, 1.0236 81.2%, 1.0193 84.4%,
     1.0153 87.5%, 1.0117 90.6%, 1.0086 93.8%, 1.0060 96.9%,
     1.0038 100.0%);
-  --line: #ebebe9;
-  --btn-bg: #ececea;
-  --btn-bg-hover: #e3e3e1;
+  --line: #ebebf0;
+  --btn-bg: #e5e5ea;
+  --btn-bg-hover: #dcdce1;
   --code-size: 44px;
   --radius: 16px;
   --font: -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -44,61 +46,61 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f0f10;
-    --fg: #e2e2e5;
-    --dim: #8a8a90;
-    --accent: #7a8fa6;
-    --accent-ink: #0f0f10;
+    --bg: #111113;
+    --fg: #f5f5f7;
+    --dim: #8e8e93;
+    --accent: #0a84ff;
+    --accent-ink: #ffffff;
     --ok: #30d158;
-    --warn: #d9a53a;
-    --bad: #ff3b30;
-    --card: #19191b;
-    --seg-track: #0a0a0b;
-    --seg-knob: #2e2e32;
+    --warn: #ff9f0a;
+    --bad: #ff453a;
+    --card: #1c1c1e;
+    --seg-track: #0c0c0e;
+    --seg-knob: #3a3a3c;
     --groove: 0 1px 2px rgba(0, 0, 0, 0.6) inset;
     --knob-edge: none;
-    --line: #26262a;
-    --btn-bg: #232326;
-    --btn-bg-hover: #2b2b2f;
+    --line: #2c2c2e;
+    --btn-bg: #2c2c2e;
+    --btn-bg-hover: #3a3a3c;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f0f10;
-  --fg: #e2e2e5;
-  --dim: #8a8a90;
-  --accent: #7a8fa6;
-  --accent-ink: #0f0f10;
+  --bg: #111113;
+  --fg: #f5f5f7;
+  --dim: #8e8e93;
+  --accent: #0a84ff;
+  --accent-ink: #ffffff;
   --ok: #30d158;
-  --warn: #d9a53a;
-  --bad: #ff3b30;
-  --card: #19191b;
-  --seg-track: #0a0a0b;
-  --seg-knob: #2e2e32;
+  --warn: #ff9f0a;
+  --bad: #ff453a;
+  --card: #1c1c1e;
+  --seg-track: #0c0c0e;
+  --seg-knob: #3a3a3c;
   --groove: 0 1px 2px rgba(0, 0, 0, 0.6) inset;
   --knob-edge: none;
-  --line: #26262a;
-  --btn-bg: #232326;
-  --btn-bg-hover: #2b2b2f;
+  --line: #2c2c2e;
+  --btn-bg: #2c2c2e;
+  --btn-bg-hover: #3a3a3c;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --bg: #f2f2f0;
-  --fg: #1c1c1e;
-  --dim: #5c5c60;
-  --accent: #5b7290;
+  --bg: #f2f2f7;
+  --fg: #1d1d1f;
+  --dim: #6e6e73;
+  --accent: #007aff;
   --accent-ink: #ffffff;
-  --ok: #30b452;
-  --warn: #c98a1e;
-  --bad: #e0352b;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --bad: #ff3b30;
   --card: #ffffff;
-  --seg-track: #e4e4e2;
+  --seg-track: #e3e3e8;
   --seg-knob: #ffffff;
   --groove: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
   --knob-edge: 0 0 0 1px rgba(0, 0, 0, 0.05);
-  --line: #ebebe9;
-  --btn-bg: #ececea;
-  --btn-bg-hover: #e3e3e1;
+  --line: #ebebf0;
+  --btn-bg: #e5e5ea;
+  --btn-bg-hover: #dcdce1;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -156,10 +158,11 @@ body[data-pairing="connected"] .code-life { visibility: hidden; }
 .row .what { flex: 1; }
 .row .val { color: var(--dim); font-size: 13px; }
 
-/* Tonal pills. The primary one is the only filled thing in the window. */
+/* Tonal pills with blue text, the iOS tinted button. The primary one is the
+   only filled thing in the window. */
 button {
   font: inherit; font-size: 13px; font-weight: 500;
-  background: var(--btn-bg); color: var(--fg);
+  background: var(--btn-bg); color: var(--accent);
   border: 0; border-radius: 999px;
   padding: 9px 15px; margin: 6px 6px 0 0;
 }

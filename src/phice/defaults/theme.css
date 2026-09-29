@@ -4,22 +4,25 @@
   initial-value: 0;
 }
 
-/* Phice theme -- "Superlight". The phone is the shell of a G Pro X Superlight:
-   one matte material, no borders, no gloss. The buttons are the pad's own colour
-   a hair lighter, parted from it and from each other by a hairline seam of pad
-   colour, exactly as the two main buttons split on the mouse. The only light on
-   the whole surface is the LED.
+/* Phice theme -- "Superlight", in Cupertino's colours. The phone is still the
+   shell of a G Pro X Superlight: one matte material, no borders, no gloss, the
+   buttons a tonal step up from the shell and parted from the wheel channel by a
+   seam of shell colour. The palette is iOS: the system grouped greys for the
+   shell and the buttons, system blue for the one accent (overlays, the scroll
+   thumb under a finger, the recentre tint), the system red and green for the
+   LED. The seam either side of the wheel is a full percent and the channel is
+   eight, the same spacing as the Cupertino iteration.
 
    Everything visual lives here: edit freely, the page reloads it live. app.js
    never sets a colour, size or font of its own. */
 :root {
-  --bg-off: #0f0f10;                 /* the shell, and the seams between buttons */
-  --bg-on: #121214;                  /* a hair lighter once the pointer is armed */
-  --fg: #9a9a9f;
-  --fg-dim: #6c6c72;
-  --accent: #7a8fa6;                 /* overlays only: the pad carries no accent */
-  --accent-ink: #0f0f10;
-  --danger: #ff3b30;
+  --bg-off: #111113;                 /* the shell, and the seams between buttons */
+  --bg-on: #151517;                  /* a hair lighter once the pointer is armed */
+  --fg: #f5f5f7;
+  --fg-dim: #8e8e93;
+  --accent: #0a84ff;                 /* overlays and the thumb under a finger */
+  --accent-ink: #ffffff;
+  --danger: #ff453a;
 
   --pad-margin: 6px;
   --pad-radius: 44px;
@@ -50,28 +53,28 @@
     1.0038 100.0%);
   --scroll-spring-ms: 312ms;
 
-  --btn-bg: #19191b;
-  --btn-bg-pressed: #141416;
-  --btn-fg: #9a9a9f;
+  --btn-bg: #1c1c1e;
+  --btn-bg-pressed: #161618;
+  --btn-fg: #f5f5f7;
   --btn-border: none;                /* the seam does the separating */
   --btn-shadow: none;
 
   /* The wheel channel: recessed, darker than the shell it is cut into. */
-  --scroll-bg: #0a0a0b;
+  --scroll-bg: #0a0a0c;
   --scroll-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) inset;
-  --scroll-thumb: #3a3a3e;
-  --scroll-thumb-active: #6b6b70;
+  --scroll-thumb: #48484a;
+  --scroll-thumb-active: #0a84ff;
   --scroll-thumb-w: 6px;
   --scroll-thumb-h: 11%;
   /* Leeway at both ends: the thumb must stop short of the track's edge. */
   --scroll-inset: 7px;
 
   /* Status LED in the underside power slider: small, quiet, the one lamp. */
-  --led-off: #ff3b30;
+  --led-off: #ff453a;
   --led-on: #30d158;
   --led-size: 9px;
   --led-glow: 6px;
-  --power-bg: #151517;
+  --power-bg: #171719;
   --power-border: none;
 
   --font: -apple-system, system-ui, "Segoe UI", sans-serif;
@@ -81,57 +84,63 @@
   --pad-bottom-margin: 10%;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
-  /* The recentre hold warms the whole shell by this share of --flash. */
-  --flash: #ffffff;
-  --flash-bg: 7%;
-  --flash-btn: 7%;
+  /* The recentre hold tints the whole shell toward the accent by this share. */
+  --flash: #0a84ff;
+  --flash-bg: 10%;
+  --flash-btn: 10%;
 }
 
-/* Light appearance: the white Superlight. Chosen on the Mac and pushed down as
-   data-appearance on the root element; with no explicit choice the phone's own
-   setting decides. Only the palette changes -- every rule below is written
-   against these names. */
+/* Light appearance: the white Superlight on iOS's grouped background. Chosen on
+   the Mac and pushed down as data-appearance on the root element; with no
+   explicit choice the phone's own setting decides. Only the palette changes --
+   every rule below is written against these names. */
 :root[data-appearance="light"],
 :root:not([data-appearance="dark"]):not([data-appearance="light"]) {
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-appearance="dark"]) {
-    --bg-off: #f2f2f0;
-    --bg-on: #f5f5f3;
-    --fg: #5c5c60;
-    --fg-dim: #8a8a8e;
-    --accent: #5b7290;
+    --bg-off: #f2f2f7;
+    --bg-on: #f6f6fb;
+    --fg: #1d1d1f;
+    --fg-dim: #6e6e73;
+    --accent: #007aff;
     --accent-ink: #ffffff;
+    --danger: #ff3b30;
     --btn-bg: #ffffff;
-    --btn-bg-pressed: #ececea;
-    --btn-fg: #5c5c60;
+    --btn-bg-pressed: #ebebf0;
+    --btn-fg: #1d1d1f;
     --btn-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
-    --scroll-bg: #e4e4e2;
+    --scroll-bg: #e3e3e8;
     --scroll-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
-    --scroll-thumb: #b8b8b6;
-    --scroll-thumb-active: #8e8e8c;
-    --power-bg: #e9e9e7;
-    --flash: #3a3834;
+    --scroll-thumb: #aeaeb2;
+    --scroll-thumb-active: #007aff;
+    --led-off: #ff3b30;
+    --led-on: #34c759;
+    --power-bg: #e9e9ee;
+    --flash: #007aff;
   }
 }
 :root[data-appearance="light"] {
-  --bg-off: #f2f2f0;
-  --bg-on: #f5f5f3;
-  --fg: #5c5c60;
-  --fg-dim: #8a8a8e;
-  --accent: #5b7290;
+  --bg-off: #f2f2f7;
+  --bg-on: #f6f6fb;
+  --fg: #1d1d1f;
+  --fg-dim: #6e6e73;
+  --accent: #007aff;
   --accent-ink: #ffffff;
+  --danger: #ff3b30;
   --btn-bg: #ffffff;
-  --btn-bg-pressed: #ececea;
-  --btn-fg: #5c5c60;
+  --btn-bg-pressed: #ebebf0;
+  --btn-fg: #1d1d1f;
   --btn-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
-  --scroll-bg: #e4e4e2;
+  --scroll-bg: #e3e3e8;
   --scroll-shadow: 0 1px 2px rgba(0, 0, 0, 0.12) inset;
-  --scroll-thumb: #b8b8b6;
-  --scroll-thumb-active: #8e8e8c;
-  --power-bg: #e9e9e7;
-  --flash: #3a3834;
+  --scroll-thumb: #aeaeb2;
+  --scroll-thumb-active: #007aff;
+  --led-off: #ff3b30;
+  --led-on: #34c759;
+  --power-bg: #e9e9ee;
+  --flash: #007aff;
 }
 
 * { box-sizing: border-box; }

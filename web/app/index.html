@@ -31,21 +31,21 @@
   /* The pairing chrome follows the appearance chosen on the Mac. Before a
      connection exists there is nothing to ask, so it falls back to the phone's
      own setting; once the Mac tells us, data-appearance overrides it. It is
-     cut from the same shell as the pad: matte, tonal, one slate accent. */
-  :root{--sh-bg:#0f0f10;--sh-fg:#e2e2e5;--sh-dim:#8a8a90;--sh-field:#0a0a0b;
+     cut from the same shell as the pad: matte, tonal, iOS greys, system blue. */
+  :root{--sh-bg:#111113;--sh-fg:#f5f5f7;--sh-dim:#8e8e93;--sh-field:#0a0a0c;
        --sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.6) inset;
-       --sh-accent:#7a8fa6;--sh-ink:#0f0f10}
+       --sh-accent:#0a84ff;--sh-ink:#ffffff}
   @media (prefers-color-scheme: light){
-    :root:not([data-appearance="dark"]){--sh-bg:#f2f2f0;--sh-fg:#1c1c1e;--sh-dim:#5c5c60;
-      --sh-field:#e4e4e2;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
-      --sh-accent:#5b7290;--sh-ink:#ffffff}
+    :root:not([data-appearance="dark"]){--sh-bg:#f2f2f7;--sh-fg:#1d1d1f;--sh-dim:#6e6e73;
+      --sh-field:#e3e3e8;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
+      --sh-accent:#007aff;--sh-ink:#ffffff}
   }
-  :root[data-appearance="light"]{--sh-bg:#f2f2f0;--sh-fg:#1c1c1e;--sh-dim:#5c5c60;
-    --sh-field:#e4e4e2;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
-    --sh-accent:#5b7290;--sh-ink:#ffffff}
-  :root[data-appearance="dark"]{--sh-bg:#0f0f10;--sh-fg:#e2e2e5;--sh-dim:#8a8a90;
-    --sh-field:#0a0a0b;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.6) inset;
-    --sh-accent:#7a8fa6;--sh-ink:#0f0f10}
+  :root[data-appearance="light"]{--sh-bg:#f2f2f7;--sh-fg:#1d1d1f;--sh-dim:#6e6e73;
+    --sh-field:#e3e3e8;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.12) inset;
+    --sh-accent:#007aff;--sh-ink:#ffffff}
+  :root[data-appearance="dark"]{--sh-bg:#111113;--sh-fg:#f5f5f7;--sh-dim:#8e8e93;
+    --sh-field:#0a0a0c;--sh-line:transparent;--sh-inset:0 1px 2px rgba(0,0,0,.6) inset;
+    --sh-accent:#0a84ff;--sh-ink:#ffffff}
   html,body{height:100%;margin:0;background:var(--sh-bg);color:var(--sh-fg);
             font:16px -apple-system,system-ui,"Segoe UI",sans-serif;
             touch-action:none;-webkit-user-select:none;user-select:none;
@@ -94,7 +94,7 @@
     .pulse i:first-child{opacity:.4;transform:scale(1)}
   }
   #link-note{position:fixed;left:0;right:0;bottom:8px;z-index:11;text-align:center;
-             font-size:12px;color:#ffb340;margin:0}
+             font-size:12px;color:#ff9f0a;margin:0}
   body[data-link="unstable"] #link-note{display:block}
   body:not([data-link="unstable"]) #link-note{display:none}
 </style>
