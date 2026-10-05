@@ -81,7 +81,7 @@
   --label-size: 15px;
   --header-display: none;
   --logo-height: 18px;
-  --pad-bottom-margin: 10%;
+  --pad-bottom-margin: 8px;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
   /* The recentre hold lifts the whole shell toward white by this share. */
@@ -224,8 +224,10 @@ body[data-state="off"] #header { opacity: 0.35; }
 
 #pad {
   position: relative;
-  /* No header: the pad takes the full height below the safe area. */
-  height: calc(100% - var(--pad-bottom-margin) - env(safe-area-inset-top));
+  /* No header: the pad takes the full height between the safe areas, so a
+     block slid to the bottom really is at the bottom, clear of the home bar. */
+  height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+               - var(--pad-bottom-margin));
   padding-top: env(safe-area-inset-top);
   margin: 0 calc(env(safe-area-inset-left) + var(--pad-margin))
           0 calc(env(safe-area-inset-right) + var(--pad-margin));
@@ -380,10 +382,10 @@ body[data-state="disconnected"] #banner { display: block; }
   transition: translate 320ms cubic-bezier(0.2, 0.8, 0.2, 1),
               background 60ms linear, transform 60ms linear;
 }
-.btn.thumb { --block-travel: 55.5cqh; }
+.btn.thumb { --block-travel: 56.5cqh; }
 /* The centred mouse is the same block idea: pads and power as one piece,
    50% tall, so 44% of travel. */
-.btn.ergo-c { --block-travel: 44cqh; }
+.btn.ergo-c { --block-travel: 46cqh; }
 /* While the panel's block is under a finger the Mac relays that too, and the
    phone follows without the spring; the spring plays once on release. */
 body[data-block-dragging] .btn.thumb, body[data-block-dragging] .btn.ergo-c {

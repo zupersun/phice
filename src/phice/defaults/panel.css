@@ -374,7 +374,7 @@ b { color: var(--fg); font-weight: 500; }
 }
 .mini[data-dragging] i { transition: none; }
 /* left or right thumb: the stack and its wheel */
-.place[data-v="thumb-left"] .mini, .place[data-v="thumb-right"] .mini { --mini-travel: 56px; }
+.place[data-v="thumb-left"] .mini, .place[data-v="thumb-right"] .mini { --mini-travel: 58px; }
 .place[data-v="thumb-left"] .mini .block, .place[data-v="thumb-right"] .mini .block,
 .place[data-v="thumb-left"] .mini .wheel, .place[data-v="thumb-right"] .mini .wheel { display: block; height: 42px; }
 .mini .block { width: 20px; border-radius: 5px; }
@@ -384,7 +384,7 @@ b { color: var(--fg); font-weight: 500; }
 .place[data-v="thumb-left"] .mini .block { left: 5px; }
 .place[data-v="thumb-left"] .mini .wheel { left: 29px; }
 /* centred: the mouse, pads and power as one piece */
-.place[data-v="thumb-centre"] .mini { --mini-travel: 44px; }
+.place[data-v="thumb-centre"] .mini { --mini-travel: 46px; }
 .place[data-v="thumb-centre"] .mini .pad-l, .place[data-v="thumb-centre"] .mini .pad-r,
 .place[data-v="thumb-centre"] .mini .power, .place[data-v="thumb-centre"] .mini .wheel { display: block; }
 .place[data-v="thumb-centre"] .mini .pad-l, .place[data-v="thumb-centre"] .mini .pad-r { width: 17px; height: 36px; border-radius: 5px; }
