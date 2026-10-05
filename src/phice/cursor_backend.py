@@ -6,6 +6,7 @@ display, y grows downward.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
@@ -121,15 +122,86 @@ class FakeCursor:
                 "scroll": sum(e.dy for e in self.events if e.kind == "scroll")}
 
 
+#: Stamped into kCGEventSourceUserData on every scroll event we post, so the
+#: watch in QuartzCursor can tell our events from the trackpad's and see which
+#: way each one came out. The low bits say which sign went in.
+_SCROLL_TAG = 0x5048494345 << 8      # "PHICE"
+_TAG_UP, _TAG_DOWN = _SCROLL_TAG | 1, _SCROLL_TAG | 2
+
+
 class QuartzCursor:
-    """Posts real events through Quartz Event Services. Needs Accessibility permission."""
+    """Posts real events through Quartz Event Services. Needs Accessibility permission.
 
-    def __init__(self) -> None:
-        import Quartz  # type: ignore[import-not-found]
+    Scroll events are tagged and watched on their way out: a scroll reverser
+    such as Scroll Reverser negates every scroll event it takes for a mouse,
+    ours included, and nothing short of looking tells (see `_watch_scroll`).
+    """
 
-        self._q = Quartz
+    def __init__(self, quartz=None) -> None:
+        if quartz is None:
+            import Quartz  # type: ignore[import-not-found]
+
+            quartz = Quartz
+        self._q = quartz
         self._displays_cache: list[Rect] = []
         self._displays_ts = 0.0
+        #: True while our scroll events come out of the window server with the
+        #: opposite sign to the one we posted; `scroll` pre-flips to match.
+        self.scroll_reversed = False
+        self._tap = None
+        self.scroll_watch = self._watch_scroll()   # "listen", "filter" or "off"
+
+    def _watch_scroll(self) -> str:
+        """Watch our own scroll events come out of the window server.
+
+        macOS applies Natural scrolling to real devices in the HID layer and
+        leaves posted events alone. Scroll reversers (Scroll Reverser, Mos,
+        LinearMouse...) sit on an event tap instead and negate everything they
+        take for a mouse, which is exactly what a posted event looks like, so
+        the pointer scrolled backwards on precisely the Macs whose owners had
+        fixed their mouse. The only way to know what the application received
+        is to look: a listen-only tap at the annotated-session level sits
+        behind every reverser, and each of our events carries a tag saying
+        which sign went in. A filtering tap that passes everything through is
+        the fallback when the system refuses a listener: on some versions that
+        needs Input Monitoring, while Accessibility, which we have anyway, is
+        enough for a filter.
+        """
+        q = self._q
+        mask = q.CGEventMaskBit(q.kCGEventScrollWheel)
+        for option, name in ((q.kCGEventTapOptionListenOnly, "listen"),
+                             (q.kCGEventTapOptionDefault, "filter")):
+            tap = q.CGEventTapCreate(q.kCGAnnotatedSessionEventTap, q.kCGTailAppendEventTap,
+                                     option, mask, self._on_scroll, None)
+            if tap is not None:
+                self._tap = tap
+                threading.Thread(target=self._run_tap, args=(tap,),
+                                 name="phice-scroll-watch", daemon=True).start()
+                return name
+        log.warning("cannot watch scroll events, so a scroll reverser would go unnoticed")
+        return "off"
+
+    def _run_tap(self, tap) -> None:
+        q = self._q
+        source = q.CFMachPortCreateRunLoopSource(None, tap, 0)
+        q.CFRunLoopAddSource(q.CFRunLoopGetCurrent(), source, q.kCFRunLoopCommonModes)
+        q.CGEventTapEnable(tap, True)
+        q.CFRunLoopRun()
+
+    def _on_scroll(self, proxy, kind, ev, refcon):
+        q = self._q
+        try:
+            if kind in (q.kCGEventTapDisabledByTimeout, q.kCGEventTapDisabledByUserInput):
+                q.CGEventTapEnable(self._tap, True)   # the system switches a slow tap off
+            else:
+                tag = q.CGEventGetIntegerValueField(ev, q.kCGEventSourceUserData)
+                if tag in (_TAG_UP, _TAG_DOWN):
+                    out = q.CGEventGetIntegerValueField(ev, q.kCGScrollWheelEventPointDeltaAxis1)
+                    if out:
+                        self.scroll_reversed = (out > 0) != (tag == _TAG_UP)
+        except Exception:  # a filtering tap that raises drops the event for everyone
+            log.debug("scroll watch", exc_info=True)
+        return ev
 
     def _post(self, ev) -> None:
         self._q.CGEventPost(self._q.kCGHIDEventTap, ev)
@@ -166,8 +238,11 @@ class QuartzCursor:
 
     def scroll(self, dy_px: int) -> None:
         q = self._q
-        ev = q.CGEventCreateScrollWheelEvent(None, q.kCGScrollEventUnitPixel, 1, int(dy_px))
+        dy = -int(dy_px) if self.scroll_reversed else int(dy_px)
+        ev = q.CGEventCreateScrollWheelEvent(None, q.kCGScrollEventUnitPixel, 1, dy)
         q.CGEventSetIntegerValueField(ev, q.kCGScrollWheelEventIsContinuous, 1)
+        q.CGEventSetIntegerValueField(ev, q.kCGEventSourceUserData,
+                                      _TAG_UP if dy > 0 else _TAG_DOWN)
         self._post(ev)
 
     def displays(self) -> list[Rect]:

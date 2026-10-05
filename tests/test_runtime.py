@@ -204,3 +204,19 @@ def test_the_walkthrough_stylesheet_is_the_users_file_like_the_panels(tmp_path):
     rt = Runtime(paths, FakeCursor(), 0)
     paths.howto_css.write_text(".howto{color:red}")
     assert rt.control._pages["/howto.css"]() == b".howto{color:red}"
+
+
+def test_the_debug_snapshot_says_whether_scrolling_is_being_reversed(tmp_path):
+    """Scrolling backwards has one look-here answer: a scroll reverser is
+    negating the Mac's own events, and whether the backend can see that."""
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+
+    class _Watched(FakeCursor):
+        scroll_reversed = True
+        scroll_watch = "listen"
+
+    d = Runtime(paths, _Watched(), 0)._debug_cursor()
+    assert d["scroll_reversed"] is True and d["scroll_watch"] == "listen"
+    d = Runtime(paths, FakeCursor(), 0)._debug_cursor()
+    assert d["scroll_reversed"] is False and d["scroll_watch"] == "off"

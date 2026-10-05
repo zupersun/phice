@@ -248,6 +248,10 @@ class Runtime:
             x, y = self.backend.get_position()
             d.update(x=x, y=y)
         d["phase"] = self.engine.phase.value
+        # Scrolling backwards has one look-here answer: a scroll reverser is
+        # negating the Mac's own events, and whether the backend can see that.
+        d["scroll_reversed"] = bool(getattr(self.backend, "scroll_reversed", False))
+        d["scroll_watch"] = getattr(self.backend, "scroll_watch", "off")
         return d
 
     async def _status_loop(self) -> None:

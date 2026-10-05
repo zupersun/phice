@@ -58,6 +58,7 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
 | `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
 | `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel says so, and the menu bar does too unless it is still asking for Accessibility; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
+| `scroll_reversed: true` | A scroll reverser (Scroll Reverser, Mos, LinearMouse...) is negating the Mac's own scroll events as it would a mouse's, and the backend is compensating; the strip still scrolls the way `scroll_natural` says. Scrolling backwards with this `false` and `scroll_watch: "off"` means the tap could not be created, so the reverser goes unnoticed: see constraint 16. |
 
 The pointer switching itself off a second after it is armed is the packet timeout doing
 its job, not a bug: no packets are arriving.
@@ -210,6 +211,20 @@ These were each discovered the hard way. Changing them re-breaks the product.
     fetchable gets answered, and that answer fails on the new peer connection, whereas a
     missing offer is simply retried. The monotonic bound of lifetime plus one second is
     only a backstop for a wall clock that steps backwards.
+16. **Posted scroll events are not subject to Natural scrolling, but they are subject to scroll
+    reversers.** macOS applies the Natural setting to real devices in the HID layer and leaves
+    posted events alone: flipping the stored preference, the toggle apps' private call and the
+    window server's own flag changed nothing about a posted event. Scroll Reverser and its kind
+    negate every scroll event they take for a mouse, and a posted event looks like a mouse, so
+    the pointer scrolled backwards on exactly the Macs whose owners had fixed their mouse.
+    `QuartzCursor` therefore tags each scroll event it posts and watches it come out of a
+    listen-only tap behind every reverser; when the sign has flipped it pre-flips the next
+    ones. One step after a reverser starts or stops goes the wrong way, and nothing else does;
+    Scroll Reverser takes a continuous event for the trackpad's when two or more fingers
+    touched the trackpad within the last fifth of a second, so a hand set down mid-scroll
+    counts as the reverser stopping.
+    Do not replace this with reading `com.apple.swipescrolldirection`: that setting has nothing
+    to do with it, and `scroll_natural` means what it says either way.
 
 ## Why the page is hosted
 

@@ -54,7 +54,7 @@ defaults, backing up whatever was there.
 | `scroll_min_px_per_s` | Floor speed for any deflection past the dead band, so a small nudge does something visible. |
 | `scroll_rate_px_per_s` | Speed at the very ends of the strip. |
 | `scroll_rate_expo` | How sharply speed grows with distance from the centre. Lower is more linear. |
-| `scroll_natural` | Scroll direction. Flip it if scrolling feels backwards. |
+| `scroll_natural` | Which way the strip scrolls: `false` like a mouse wheel (thumb towards the bottom of the strip moves the page towards its end), `true` like a touch surface. Holds whatever the Mac's own Natural scrolling setting is, and whether or not a scroll reverser is running: the Mac watches its own scroll events come out the other side and compensates. |
 | `auto_activate` | Turn the pointer on by itself when you pick the phone up. |
 | `auto_deactivate` | Turn the pointer off by itself when you set the phone down. |
 | `pickup_ms` | How long the phone must be raised before `auto_activate` fires. |
