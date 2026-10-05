@@ -194,11 +194,14 @@ def test_the_panel_sizes_its_window_and_hides_what_it_says_it_hides():
     showed for everyone because its flex rule beat the attribute."""
     from phice.templates import PANEL_HTML
     assert "ResizeObserver" in PANEL_HTML and "/debug/panel-size" in PANEL_HTML
+    # The content's height, not the document's: a document is never shorter
+    # than its window, so measuring it let the window grow but never shrink.
+    assert "body.offsetHeight" in PANEL_HTML and "scrollHeight" not in PANEL_HTML
     css = (DEFAULTS_DIR / "panel.css").read_text()
     assert "[hidden] { display: none !important; }" in css
     steps = PANEL_HTML[PANEL_HTML.index('<ol class="steps">'):PANEL_HTML.index("</ol>")]
     assert "iPhone" not in steps and "over the web" not in steps and "so it can tell" not in steps
-    assert "power button" in steps
+    assert "cursor on screen and tap the power button" in steps
 
 
 def test_the_code_life_bar_lands_a_catch_up_at_once():
