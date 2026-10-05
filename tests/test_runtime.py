@@ -164,3 +164,43 @@ def test_window_requests_are_a_one_shot_mailbox():
     assert w.take_panel() == ("http://127.0.0.1:1/calibrate", True)
     assert w.take_panel() is True
     assert w.take_panel() is False
+
+
+def test_the_panel_can_ask_for_its_own_height(tmp_path):
+    """The window is only as tall as what the page holds: the page measures
+    itself and posts the number, the Mac clamps it, and the menu bar thread
+    resizes the window. Only the latest request matters."""
+    from phice.cursor_backend import FakeCursor
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+    from phice.window import WindowRequests
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    ask = rt.control._settings["/debug/panel-size"]
+    assert ask("448") is True
+    assert rt.windows.take_panel_height() == 448
+    assert rt.windows.take_panel_height() is None, "taken once"
+    assert ask("5000") is True and rt.windows.take_panel_height() == 1000, "clamped"
+    assert ask("tall") is False and ask("") is False
+
+    w = WindowRequests()
+    w.resize_panel(500)
+    w.resize_panel(520)
+    assert w.take_panel_height() == 520, "the latest wins"
+
+
+def test_the_walkthrough_stylesheet_is_the_users_file_like_the_panels(tmp_path):
+    """howto.css lives in the config folder beside panel.css, seeded from the
+    defaults and served from there, so the card restyles like everything else."""
+    from phice.cursor_backend import FakeCursor
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    assert paths.howto_css.exists()
+    rt = Runtime(paths, FakeCursor(), 0)
+    paths.howto_css.write_text(".howto{color:red}")
+    assert rt.control._pages["/howto.css"]() == b".howto{color:red}"

@@ -10,6 +10,7 @@ dependencies = [
     "pyobjc-framework-Cocoa>=10",
     "pyobjc-framework-ApplicationServices>=10",
     "pyobjc-framework-WebKit>=10",   # the control panel window
+    "segno>=1.6",
 ]
 
 [project.scripts]

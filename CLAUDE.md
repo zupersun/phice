@@ -105,8 +105,8 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
   move while the status says otherwise. The runtime polls it in `_status_loop`; do not
   move that back to the menu bar, which may never appear.
 - **The control panel is a WKWebView, not native widgets**, so its design lives in
-  `panel.css` in the config folder and the user can restyle it exactly like the phone's
-  theme. It loads `http://127.0.0.1:<port>/panel`, which App Transport Security blocks
+  `panel.css` in the config folder (and its How to use card's drawings in `howto.css`
+  beside it) and the user can restyle it exactly like the phone's theme. It loads `http://127.0.0.1:<port>/panel`, which App Transport Security blocks
   unless the bundle declares `NSAllowsLocalNetworking` -- the only symptom is a blank
   window. It opens at every launch because the pairing code changes each launch.
 - **The menu bar icon may be invisible.** macOS adds new status items to the left of
@@ -121,15 +121,15 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 Dependency order, and nothing may point backwards:
 
 ```
-orientation  filters  protocol  paths  panel_layout  calibrate  window   (no dependencies)
-templates    <- panel_layout
+orientation  filters  protocol  paths  panel_layout  panel_howto  calibrate  window  qr   (no dependencies)
+templates    <- panel_layout panel_howto
 config       <- paths
 status       <- paths
 engine       <- config cursor_backend filters orientation protocol
 rtc          <- engine paths protocol
 signaling    <- rtc
 control      <- templates
-runtime      <- calibrate config control engine paths rtc signaling status window
+runtime      <- calibrate config control engine paths qr rtc signaling status window
 menubar cli  <- runtime status
 ```
 

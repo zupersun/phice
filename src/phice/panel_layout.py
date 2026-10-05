@@ -52,6 +52,7 @@ let blockDragging = false;
 function applyLayout(name) {
   mode.dataset.v = name;
   place.dataset.v = name;
+  document.body.dataset.layout = name;   // the How to use card draws its phone in it
   mode.classList.toggle("ergo", name !== "standard");
   for (const s of mode.querySelectorAll(".stop")) {
     s.setAttribute("aria-checked", String(s.dataset.v === name));

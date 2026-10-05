@@ -1,0 +1,235 @@
+/* Phice control panel -- the How to use card. Edit freely, like panel.css: the
+   window reloads it live and nothing here is compiled into the app.
+
+   Four steps, one at a time: a small animation on the left, a line of words on
+   the right, and two arrows. The script sets only data-step on the card and
+   data-layout on body; everything drawn is here. The small phone is drawn in
+   whatever layout is set, so the finger goes where that layout puts the pads,
+   the wheel and the power pill. Colours for the panel itself (--fg, --accent,
+   --seg-track and the rest) come from panel.css; these are the drawings'. */
+:root {
+  --ph-shell: #f2f2f7; --ph-pad: #ffffff; --ph-pad-pressed: #ebebf0; --ph-groove: #e3e3e8;
+  --ph-thumb: #aeaeb2; --ph-power: #e9e9ee; --ph-ring: #d6d6db; --ph-edge: #c9c9ce;
+  --finger: rgba(0, 0, 0, 0.14); --finger-ring: rgba(0, 0, 0, 0.2); --beam: rgba(0, 122, 255, 0.55);
+  --lap-body: #dadade; --lap-keys: #c6c6cc; --lap-ring: #c0c0c6; --screen: #151517;
+  --menubar: rgba(255, 255, 255, 0.12); --dock: rgba(255, 255, 255, 0.2);
+  --hand: #d9d9de; --hand-ring: #c4c4ca;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ph-shell: #0f0f10; --ph-pad: #242427; --ph-pad-pressed: #1b1b1e; --ph-groove: #0a0a0c;
+    --ph-thumb: #48484a; --ph-power: #1d1d20; --ph-ring: #2c2c2e; --ph-edge: #1c1c1f;
+    --finger: rgba(255, 255, 255, 0.22); --finger-ring: rgba(255, 255, 255, 0.3);
+    --beam: rgba(10, 132, 255, 0.6);
+    --lap-body: #343439; --lap-keys: #26262a; --lap-ring: #4a4a50; --screen: #0a0a0c;
+    --menubar: rgba(255, 255, 255, 0.09); --dock: rgba(255, 255, 255, 0.15);
+    --hand: #3c3c41; --hand-ring: #505056;
+  }
+}
+:root[data-theme="dark"] {
+  --ph-shell: #0f0f10; --ph-pad: #242427; --ph-pad-pressed: #1b1b1e; --ph-groove: #0a0a0c;
+  --ph-thumb: #48484a; --ph-power: #1d1d20; --ph-ring: #2c2c2e; --ph-edge: #1c1c1f;
+  --finger: rgba(255, 255, 255, 0.22); --finger-ring: rgba(255, 255, 255, 0.3);
+  --beam: rgba(10, 132, 255, 0.6);
+  --lap-body: #343439; --lap-keys: #26262a; --lap-ring: #4a4a50; --screen: #0a0a0c;
+  --menubar: rgba(255, 255, 255, 0.09); --dock: rgba(255, 255, 255, 0.15);
+  --hand: #3c3c41; --hand-ring: #505056;
+}
+:root[data-theme="light"] {
+  --ph-shell: #f2f2f7; --ph-pad: #ffffff; --ph-pad-pressed: #ebebf0; --ph-groove: #e3e3e8;
+  --ph-thumb: #aeaeb2; --ph-power: #e9e9ee; --ph-ring: #d6d6db; --ph-edge: #c9c9ce;
+  --finger: rgba(0, 0, 0, 0.14); --finger-ring: rgba(0, 0, 0, 0.2); --beam: rgba(0, 122, 255, 0.55);
+  --lap-body: #dadade; --lap-keys: #c6c6cc; --lap-ring: #c0c0c6; --screen: #151517;
+  --menubar: rgba(255, 255, 255, 0.12); --dock: rgba(255, 255, 255, 0.2);
+  --hand: #d9d9de; --hand-ring: #c4c4ca;
+}
+
+/* The card: a title, then the stage beside the words. */
+.howto .t { display: block; font-size: 15px; font-weight: 500; letter-spacing: -0.01em; margin: 0 0 10px; }
+.howto .walk { display: grid; grid-template-columns: 150px 1fr; gap: 16px; align-items: center; }
+.howto .words { padding-left: 16px; }
+.stage { position: relative; height: 200px; display: flex; align-items: center; justify-content: center;
+         overflow: hidden; }
+.pg { display: none; position: relative; width: 100%; height: 100%; align-items: center; justify-content: center;
+      animation: howto-in 360ms ease-out both; }
+.howto[data-step="1"] .s-tap, .howto[data-step="2"] .s-desk,
+.howto[data-step="3"] .s-hold, .howto[data-step="4"] .s-click { display: flex; }
+@keyframes howto-in { from { opacity: 0; translate: 0 6px; } }
+.eyebrow { font-size: 11px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 4px; }
+/* Every caption takes two lines, so the arrows sit at one height on every step. */
+.cap { display: none; margin: 0; font-size: 14px; font-weight: 500; color: var(--fg);
+       text-wrap: balance; line-height: 1.4; min-height: 2.8em; }
+.howto[data-step="1"] .cap[data-n="1"], .howto[data-step="2"] .cap[data-n="2"],
+.howto[data-step="3"] .cap[data-n="3"], .howto[data-step="4"] .cap[data-n="4"] { display: block; }
+
+/* The arrows: grooves with a drawn chevron. On the first step there is only
+   Next, sitting where Back will be; stepping on, Next slides right and Back
+   springs in where it was. Back on step 1, Back leaves again. */
+.nav { display: flex; gap: 10px; margin-top: 12px; }
+.arrow { width: 30px; height: 30px; padding: 0; margin: 0; border-radius: 50%; border: 0;
+         background: var(--seg-track); color: var(--fg); box-shadow: var(--groove);
+         display: flex; align-items: center; justify-content: center; }
+.arrow:hover { background: var(--seg-track); color: var(--accent); }
+.arrow svg { display: block; width: 10px; height: 16px; }
+.nav .prev { transition: opacity 220ms ease-out, scale var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out); }
+.nav .next { transition: translate var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out); }
+.howto[data-step="1"] .nav .prev { opacity: 0; scale: 0.6; pointer-events: none; }
+.howto[data-step="1"] .nav .next { translate: -40px 0; }
+@media (prefers-reduced-motion: reduce) { .nav .prev, .nav .next { transition: none; } }
+
+/* The phone, in the pad's language. The finger's targets (--fx/--fy) travel
+   with the layout, published below for each preset. */
+.ph { position: relative; width: 86px; height: 174px; border-radius: 16px; background: var(--ph-shell);
+      box-shadow: 0 0 0 1.5px var(--ph-ring); flex: none;
+      --fx-pill: 50%; --fy-pill: 50.5%; --fx-l: 24%; --fy-l: 24%; --fx-r: 76%; --fy-r: 24%;
+      --fx-w: 50%; --fy-w0: 12%; --fy-w1: 36%; }
+.ph .pad { position: absolute; inset: 10px 6px 9px; }
+.ph i { position: absolute; display: block; background: var(--ph-pad); }
+.ph .l { left: 0; top: 0; width: 44%; height: 40%; border-radius: 12px 5px 5px 8px; }
+.ph .r { right: 0; top: 0; width: 44%; height: 40%; border-radius: 5px 12px 8px 5px; }
+.ph .w { left: 46%; top: 0; width: 8%; height: 40%; background: var(--ph-groove); border-radius: 999px; }
+.ph .w::after { content: ""; position: absolute; left: 50%; top: 44%; width: 2px; height: 12%;
+                translate: -50% 0; background: var(--ph-thumb); border-radius: 999px; }
+.ph .p { left: 38%; top: 46%; width: 24%; height: 7%; background: var(--ph-power); border-radius: 999px;
+         display: flex; align-items: center; justify-content: center; }
+.ph .p b { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--bad);
+           box-shadow: 0 0 4px color-mix(in srgb, var(--bad) 60%, transparent); }
+.ph .p::before { content: ""; position: absolute; inset: -4px; border-radius: 999px; opacity: 0;
+  background: conic-gradient(var(--accent) calc(var(--ring, 0) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); }
+/* centred: the same piece, slid down */
+body[data-layout="thumb-centre"] .ph .l, body[data-layout="thumb-centre"] .ph .r,
+body[data-layout="thumb-centre"] .ph .w { top: 32%; }
+body[data-layout="thumb-centre"] .ph .p { top: 78%; }
+body[data-layout="thumb-centre"] .ph { --fy-pill: 81%; --fy-l: 55%; --fy-r: 55%; --fy-w0: 44%; --fy-w1: 66%; }
+/* right thumb: the stack at the right edge, the wheel beside it, power one reach in */
+body[data-layout="thumb-right"] .ph .l { left: auto; right: 0; top: 34%; width: 40%; height: 19%;
+                                         border-radius: 8px 12px 5px 5px; }
+body[data-layout="thumb-right"] .ph .r { right: 0; top: 54%; width: 40%; height: 19%;
+                                         border-radius: 5px 5px 12px 8px; }
+body[data-layout="thumb-right"] .ph .w { left: auto; right: 43%; top: 34%; width: 8%; height: 39%; }
+body[data-layout="thumb-right"] .ph .p { left: auto; right: 55%; top: 50%; width: 12%; height: 6%; }
+body[data-layout="thumb-right"] .ph { --fx-pill: 39%; --fy-pill: 53%; --fx-l: 80%; --fy-l: 44%;
+                                      --fx-r: 80%; --fy-r: 63%; --fx-w: 57%; --fy-w0: 42%; --fy-w1: 66%; }
+/* left thumb: the mirror */
+body[data-layout="thumb-left"] .ph .l { left: 0; top: 34%; width: 40%; height: 19%;
+                                        border-radius: 12px 8px 5px 5px; }
+body[data-layout="thumb-left"] .ph .r { left: 0; right: auto; top: 54%; width: 40%; height: 19%;
+                                        border-radius: 5px 5px 8px 12px; }
+body[data-layout="thumb-left"] .ph .w { left: 43%; top: 34%; width: 8%; height: 39%; }
+body[data-layout="thumb-left"] .ph .p { left: 55%; top: 50%; width: 12%; height: 6%; }
+body[data-layout="thumb-left"] .ph { --fx-pill: 61%; --fy-pill: 53%; --fx-l: 20%; --fy-l: 44%;
+                                     --fx-r: 20%; --fy-r: 63%; --fx-w: 47%; --fy-w0: 42%; --fy-w1: 66%; }
+/* the small one on the desk */
+.ph.small { width: 30px; height: 62px; border-radius: 6px; box-shadow: 0 0 0 1px var(--ph-ring); }
+.ph.small .pad { inset: 4px 2px 3.5px; }
+.ph.small .l { border-radius: 5px 2px 2px 3px; } .ph.small .r { border-radius: 2px 5px 3px 2px; }
+body[data-layout="thumb-right"] .ph.small .l { border-radius: 3px 5px 2px 2px; }
+body[data-layout="thumb-right"] .ph.small .r { border-radius: 2px 2px 5px 3px; }
+body[data-layout="thumb-left"] .ph.small .l { border-radius: 5px 3px 2px 2px; }
+body[data-layout="thumb-left"] .ph.small .r { border-radius: 2px 2px 3px 5px; }
+.ph.small .w::after { width: 1px; }
+.ph.small .p b { width: 2px; height: 2px; background: var(--ok);
+                 box-shadow: 0 0 2px color-mix(in srgb, var(--ok) 70%, transparent); }
+/* the finger: a soft disc that lands where the layout says */
+.fg { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--finger);
+      box-shadow: 0 0 0 1px var(--finger-ring); opacity: 0; pointer-events: none; z-index: 2;
+      left: var(--fx-pill); top: var(--fy-pill); translate: -50% -50%; }
+
+/* 1 · tap: the finger lands on the pill and the lamp goes green; again, and it goes red */
+.s-tap .fg { animation: tap-finger 4.2s ease-in-out infinite; }
+.s-tap .ph .p { animation: tap-press 4.2s ease-in-out infinite; }
+.s-tap .ph .p b { animation: tap-lamp 4.2s steps(1) infinite; }
+@keyframes tap-finger { 0%, 8% { opacity: 0; scale: 1.3; } 14%, 20% { opacity: 1; scale: 1; }
+  26%, 50% { opacity: 0; scale: 1.3; } 56%, 62% { opacity: 1; scale: 1; } 68%, 100% { opacity: 0; scale: 1.3; } }
+@keyframes tap-press { 0%, 16% { scale: 1; } 18%, 22% { scale: 0.92; } 24%, 58% { scale: 1; }
+  60%, 64% { scale: 0.92; } 66%, 100% { scale: 1; } }
+@keyframes tap-lamp {
+  0%, 19% { background: var(--bad); box-shadow: 0 0 4px color-mix(in srgb, var(--bad) 60%, transparent); }
+  20%, 61% { background: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 70%, transparent); }
+  62%, 100% { background: var(--bad); box-shadow: 0 0 4px color-mix(in srgb, var(--bad) 60%, transparent); } }
+
+/* 2 · the desk, from beside it. A laptop in three-quarter view, built in 3D so
+   its perspective is true; the phone lying face up in the hand with its top
+   toward the screen, seen from the same raised viewpoint, so its face shows
+   foreshortened and its near edge and far end show the slab's thickness. The
+   wrist is the pivot: the phone tilts about it, the dotted beam swings with it,
+   and the cursor on the screen goes where the beam lands -- flatter aims lower,
+   steeper aims higher. */
+.scene { position: relative; width: 150px; height: 120px; perspective: 340px; perspective-origin: 74% 30%; }
+.lap { position: absolute; left: 42px; bottom: 9px; width: 84px; height: 66px; transform-style: preserve-3d;
+       transform-origin: 0 100%; transform: rotateY(52deg); }
+.lap > * { position: absolute; left: 0; bottom: 0; width: 84px; box-sizing: border-box; }
+.lap .base { height: 66px; border-radius: 3px; background: var(--lap-body); box-shadow: 0 0 0 1px var(--lap-ring);
+             transform-origin: 50% 100%; transform: rotateX(66deg); }
+.lap .base::before { content: ""; position: absolute; left: 9px; right: 9px; top: 8px; height: 30px;
+                     border-radius: 2px; background: var(--lap-keys); }
+.lap .base::after { content: ""; position: absolute; left: 50%; bottom: 5px; width: 26px; height: 14px;
+                    translate: -50% 0; border-radius: 2px; background: var(--lap-keys); }
+.lap .lip { height: 3px; bottom: -3px; border-radius: 0 0 2px 2px; background: var(--lap-keys);
+            box-shadow: 0 0 0 1px var(--lap-ring); }
+.lap .lid { height: 66px; border-radius: 4px 4px 2px 2px; background: var(--lap-body);
+            box-shadow: 0 0 0 1px var(--lap-ring); transform-origin: 50% 100%; overflow: hidden;
+            transform: translateY(-26.8px) translateZ(-60.3px) rotateX(8deg); }
+.lap .lid .scr { position: absolute; inset: 3px 3px 4px; border-radius: 2px; background: var(--screen); }
+.lap .lid .scr::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--menubar); }
+.lap .lid .scr::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 58%; height: 3.5px;
+                        translate: -50% 0; border-radius: 2px; background: var(--dock); }
+.lap .lid::before { content: ""; position: absolute; left: 50%; top: 1px; width: 1.5px; height: 1.5px;
+                    margin-left: -0.75px; border-radius: 50%; background: var(--lap-ring); }
+.lap .cur { position: absolute; left: 50%; top: 54%; width: 8px; height: 11px; margin: -3px 0 0 -2px;
+            animation: aim 5s ease-in-out infinite; }
+.lap .cur svg { display: block; width: 100%; height: 100%; }
+.lap .cur path { fill: #fff; stroke: #1d1d1f; stroke-width: 0.9; stroke-linejoin: round; }
+.held { position: absolute; left: 138px; bottom: 11px; width: 0; height: 0; rotate: 18deg;
+        animation: pitch 5s ease-in-out infinite; }
+.held .slab { position: absolute; left: 0; top: -16px; width: 0; height: 0; transform-style: preserve-3d;
+              transform-origin: 0 0; z-index: 2;
+              transform: perspective(300px) rotateX(-30deg) rotateY(90deg) rotateX(90deg); }
+.held .slab .ph { position: absolute; left: -15px; top: -62px; }
+.held .slab .edge { position: absolute; left: -15px; top: -62px; width: 3.5px; height: 62px;
+                    transform-origin: 0 0; transform: rotateY(90deg); background: var(--ph-edge); }
+.held .slab .endcap { position: absolute; left: -15px; top: -62px; width: 30px; height: 3.5px;
+                      transform-origin: 0 0; transform: rotateX(-90deg); background: var(--ph-edge); }
+/* the hand: a palm under the near end, the thumb on the near rim where no layout puts a control */
+.held .palm { position: absolute; left: -19px; top: -25px; width: 30px; height: 28px;
+              border-radius: 10px 12px 13px 13px; background: var(--hand);
+              box-shadow: 0 0 0 1px var(--hand-ring); z-index: 1; }
+.held .thumb { position: absolute; left: -15px; top: -11px; width: 18px; height: 7px; border-radius: 4px;
+               background: var(--hand); box-shadow: 0 0 0 1px var(--hand-ring); rotate: -8deg; z-index: 3; }
+.held .beam { position: absolute; left: -134px; top: -17px; width: 70px; height: 2px; border-radius: 1px;
+              background: repeating-linear-gradient(to left, var(--beam) 0 3px, transparent 3px 6px);
+              -webkit-mask: linear-gradient(to left, #000 40%, transparent);
+              mask: linear-gradient(to left, #000 40%, transparent); }
+@keyframes pitch { 0%, 10% { rotate: 18deg; } 35% { rotate: 12deg; } 65% { rotate: 25deg; } 90%, 100% { rotate: 18deg; } }
+@keyframes aim { 0%, 10% { translate: 0 0; } 35% { translate: 4px 13px; } 65% { translate: -5px -16px; }
+  90%, 100% { translate: 0 0; } }
+
+/* 3 · hold: the finger stays on the pill while a ring fills round it */
+.s-hold .fg { animation: hold-finger 4.6s ease-in-out infinite; }
+.s-hold .ph .p::before { animation: hold-ring 4.6s linear infinite; }
+.s-hold .ph .p b { background: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 70%, transparent); }
+@keyframes hold-finger { 0%, 8% { opacity: 0; scale: 1.3; } 14%, 56% { opacity: 1; scale: 1; } 62%, 100% { opacity: 0; scale: 1.3; } }
+@keyframes hold-ring { 0%, 18% { opacity: 0; --ring: 0; } 20% { opacity: 1; --ring: 0; } 38% { opacity: 1; --ring: 1; }
+  52% { opacity: 1; --ring: 1; } 60%, 100% { opacity: 0; --ring: 1; } }
+@property --ring { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+/* 4 · like a mouse: the left pad, the right pad, then a finger slides the wheel,
+   whose thumb goes blue under it as the real strip's does when pressed */
+.s-click .ph .p b { background: var(--ok); box-shadow: 0 0 5px color-mix(in srgb, var(--ok) 70%, transparent); }
+.s-click .fg { animation: click-finger 5s ease-in-out infinite; }
+.s-click .ph .l { animation: pad-l 5s steps(1) infinite; }
+.s-click .ph .r { animation: pad-r 5s steps(1) infinite; }
+.s-click .ph .w::after { animation: wheel 5s ease-in-out infinite; }
+@keyframes click-finger {
+  0%, 6% { opacity: 0; left: var(--fx-l); top: var(--fy-l); } 10%, 18% { opacity: 1; left: var(--fx-l); top: var(--fy-l); }
+  22% { opacity: 0; left: var(--fx-l); top: var(--fy-l); } 26% { opacity: 0; left: var(--fx-r); top: var(--fy-r); }
+  30%, 38% { opacity: 1; left: var(--fx-r); top: var(--fy-r); } 42% { opacity: 0; left: var(--fx-r); top: var(--fy-r); }
+  46% { opacity: 0; left: var(--fx-w); top: var(--fy-w0); } 52% { opacity: 1; left: var(--fx-w); top: var(--fy-w0); }
+  78% { opacity: 1; left: var(--fx-w); top: var(--fy-w1); } 84%, 100% { opacity: 0; left: var(--fx-w); top: var(--fy-w1); } }
+@keyframes pad-l { 0%, 11% { background: var(--ph-pad); } 12%, 19% { background: var(--ph-pad-pressed); } 20%, 100% { background: var(--ph-pad); } }
+@keyframes pad-r { 0%, 31% { background: var(--ph-pad); } 32%, 39% { background: var(--ph-pad-pressed); } 40%, 100% { background: var(--ph-pad); } }
+@keyframes wheel { 0%, 50% { top: 44%; background: var(--ph-thumb); } 52% { top: 44%; background: var(--accent); }
+  78%, 84% { top: 82%; background: var(--accent); } 86% { top: 82%; background: var(--ph-thumb); }
+  90%, 100% { top: 44%; background: var(--ph-thumb); } }

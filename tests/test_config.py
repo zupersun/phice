@@ -110,7 +110,7 @@ def test_paths_ensure_and_reset(tmp_path):
     assert (paths.assets / "logo.svg").exists()
     paths.theme_css.write_text("body{color:red}")
     backups = paths.reset_ui()
-    assert len(backups) == 5  # layout, theme, panel, calibrate, assets/
+    assert len(backups) == 6  # layout, theme, panel, howto, calibrate, assets/
     assert paths.theme_css.read_text() == (DEFAULTS_DIR / "theme.css").read_text()
 
 

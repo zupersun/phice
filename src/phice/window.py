@@ -28,6 +28,7 @@ class WindowRequests:
     _panel: bool = False                     # the plain control panel
     _page: tuple[str, bool] | None = None    # (url, fullscreen) for a specific page
     _close_calibration: bool = False
+    _panel_height: int | None = None         # the page's own measure of what it holds
 
     def show_panel(self) -> None:
         self._panel = True
@@ -51,6 +52,23 @@ class WindowRequests:
     def take_calibration_close(self) -> bool:
         done, self._close_calibration = self._close_calibration, False
         return done
+
+    def resize_panel(self, height: int) -> None:
+        self._panel_height = height
+
+    def request_height(self, value: str) -> bool:
+        """The panel's ?v=, a height in CSS pixels: the page measured itself.
+        Clamped to what a window can sensibly be; the latest request wins."""
+        try:
+            h = int(float(value))
+        except ValueError:
+            return False
+        self.resize_panel(max(320, min(1000, h)))
+        return True
+
+    def take_panel_height(self) -> int | None:
+        h, self._panel_height = self._panel_height, None
+        return h
 
 
 #: Built once, on first use: an Objective-C class cannot be defined twice under
@@ -118,11 +136,14 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                          | AppKit.NSWindowStyleMaskClosable
                          | AppKit.NSWindowStyleMaskFullSizeContentView)
             else:
-                rect = AppKit.NSMakeRect(0, 0, 420, 620)
+                # One width. Without the resizable style the zoom button is dead
+                # and full screen cannot happen, so every card stays the width it
+                # was designed at; minimise and close remain. The height follows
+                # the page: it measures itself and resize_panel() is called.
+                rect = AppKit.NSMakeRect(0, 0, 420, 470)
                 style = (AppKit.NSWindowStyleMaskTitled
                          | AppKit.NSWindowStyleMaskClosable
-                         | AppKit.NSWindowStyleMaskMiniaturizable
-                         | AppKit.NSWindowStyleMaskResizable)
+                         | AppKit.NSWindowStyleMaskMiniaturizable)
             cls = _fullscreen_window(AppKit) if fullscreen else AppKit.NSWindow
             win = cls.alloc().initWithContentRect_styleMask_backing_defer_(
                 rect, style, AppKit.NSBackingStoreBuffered, False)
@@ -143,6 +164,13 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                 win.setFrame_display_(rect, True)
             else:
                 win.center()
+                # Where it was left, from the second opening on. And it joins the
+                # active space when opened, a full-screen app's included, rather
+                # than switching the Mac back to the desktop to show itself.
+                win.setFrameAutosaveName_("PhicePanel")
+                win.setCollectionBehavior_(
+                    AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+                    | AppKit.NSWindowCollectionBehaviorMoveToActiveSpace)
             view = WebKit.WKWebView.alloc().initWithFrame_(rect)
             view.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
             win.setContentView_(view)
@@ -164,6 +192,31 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
     except Exception:
         log.exception("could not open the %s window", key)
         return False
+
+
+def resize_panel(height: float, key: str = "panel") -> None:
+    """Give the window the height its page asked for, keeping its top edge put.
+
+    The page is the only thing that knows how tall its content is, so it
+    measures itself and posts the number; this animates the frame to it.
+    AppKit frames are anchored at the bottom-left, so the origin moves by the
+    difference to keep the title bar where the user left it.
+    """
+    entry = _windows.get(key)
+    if entry is None:
+        return
+    try:
+        import AppKit
+        win = entry[0]
+        content = win.contentRectForFrameRect_(win.frame())
+        if abs(content.size.height - height) < 1:
+            return
+        wanted = AppKit.NSMakeRect(content.origin.x,
+                                   content.origin.y + content.size.height - height,
+                                   content.size.width, height)
+        win.setFrame_display_animate_(win.frameRectForContentRect_(wanted), True, True)
+    except Exception:
+        log.exception("could not resize the %s window", key)
 
 
 def close(key: str) -> None:

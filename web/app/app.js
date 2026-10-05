@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "12";
+  const CLIENT_VERSION = "13";
 
   const el = {
     body: document.body,
@@ -540,6 +540,11 @@
   // in a file with no test able to reach inside it.
   window.__phice = { handleMessage, renderLayout, applyState, state, el };
 
-  el.code.value = localStorage.getItem("phice.code") || "";
+  // The link can carry the code, as phice.vercel.app/?c=ABC123: the Mac's QR
+  // encodes it that way, so a scan needs no typing. A code in the link wins
+  // over the one typed last time.
+  const fromLink = (new URLSearchParams(location.search).get("c") || "")
+    .toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  el.code.value = fromLink.length === 6 ? fromLink : (localStorage.getItem("phice.code") || "");
   setScreen("pair");
 })();

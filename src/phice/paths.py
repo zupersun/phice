@@ -26,7 +26,7 @@ def resource_dir() -> Path:
 PACKAGE_DIR = resource_dir()
 DEFAULTS_DIR = PACKAGE_DIR / "defaults"
 WEB_DIR = PACKAGE_DIR / "web"
-UI_FILES = ("layout.json", "theme.css", "panel.css", "calibrate.css")
+UI_FILES = ("layout.json", "theme.css", "panel.css", "howto.css", "calibrate.css")
 
 
 def client_version() -> str:
@@ -64,6 +64,8 @@ class Paths:
     @property
     def panel_css(self) -> Path: return self.root / "panel.css"
     @property
+    def howto_css(self) -> Path: return self.root / "howto.css"
+    @property
     def layouts(self) -> Path: return self.root / "layouts"
     @property
     def calibrate_css(self) -> Path: return self.root / "calibrate.css"
@@ -95,8 +97,8 @@ class Paths:
         write_defaults(self.assets)
 
     def reset_ui(self) -> list[Path]:
-        """Restore layout, theme, panel and calibration files and assets/ from package
-        defaults, backing up existing files."""
+        """Restore the layout, theme, panel, walkthrough and calibration files and
+        assets/ from package defaults, backing up existing files."""
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backed_up: list[Path] = []
         for name in UI_FILES:

@@ -80,11 +80,12 @@ def test_pages_are_served_as_css(control):
 
 def test_the_two_documents_are_html_and_load_their_own_stylesheets(control):
     _, port = control
-    for doc, css in (("/panel", "/panel.css"), ("/calibrate", "/calibrate.css")):
+    for doc, sheets in (("/panel", ("/panel.css", "/howto.css")), ("/calibrate", ("/calibrate.css",))):
         status, ctype, body = get(port, doc)
         html = body.decode()
         assert status == 200 and "text/html" in ctype
-        assert f'href="{css}"' in html
+        for css in sheets:
+            assert f'href="{css}"' in html
         assert "<style" not in html, f"no design baked into {doc}"
 
 
@@ -164,3 +165,101 @@ def test_the_panel_offers_every_shipped_layout_and_nothing_else():
     assert set(re.findall(r'data-v="([^"]+)"', bar)) == presets
     assert "/debug/block" in PANEL_HTML and "/debug/block-drag" in PANEL_HTML
     assert 'id="grip"' not in PANEL_HTML
+
+
+def test_the_panel_is_two_screens():
+    """Until a phone connects the window shows only the way in: the ticket, the
+    steps, and the one permission worth fixing early. The controls arrive once
+    a phone has connected."""
+    from phice.templates import PANEL_HTML
+    a = PANEL_HTML.index('class="screen-pair"')
+    b = PANEL_HTML.index('class="screen-live"')
+    pair = PANEL_HTML[a:b]
+    live = PANEL_HTML[b:PANEL_HTML.index("<script>", b)]
+    assert 'id="qr"' in pair and 'id="code"' in pair and 'id="link"' in pair, \
+        "ticket: tile, code, address"
+    assert 'class="steps"' in pair and pair.count("<li>") == 3
+    assert 'id="grant"' in pair, "the one thing worth fixing before a phone arrives"
+    assert 'id="mode"' in live and 'id="calibrate"' in live and 'id="newcode"' in live
+    assert "Calibrate pointer<" in live, "no ellipsis"
+    for gone in ("How to connect", "Pointer feel", "Grip</b>", 'id="url"',
+                 'id="copy"', "Enter this on your phone", "It renews itself"):
+        assert gone not in PANEL_HTML, gone
+    assert "/debug/qr" in PANEL_HTML and "/debug/newcode" in PANEL_HTML
+
+
+def test_the_panel_sizes_its_window_and_hides_what_it_says_it_hides():
+    """The page measures itself and tells the Mac, so the window hugs its
+    content in every state. And an element the script marks hidden stays
+    hidden whatever display its own rule gives it: the permission card once
+    showed for everyone because its flex rule beat the attribute."""
+    from phice.templates import PANEL_HTML
+    assert "ResizeObserver" in PANEL_HTML and "/debug/panel-size" in PANEL_HTML
+    # The content's height, not the document's: a document is never shorter
+    # than its window, so measuring it let the window grow but never shrink.
+    assert "body.offsetHeight" in PANEL_HTML and "scrollHeight" not in PANEL_HTML
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "[hidden] { display: none !important; }" in css
+    steps = PANEL_HTML[PANEL_HTML.index('<ol class="steps">'):PANEL_HTML.index("</ol>")]
+    assert "iPhone" not in steps and "over the web" not in steps and "so it can tell" not in steps
+    assert "cursor on screen and tap the power button" in steps
+
+
+def test_the_panel_walks_through_how_to_use_in_four_steps():
+    """Under the controls, a card shows how to use the phone: four steps, one
+    at a time, each a small animation beside a line of words. Nothing advances
+    on its own; the arrows move it, and on the first step there is only Next,
+    so a fresh card cannot be stepped back from 1 to 4."""
+    from phice.panel_howto import HOWTO_CARD, HOWTO_SCRIPT
+    from phice.templates import PANEL_HTML
+    b = PANEL_HTML.index('class="screen-live"')
+    live = PANEL_HTML[b:PANEL_HTML.index("<script>", b)]
+    assert 'id="howto"' in live and "How to use" in live
+    assert live.index('id="calibrate"') < live.index('id="howto"'), "below the pointer card"
+    caps = re.findall(r'class="cap"[^>]*>(.*?)</p>', HOWTO_CARD, re.S)
+    assert [re.sub(r"\s+", " ", c).strip() for c in caps] == [
+        "Tap the power button to toggle on and off",
+        "Turn the phone to move the cursor",
+        "Hold the power button to recenter the cursor",
+        "Use like a normal<br>mouse",
+    ]
+    assert HOWTO_CARD.count('class="pg ') == 4, "one stage per step"
+    assert "setTimeout" not in HOWTO_SCRIPT and "setInterval" not in HOWTO_SCRIPT
+    assert "dataset.step" in HOWTO_SCRIPT, "the step is an attribute; howto.css shows the rest"
+    assert "prev.disabled" in HOWTO_SCRIPT, "Back is switched off on the first step"
+    assert "style=" not in HOWTO_CARD
+    css = (DEFAULTS_DIR / "howto.css").read_text()
+    assert '[data-step="1"] .nav .prev' in css, "and drawn out of the way"
+    for n in (1, 2, 3, 4):
+        assert f'[data-step="{n}"]' in css, n
+
+
+def test_the_walkthrough_draws_the_phone_in_the_chosen_layout():
+    """The small phone in the card is drawn in whatever layout is set, so the
+    finger goes where that layout puts the pads, the wheel and the power pill.
+    The layout script publishes the choice as an attribute on body, and
+    howto.css draws every preset the panel offers."""
+    from phice.panel_layout import LAYOUT_SCRIPT
+    assert "document.body.dataset.layout = name" in LAYOUT_SCRIPT
+    css = (DEFAULTS_DIR / "howto.css").read_text()
+    presets = {p.stem for p in (DEFAULTS_DIR / "layouts").glob("*.json")}
+    for preset in presets - {"standard"}:
+        assert f'body[data-layout="{preset}"]' in css, preset
+
+
+def test_howto_css_has_a_light_base_and_dark_overrides():
+    css = (DEFAULTS_DIR / "howto.css").read_text()
+    assert "@media (prefers-color-scheme: dark)" in css
+    assert ':root[data-theme="dark"]' in css
+    assert ':root[data-theme="light"]' in css
+
+
+def test_the_code_life_bar_lands_a_catch_up_at_once():
+    """Each second's poll moves the bar a hair, eased. After the window was
+    minimised, or when the code is new, the next poll moves it a long way, and
+    easing that raced the bar across the card. The script marks such a jump
+    and the stylesheet lands it without a transition."""
+    from phice.templates import PANEL_HTML
+    assert "codeJump" in PANEL_HTML, "the script marks a jump"
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "body[data-code-jump] .code-life i { transition: none; }" in css
