@@ -84,10 +84,11 @@
   --pad-bottom-margin: 8px;
   --recenter-drop-ms: 200ms;
   --dim-back-ms: 280ms;
-  /* The recentre hold lifts the whole shell toward white by this share. */
-  --flash: #ffffff;
-  --flash-bg: 5%;
-  --flash-btn: 7%;
+  /* The recentre hold: the pad pinches in by this share of itself, and the
+     LED swells by this share and its glow reaches this much further. */
+  --recenter-pinch: 0.08;
+  --recenter-swell: 0.5;
+  --recenter-glow: 16px;
 }
 
 /* Light appearance: the white Superlight on iOS's grouped background. Chosen on
@@ -118,7 +119,6 @@
     --led-off: #ff3b30;
     --led-on: #34c759;
     --power-bg: #e9e9ee;
-    --flash: #3a3834;
   }
 }
 :root[data-appearance="light"] {
@@ -140,7 +140,6 @@
   --led-off: #ff3b30;
   --led-on: #34c759;
   --power-bg: #e9e9ee;
-  --flash: #3a3834;
 }
 
 * { box-sizing: border-box; }
@@ -163,11 +162,9 @@ html, body {
 
 body[data-state="on"], body[data-state="held"] { background: var(--bg-on); }
 
-/* Recentering: the shell warms very slightly over the hold. The browser
-   interpolates --recenter-progress itself for the full duration, so it is
-   smooth at 60fps and independent of how often the Mac sends state. Fingers
-   cover the buttons and the LED while holding, so the whole surface has to
-   carry the feedback. */
+/* Recentering: the pad pinches in over the hold and the LED swells. The
+   browser interpolates --recenter-progress itself for the full duration, so it
+   is smooth at 60fps and independent of how often the Mac sends state. */
 body {
   --recenter-progress: 0;
   /* A share of the hold, not a fixed time: a deliberate tap to switch off can
@@ -176,7 +173,7 @@ body {
      Declared here, not on :root, because the page sets --recenter-ms on body --
      a var() resolves against the element the declaration sits on. */
   --recenter-delay: calc(var(--recenter-ms, 650ms) * 0.45);
-  /* Releasing before the hold completes fades the warming away instead of
+  /* Releasing before the hold completes fades the pinch away instead of
      cutting it. Background stays in this list: a second `transition` on body
      would replace this declaration, not extend it. */
   transition: background var(--dim-back-ms) ease-out,
@@ -186,27 +183,20 @@ body[data-state="hold"] {
   --recenter-progress: 1;
   /* Held back by --recenter-delay. Tapping power to switch off passes through
      this state for as long as the tap lasts, so without the delay every power
-     off began the warming and then cut it short -- a flicker, not a
+     off began the pinch and then cut it short -- a flicker, not a
      transition. The ramp still finishes at the same moment the Mac recentres. */
   transition: background var(--dim-back-ms) ease-out,
               --recenter-progress calc(var(--recenter-ms, 1000ms) - var(--recenter-delay))
               ease-in var(--recenter-delay);
 }
-body[data-state="hold"] {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * var(--flash-bg)),
-                        var(--bg-on));
-}
-body[data-state="hold"] .btn {
-  background: color-mix(in srgb, var(--flash) calc(var(--recenter-progress, 0) * var(--flash-btn)),
-                        var(--btn-bg));
-  /* The base .btn rule transitions background over 60ms. Against a value that is
-     already being interpolated every frame that only adds lag, so drop it here
-     and let the property animation drive the colour directly. */
-  transition: transform 60ms linear;
-}
-/* Land back on the resting colour rather than cutting out of the flash. */
-body[data-state="held"], body[data-state="held"] .btn {
-  transition: background 220ms ease-out;
+/* The whole pad draws in about its centre as the progress climbs. When the
+   Mac recentres the progress drops and the pad springs back, past its mark by
+   four percent, on the same spring as the scroll thumb: that landing is the
+   signal. The shell used to lift toward white instead, and its drop on the
+   recentred state read as a second flash. */
+#pad {
+  scale: calc(1 - var(--recenter-progress, 0) * var(--recenter-pinch));
+  transition: scale var(--scroll-spring-ms) var(--scroll-spring);
 }
 
 #header {
@@ -311,6 +301,8 @@ body[data-state="off"] #header { opacity: 0.35; }
   border-radius: 50%;
   background: var(--led-off);
   box-shadow: 0 0 var(--led-glow) color-mix(in srgb, var(--led-off) 65%, transparent);
+  /* Over the recentre hold the lamp swells and its glow reaches further. */
+  scale: calc(1 + var(--recenter-progress, 0) * var(--recenter-swell));
   transition: background 140ms linear, box-shadow 140ms linear;
 }
 /* Green once the pointer is actually driving the cursor. */
@@ -318,7 +310,8 @@ body[data-state="on"] .role-power::after,
 body[data-state="hold"] .role-power::after,
 body[data-state="held"] .role-power::after {
   background: var(--led-on);
-  box-shadow: 0 0 var(--led-glow) color-mix(in srgb, var(--led-on) 70%, transparent);
+  box-shadow: 0 0 calc(var(--led-glow) + var(--recenter-progress, 0) * var(--recenter-glow))
+              color-mix(in srgb, var(--led-on) calc(70% + var(--recenter-progress, 0) * 30%), transparent);
 }
 .role-power[data-pressed="1"] { background: var(--power-bg); transform: scale(0.96); }
 
