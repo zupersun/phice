@@ -199,3 +199,14 @@ def test_the_panel_sizes_its_window_and_hides_what_it_says_it_hides():
     steps = PANEL_HTML[PANEL_HTML.index('<ol class="steps">'):PANEL_HTML.index("</ol>")]
     assert "iPhone" not in steps and "over the web" not in steps and "so it can tell" not in steps
     assert "power button" in steps
+
+
+def test_the_code_life_bar_lands_a_catch_up_at_once():
+    """Each second's poll moves the bar a hair, eased. After the window was
+    minimised, or when the code is new, the next poll moves it a long way, and
+    easing that raced the bar across the card. The script marks such a jump
+    and the stylesheet lands it without a transition."""
+    from phice.templates import PANEL_HTML
+    assert "codeJump" in PANEL_HTML, "the script marks a jump"
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "body[data-code-jump] .code-life i { transition: none; }" in css

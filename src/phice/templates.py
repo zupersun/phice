@@ -126,8 +126,18 @@ async function refresh() {
                   : d.pairing_error ? "error"
                   : d.offer_ready ? "ready" : "renewing";
     document.body.dataset.pairing = pairing;
-    document.body.style.setProperty("--code-life",
-                    (pairing === "ready" ? (Number(d.code_life) || 0) : 0).toFixed(3));
+    // A second's poll moves the bar a hair, and that step eases. A catch-up --
+    // the window was minimised and the page paused, or the code is new --
+    // moves it a long way, and easing that raced the bar across the card. The
+    // attribute tells the stylesheet to land such a jump at once.
+    const life = pairing === "ready" ? (Number(d.code_life) || 0) : 0;
+    const shown = Number(document.body.style.getPropertyValue("--code-life")) || 0;
+    const jump = Math.abs(life - shown) > 0.02;
+    if (jump) document.body.dataset.codeJump = "1";
+    document.body.style.setProperty("--code-life", life.toFixed(3));
+    if (jump) {
+      requestAnimationFrame(() => requestAnimationFrame(() => delete document.body.dataset.codeJump));
+    }
     document.getElementById("code-hint").textContent = {
       error: "Can\u2019t reach the pairing service. Phice keeps trying.",
       renewing: "Renewing\u2026",

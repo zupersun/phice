@@ -158,6 +158,8 @@ body:not([data-pairing="ready"]) #line, body[data-pairing="ready"] #code-hint { 
                background: var(--accent);
                width: calc(var(--code-life, 0) * 100%);
                transition: width 1s linear; }
+/* A catch-up lands at once; only a second's step eases. */
+body[data-code-jump] .code-life i { transition: none; }
 body[data-pairing="renewing"] .code-life i {
   width: 100%; animation: code-life-pulse 1.2s ease-in-out infinite;
 }
