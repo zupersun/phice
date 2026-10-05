@@ -66,13 +66,14 @@ class PairingQR:
     """Drawn once per code: the panel asks when the code changes, not every poll."""
 
     def __init__(self) -> None:
-        self._code = ""
+        self._drawn = ""   # the payload the kept drawing is of
         self._svg = ""
 
     def describe(self, signaling_url: str, code: str) -> dict:
         url = pairing_url(signaling_url, code)
         if not code:
             return {"code": "", "url": url, "svg": ""}
-        if code != self._code:
-            self._code, self._svg = code, qr_svg(qr_payload(signaling_url, code))
+        payload = qr_payload(signaling_url, code)
+        if payload != self._drawn:
+            self._drawn, self._svg = payload, qr_svg(payload)
         return {"code": code, "url": url, "svg": self._svg}

@@ -24,3 +24,12 @@ def test_the_svg_is_rounded_lines_in_the_panels_ink():
     assert svg.count('rx="1.9"') == 3, "three rounded finder rings"
     assert "<circle" not in svg, "lines, not dots"
     assert "a0.32,0.32" in svg, "rounded corners on the runs"
+
+
+def test_the_cached_drawing_follows_the_address_as_well_as_the_code():
+    from phice.qr import PairingQR
+    q = PairingQR()
+    a = q.describe("https://phice.vercel.app", "34XEJA")
+    assert q.describe("https://phice.vercel.app", "34XEJA") == a, "drawn once per code"
+    b = q.describe("https://phice.app", "34XEJA")
+    assert b["url"] == "https://phice.app/34XEJA" and b["svg"] != a["svg"], "a new address is a new drawing"
