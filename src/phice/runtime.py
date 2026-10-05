@@ -10,7 +10,6 @@ import logging
 import logging.handlers
 import threading
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -30,48 +29,19 @@ from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .paths import Paths, client_version
 from .rtc import RTCTransport
+from .status import Status
 from .window import WindowRequests
 
 log = logging.getLogger("phice")
 
 
-def setup_logging(paths: Paths, debug: bool = False) -> None:
-    paths.logs.mkdir(parents=True, exist_ok=True)
-    handler = logging.handlers.RotatingFileHandler(paths.logs / "phice.log", maxBytes=1 << 20,
-                                                   backupCount=3)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-    root = logging.getLogger()
-    root.handlers = [handler, logging.StreamHandler()]
-    root.setLevel(logging.DEBUG if debug else logging.INFO)
-
-
-@dataclass
-class Status:
-    """Thread-safe snapshot the menu bar and the panel read once a second."""
-
-    lock: threading.Lock = field(default_factory=threading.Lock)
-    connected: bool = False
-    device_name: str = ""
-    phase: str = "disconnected"
-    accessibility: bool = False
-    pair_code: str = ""
-    enabled: bool = True
-    error: str = ""
-    #: Set while the letterbox cannot be reached. Separate from `error`, which is
-    #: about the config files: the panel and the menu bar say different things.
-    pairing_error: str = ""
-
-    def read(self) -> dict:
-        with self.lock:
-            return dict(connected=self.connected, device_name=self.device_name, phase=self.phase,
-                        accessibility=self.accessibility, enabled=self.enabled,
-                        pair_code=self.pair_code, error=self.error,
-                        pairing_error=self.pairing_error)
-
-    def update(self, **kw) -> None:
-        with self.lock:
-            for k, v in kw.items():
-                setattr(self, k, v)
+def _share(value: str) -> float | None:
+    """A 0..1 number from a query string, or None for anything else."""
+    try:
+        y = float(value)
+    except ValueError:
+        return None
+    return round(y, 3) if 0.0 <= y <= 1.0 else None
 
 
 class Runtime:
@@ -110,6 +80,8 @@ class Runtime:
                      "/calibrate/apply": self.apply_calibration,
                      "/calibrate/cancel": self.cancel_calibration},
             settings={"/debug/layout": self.set_layout,
+                      "/debug/block": self.set_block,
+                      "/debug/block-drag": self.set_block_drag,
                       "/debug/appearance": self.set_appearance})
         self._last_logged_phase = "disconnected"
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -241,6 +213,7 @@ class Runtime:
                         "state": rtc.pc.connectionState}
         d["appearance"] = self.config.ui.appearance
         d["layout"] = self.config.ui.layout or "custom"
+        d["block_y"] = self.config.ui.block_y
         d["layouts"] = sorted(p.stem for p in self.paths.layouts.glob("*.json"))
         d["calibrated"] = self._calibrated_when()
         # Both halves of the comparison, not just its verdict: a check that
@@ -427,7 +400,29 @@ class Runtime:
         self._write_ui("appearance", value)
         return True
 
-    def _write_ui(self, key: str, value: str) -> None:
+    def set_block(self, value: str) -> bool:
+        """Where the block sits, 0..1, persisted: the finger has lifted."""
+        y = _share(value)
+        if y is None:
+            return False
+        if self.rtc:
+            self.rtc.ui_extra = {}
+        self._write_ui("block_y", y)
+        return True
+
+    def set_block_drag(self, value: str) -> bool:
+        """The same number while the finger is still down. Streamed to the phone,
+        which is told it is a drag so it can follow without easing, and written
+        nowhere: a file write and a config reload per frame is not a slider."""
+        y = _share(value)
+        if y is None:
+            return False
+        if self.rtc:
+            self.rtc.ui_extra = {"block_y": y, "block_dragging": True}
+            self.rtc.notify_state()
+        return True
+
+    def _write_ui(self, key: str, value: str | float) -> None:
         path = self.paths.pointer_json
         data = json.loads(path.read_text())
         data.setdefault("ui", {})[key] = value

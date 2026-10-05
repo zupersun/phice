@@ -59,7 +59,8 @@ NOT_RUNNING = "Could not reach the running app. Is it started? Try: phice instal
 
 
 def cmd_run(args) -> int:
-    from .runtime import Runtime, setup_logging
+    from .runtime import Runtime
+    from .status import setup_logging
     if not args.headless and _ask_running_instance_to_show_itself(args.http_port):
         print("Phice is already running; opened its window.")
         return 0

@@ -143,12 +143,14 @@ class PointerEngine:
             return max(0.0, min(1.0, (now - self._hold_started) / hold_s))
         return 1.0 if self._phase == Phase.RECENTER_HELD else 0.0
 
-    def state_message(self, accessibility: bool) -> str:
+    def state_message(self, accessibility: bool, ui_extra: dict | None = None) -> str:
         """The status frame the phone draws itself from.
 
         Built here rather than in each transport: it was written out twice,
         identically, and every field added to it had to be added in both places
-        or the two transports quietly disagreed.
+        or the two transports quietly disagreed. ``ui_extra`` lets the transport
+        overlay transient values -- a block position still under a finger --
+        without the engine holding anything that is not config.
         """
         snap = self.snapshot()
         cfg = self._cfg
@@ -158,7 +160,9 @@ class PointerEngine:
                              ui={"haptics": cfg.ui.haptics,
                                  "keep_awake": cfg.ui.keep_awake,
                                  "appearance": cfg.ui.appearance,
-                                 "recenter_ms": cfg.recenter_hold_ms})
+                                 "recenter_ms": cfg.recenter_hold_ms,
+                                 "block_y": cfg.ui.block_y,
+                                 **(ui_extra or {})})
 
     def snapshot(self) -> Snapshot:
         return Snapshot(phase=self._phase, power=self._phase in ACTIVE_PHASES,

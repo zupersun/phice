@@ -445,27 +445,60 @@ async def test_the_active_layout_follows_ui_layout_and_falls_back_safely(tmp_pat
         return Runtime(paths, FakeCursor(), 0)
 
     assert reload("").active_layout_path() == paths.layout_json
-    assert reload("one-handed").active_layout_path() == paths.layouts / "one-handed.json"
+    assert reload("thumb-left").active_layout_path() == paths.layouts / "thumb-left.json"
     assert reload("standard").active_layout_path() == paths.layouts / "standard.json"
     # Named but absent: fall back, do not fail.
     assert reload("does-not-exist").active_layout_path() == paths.layout_json
 
 
-async def test_switching_grip_reloads_the_layout_the_phone_is_using(tmp_path):
+async def test_switching_layout_reloads_the_layout_the_phone_is_using(tmp_path):
     from phice.paths import Paths
     from phice.runtime import Runtime
 
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
     rt = Runtime(paths, FakeCursor(), 0)
-    assert rt.set_layout("one-handed") is True
+    assert rt.set_layout("thumb-right") is True
     rt = Runtime(paths, FakeCursor(), 0)      # as a restart would see it
-    power = next(b for b in rt.layout.buttons if b.role == "power")
-    pads = [b for b in rt.layout.buttons if b.role != "power"]
-    assert all(b.y >= 45 for b in pads), "one-handed puts the pads in thumb reach"
-    assert power.y >= max(b.y + b.h for b in pads), "with power below them"
+    left = next(b for b in rt.layout.buttons if b.role == "left")
+    assert left.x + left.w >= 95, "the right thumb's stack hugs the right edge"
+    assert all("thumb" in b.css_class for b in rt.layout.buttons), "and the theme can move it"
     assert rt.set_layout("../escape") is False, "a path is not a preset name"
     assert rt.set_layout("nonsense") is False, "an unknown preset is refused"
+    assert rt.set_layout("one-handed") is False, "the old preset is gone"
+
+
+async def test_the_block_position_reaches_the_phone_and_a_drag_does_not_touch_the_disk(tmp_path):
+    """Where the block sits is config, so a phone connecting later gets the same
+    answer; while the panel's drawing is under a finger the value streams to the
+    phone without a file write per frame, and the phone is told it is a drag so
+    it can follow without easing."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc = RTCTransport(engine=rt.engine, layout={"version": 1, "buttons": []},
+                          theme_css="body{}", ice_servers=())
+
+    assert rt.set_block("0.3") is True
+    assert _json.loads(paths.pointer_json.read_text())["ui"]["block_y"] == 0.3
+    assert Runtime(paths, FakeCursor(), 0).config.ui.block_y == 0.3, "a restart remembers it"
+    for bad in ("1.5", "-1", "up", ""):
+        assert rt.set_block(bad) is False, bad
+
+    assert rt.set_block_drag("0.8") is True
+    assert _json.loads(paths.pointer_json.read_text())["ui"]["block_y"] == 0.3, "nothing written"
+    ui = _json.loads(rt.rtc.state_message())["ui"]
+    assert ui["block_y"] == 0.8 and ui["block_dragging"] is True
+    assert rt.set_block_drag("2") is False
+
+    assert rt.set_block("0.8") is True, "release: persisted, and the drag flag drops"
+    assert rt.rtc.ui_extra == {}
+    await rt.rtc.close()
 
 
 async def test_an_edited_preset_survives_switching_away_and_back(tmp_path):
@@ -478,15 +511,15 @@ async def test_an_edited_preset_survives_switching_away_and_back(tmp_path):
 
     paths = Paths(tmp_path / "cfg")
     paths.ensure()
-    preset = paths.layouts / "one-handed.json"
+    preset = paths.layouts / "thumb-right.json"
     edited = _json.loads(preset.read_text())
     edited["buttons"][0]["x"] = 11
     preset.write_text(_json.dumps(edited))
 
     rt = Runtime(paths, FakeCursor(), 0)
-    rt.set_layout("one-handed")
+    rt.set_layout("thumb-right")
     rt.set_layout("standard")
-    rt.set_layout("one-handed")
+    rt.set_layout("thumb-right")
     assert _json.loads(preset.read_text())["buttons"][0]["x"] == 11
 
 
@@ -596,8 +629,8 @@ async def test_a_recording_holds_every_sensor_frame_and_a_scrubbed_hello():
 
 async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_path, monkeypatch):
     """Every new session used to build its transport from layout.json, so a
-    phone reconnecting after the grip was switched to one-handed got the
-    two-handed layout back until something else touched the config."""
+    phone reconnecting after the layout was switched to a thumb got the
+    mouse back until something else touched the config."""
     import json as _json
 
     from phice.config import load_layout
@@ -609,7 +642,7 @@ async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_pat
     d = _json.loads(paths.pointer_json.read_text())
     d["signaling_url"] = "https://example.invalid"
     paths.pointer_json.write_text(_json.dumps(d))
-    assert Runtime(paths, FakeCursor(), 0).set_layout("one-handed")
+    assert Runtime(paths, FakeCursor(), 0).set_layout("thumb-right")
 
     published: dict = {}
 
@@ -637,8 +670,8 @@ async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_pat
                 break
             await asyncio.sleep(0.1)
         assert "code" in published
-        one_handed = load_layout(paths.layouts / "one-handed.json").to_dict()
-        assert rt.rtc.layout == one_handed
+        thumb = load_layout(paths.layouts / "thumb-right.json").to_dict()
+        assert rt.rtc.layout == thumb
         assert rt.rtc.layout != load_layout(paths.layout_json).to_dict()
     finally:
         task.cancel()

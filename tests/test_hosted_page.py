@@ -110,3 +110,12 @@ def test_the_phone_rides_through_a_renewal(js):
     v = re.search(r'CLIENT_VERSION = "(\d+)"', js)
     assert v, "the client version constant moved"
     assert int(v.group(1)) >= 11, "the client changed, so its version must"
+
+
+def test_where_the_block_sits_is_a_number_the_theme_interprets(js):
+    """The Mac says where the controls sit as a share of the pad, and whether a
+    finger is still moving them. The page publishes both and nothing more: no
+    transform, no offset, no easing. The theme decides what they mean, the same
+    way --scroll-pos works."""
+    assert "--block-y" in js and "block_dragging" in js
+    assert "translate" not in js and "transform" not in js

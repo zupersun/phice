@@ -71,11 +71,15 @@ class UIConfig:
     #: "dark" | "light". Chosen on the Mac and pushed to the phone, so both
     #: surfaces match without the phone needing a setting of its own.
     appearance: str = "dark"
-    #: Which preset in layouts/ is active, by filename stem. Ships as the two
-    #: handed layout and remembers whatever is chosen after that, since it is
-    #: written here. Empty still means "use layout.json", which is what every
-    #: install predating presets had.
+    #: Which preset in layouts/ is active, by filename stem. Ships as the mouse
+    #: and remembers whatever is chosen after that, since it is written here.
+    #: Empty still means "use layout.json", which is what every install
+    #: predating presets had.
     layout: str = "standard"
+    #: Where a movable layout's block sits, 0 at the top of the pad and 1 at the
+    #: bottom. Published to the phone as a number; the theme decides what it
+    #: means and the plain layout ignores it.
+    block_y: float = 0.65
 
 
 @dataclass(frozen=True)
@@ -225,7 +229,8 @@ class PointerConfig:
             signaling_url=signaling_url,
             ice_servers=tuple(ice),
             ui=UIConfig(haptics=_bool(ui, "haptics", True), keep_awake=keep_awake,
-                        appearance=appearance, layout=layout_name),
+                        appearance=appearance, layout=layout_name,
+                        block_y=_num(ui, "block_y", 0.65, 0.0, 1.0)),
         )
 
 

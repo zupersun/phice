@@ -1,5 +1,6 @@
 """The loopback HTTP server behind the panel, the calibration screen and the debug hooks."""
 import json
+import re
 import urllib.error
 import urllib.request
 
@@ -152,3 +153,14 @@ def test_panel_css_styles_every_pairing_state():
     # no rule of its own -- only the states that differ from it need one.
     for state in ("renewing", "error", "connected"):
         assert f'body[data-pairing="{state}"]' in css, state
+
+
+def test_the_panel_offers_every_shipped_layout_and_nothing_else():
+    """The bar's places are the preset names, so adding or renaming a preset
+    without the panel knowing would leave a layout nobody can choose."""
+    from phice.templates import PANEL_HTML
+    presets = {p.stem for p in (DEFAULTS_DIR / "layouts").glob("*.json")}
+    bar = re.search(r'id="mode".*?</div>', PANEL_HTML, re.S).group(0)
+    assert set(re.findall(r'data-v="([^"]+)"', bar)) == presets
+    assert "/debug/block" in PANEL_HTML and "/debug/block-drag" in PANEL_HTML
+    assert 'id="grip"' not in PANEL_HTML

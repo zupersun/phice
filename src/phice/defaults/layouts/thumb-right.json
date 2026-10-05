@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "buttons": [
+    {"id": "left",   "role": "left",   "x": 56, "y": 2,     "w": 41, "h": 20,   "label": "L", "class": "thumb thumb-r"},
+    {"id": "right",  "role": "right",  "x": 56, "y": 22.5,  "w": 41, "h": 20,   "label": "R", "class": "thumb thumb-r"},
+    {"id": "scroll", "role": "scroll", "x": 47, "y": 2,     "w": 8,  "h": 40.5, "label": "",  "class": "thumb thumb-r"},
+    {"id": "power",  "role": "power",  "x": 34, "y": 19.25, "w": 10, "h": 6,    "label": "",  "class": "thumb thumb-r"}
+  ]
+}

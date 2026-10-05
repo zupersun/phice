@@ -81,6 +81,11 @@ class RTCTransport:
         #: than the file kept a fresh session from sending layout.json when a
         #: preset was the layout in force.
         self.layout = layout
+        #: Overlaid on the state message's ui block: the block position while
+        #: the panel's drawing is under a finger, and the flag that says so.
+        #: The runtime sets it per move and clears it on release; nothing here
+        #: is written to disk.
+        self.ui_extra: dict = {}
         self.theme_css = theme_css
         entries = self.DEFAULT_ICE_SERVERS if ice_servers is None else ice_servers
         servers = []
@@ -280,9 +285,12 @@ class RTCTransport:
         if ch is None or ch.readyState != "open":
             return
         try:
-            ch.send(self.engine.state_message(self._accessibility()))
+            ch.send(self.state_message())
         except Exception:  # a closing channel must not break an engine transition
             log.debug("state push failed", exc_info=True)
+
+    def state_message(self) -> str:
+        return self.engine.state_message(self._accessibility(), self.ui_extra)
 
     async def _tick_loop(self) -> None:
         """Time-based engine transitions still need driving -- see CLAUDE.md #1."""

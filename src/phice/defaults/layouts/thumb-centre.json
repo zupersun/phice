@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "buttons": [
+    {"id": "left",   "role": "left",   "x": 3,  "y": 2,  "w": 42, "h": 38, "label": "", "class": "ergo-c"},
+    {"id": "scroll", "role": "scroll", "x": 46, "y": 2,  "w": 8,  "h": 38, "label": "", "class": "ergo-c"},
+    {"id": "right",  "role": "right",  "x": 55, "y": 2,  "w": 42, "h": 38, "label": "", "class": "ergo-c"},
+    {"id": "power",  "role": "power",  "x": 40, "y": 46, "w": 20, "h": 6,  "label": "", "class": "ergo-c"}
+  ]
+}
