@@ -4,18 +4,20 @@ Markup only, held apart from pages.py because four hundred lines of HTML
 sitting in a module of Python functions makes both harder to read, and
 because together they were past this project's own file length limit. The
 panel's Layout card, markup and script, lives in panel_layout.py for the
-same reason.
+same reason, and its How to use card in panel_howto.py.
 Neither carries design -- both load stylesheets the user owns, and their
 scripts publish numbers and attributes rather than colours or sizes.
 """
 from __future__ import annotations
 
+from .panel_howto import HOWTO_CARD, HOWTO_SCRIPT
 from .panel_layout import LAYOUT_CARD, LAYOUT_SCRIPT
 
 PANEL_HTML = """<!doctype html>
 <meta charset="utf-8">
 <title>Phice</title>
 <link rel="stylesheet" href="/panel.css">
+<link rel="stylesheet" href="/howto.css">
 <script>
 try {
   var t = localStorage.getItem("phice-theme");
@@ -88,7 +90,7 @@ try {
     <div class="what"><b>Pointer</b><span class="val" id="calibrated">Not calibrated yet</span></div>
     <button id="calibrate" class="primary">Calibrate pointer</button>
   </div>
-  <p class="foot">Closing this window keeps Phice in the menu bar</p>
+""" + HOWTO_CARD + """  <p class="foot">Closing this window keeps Phice in the menu bar</p>
 </div>
 
 <script>
@@ -201,7 +203,7 @@ document.getElementById("newcode").onclick = async () => {
 for (const id of ["grant", "grant-live"]) {
   document.getElementById(id).onclick = async () => { await fetch("/debug/grant"); refresh(); };
 }
-""" + LAYOUT_SCRIPT + """document.getElementById("calibrate").onclick = async () => {
+""" + LAYOUT_SCRIPT + HOWTO_SCRIPT + """document.getElementById("calibrate").onclick = async () => {
   // The calibration screen handles pairing itself, so this needs no phone yet.
   await fetch("/calibrate/start");
 };

@@ -69,6 +69,7 @@ class Runtime:
         self.control = ControlServer(
             http_port,
             pages={"/panel.css": paths.panel_css.read_bytes,
+                   "/howto.css": paths.howto_css.read_bytes,
                    "/calibrate.css": paths.calibrate_css.read_bytes},
             actions={"/debug/cursor": self._debug_cursor,
                      # Prompting from this process is what makes macOS list *this*
