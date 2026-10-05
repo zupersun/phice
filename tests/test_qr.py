@@ -32,4 +32,5 @@ def test_the_cached_drawing_follows_the_address_as_well_as_the_code():
     a = q.describe("https://phice.vercel.app", "34XEJA")
     assert q.describe("https://phice.vercel.app", "34XEJA") == a, "drawn once per code"
     b = q.describe("https://phice.app", "34XEJA")
-    assert b["url"] == "https://phice.app/34XEJA" and b["svg"] != a["svg"], "a new address is a new drawing"
+    assert b["url"] == "https://phice.app/34XEJA"
+    assert b["svg"] != a["svg"], "a new address is a new drawing"
