@@ -85,6 +85,7 @@ class Runtime:
             settings={"/debug/layout": self.set_layout,
                       "/debug/block": self.set_block,
                       "/debug/block-drag": self.set_block_drag,
+                      "/debug/panel-size": self.windows.request_height,
                       "/debug/appearance": self.set_appearance})
         self._last_logged_phase = "disconnected"
         self._loop: asyncio.AbstractEventLoop | None = None

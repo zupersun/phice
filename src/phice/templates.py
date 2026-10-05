@@ -50,11 +50,10 @@ try {
     </div>
   </div>
   <ol class="steps">
-    <li>Connect your iPhone with the code above. It joins this Mac over the web.</li>
-    <li>Tap <b>Start</b> on the phone and allow motion, so it can tell where it
-        points.</li>
-    <li>Point it at the cursor and press any button on the phone to
-        begin.</li>
+    <li>Connect your phone with the code above.</li>
+    <li>Tap <b>Start</b> on the phone and allow motion.</li>
+    <li>Point the phone at the cursor and tap the power button on its screen
+        to begin.</li>
   </ol>
   <div class="card allow" id="allow" hidden>
     <span class="dot bad"></span>
@@ -265,6 +264,24 @@ try {
 document.body.dataset.pairing = "renewing";
 refresh();
 setInterval(refresh, 1000);
+
+// The window is only as tall as what the page holds. The page measures itself
+// whenever its content changes size and tells the Mac, which sizes the window;
+// a short trailing wait lets the drawer's spring finish before the window moves.
+let sentHeight = 0;
+let sizeTimer = 0;
+function reportSize() {
+  clearTimeout(sizeTimer);
+  sizeTimer = setTimeout(() => {
+    const h = Math.ceil(document.documentElement.scrollHeight);
+    if (h && h !== sentHeight) {
+      sentHeight = h;
+      fetch("/debug/panel-size?v=" + h).catch(() => {});
+    }
+  }, 120);
+}
+new ResizeObserver(reportSize).observe(document.body);
+reportSize();
 </script>
 """
 

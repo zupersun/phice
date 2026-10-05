@@ -173,6 +173,9 @@ class PhiceApp(rumps.App):
             url, fullscreen = wanted
             window.open_panel(url, key="calibrate" if fullscreen else "panel",
                               fullscreen=fullscreen)
+        height = self.runtime.windows.take_panel_height()
+        if height:
+            window.resize_panel(height)
 
     def refresh(self, _):
         self._ticks += 1

@@ -185,3 +185,17 @@ def test_the_panel_is_two_screens():
                  'id="copy"', "Enter this on your phone", "It renews itself"):
         assert gone not in PANEL_HTML, gone
     assert "/debug/qr" in PANEL_HTML and "/debug/newcode" in PANEL_HTML
+
+
+def test_the_panel_sizes_its_window_and_hides_what_it_says_it_hides():
+    """The page measures itself and tells the Mac, so the window hugs its
+    content in every state. And an element the script marks hidden stays
+    hidden whatever display its own rule gives it: the permission card once
+    showed for everyone because its flex rule beat the attribute."""
+    from phice.templates import PANEL_HTML
+    assert "ResizeObserver" in PANEL_HTML and "/debug/panel-size" in PANEL_HTML
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert "[hidden] { display: none !important; }" in css
+    steps = PANEL_HTML[PANEL_HTML.index('<ol class="steps">'):PANEL_HTML.index("</ol>")]
+    assert "iPhone" not in steps and "over the web" not in steps and "so it can tell" not in steps
+    assert "power button" in steps

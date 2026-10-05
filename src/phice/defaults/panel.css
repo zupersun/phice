@@ -110,6 +110,10 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
+/* What the script hides stays hidden, whatever display an element's own rule
+   gives it; the permission card once showed for everyone because its flex rule
+   beat the attribute. */
+[hidden] { display: none !important; }
 body {
   margin: 0; padding: 18px 18px 14px;
   background: var(--bg); color: var(--fg);
@@ -403,12 +407,11 @@ b { color: var(--fg); font-weight: 500; }
 .place[data-tried] .warn { visibility: visible; }
 body[data-pairing="connected"] .place .warn { visibility: hidden; }
 
-/* Two screens. Until a phone connects the window shows only the way in,
-   centred in it; once one has, the controls, rising in on the island spring. */
+/* Two screens. Until a phone connects the window shows only the way in; once
+   one has, the controls, rising in on the island spring. The window hugs
+   whichever is showing, so neither needs to fill a height. */
 body:not([data-pairing="connected"]) .screen-live { display: none; }
 body[data-pairing="connected"] .screen-pair { display: none; }
-.screen-pair { min-height: calc(100vh - 110px); display: flex; flex-direction: column;
-               justify-content: center; padding-bottom: 36px; }
 .screen-live { animation: rise 520ms var(--island) both; }
 @keyframes rise { from { opacity: 0; translate: 0 14px; scale: 0.98; } }
 @media (prefers-reduced-motion: reduce) { .screen-live { animation: none; } }
