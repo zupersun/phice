@@ -121,14 +121,16 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 Dependency order, and nothing may point backwards:
 
 ```
-orientation  filters  protocol  paths  templates  calibrate  window   (no dependencies)
+orientation  filters  protocol  paths  panel_layout  calibrate  window   (no dependencies)
+templates    <- panel_layout
 config       <- paths
+status       <- paths
 engine       <- config cursor_backend filters orientation protocol
 rtc          <- engine paths protocol
 signaling    <- rtc
 control      <- templates
-runtime      <- calibrate config control engine paths rtc signaling window
-menubar cli  <- runtime
+runtime      <- calibrate config control engine paths rtc signaling status window
+menubar cli  <- runtime status
 ```
 
 - `engine.py` is **pure**: a clock and a cursor backend are injected, so every behaviour is

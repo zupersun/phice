@@ -174,25 +174,38 @@ def test_rejects_bad_signaling_urls(bad):
         PointerConfig.from_dict(bad)
 
 
-def test_both_shipped_layouts_are_valid(tmp_path):
+PRESETS = {"standard", "thumb-left", "thumb-centre", "thumb-right"}
+
+
+def _preset(name):
+    from phice.config import load_layout
+    from phice.paths import DEFAULTS_DIR
+    return {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / f"{name}.json").buttons}
+
+
+def test_every_shipped_layout_is_valid(tmp_path):
     """A layout that fails to load leaves the phone with no buttons at all, which
     is indistinguishable from a broken app."""
     from phice.config import load_layout
     from phice.paths import DEFAULTS_DIR
 
     presets = sorted((DEFAULTS_DIR / "layouts").glob("*.json"))
-    assert {p.stem for p in presets} == {"standard", "one-handed"}
+    assert {p.stem for p in presets} == PRESETS
     for preset in presets:
         layout = load_layout(preset)
         assert set(layout.roles().values()) == {"left", "right", "scroll", "power"}
 
 
-def test_the_standard_power_button_sits_lower_than_it_used_to():
-    from phice.config import load_layout
-    from phice.paths import DEFAULTS_DIR
-
-    buttons = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
-    assert buttons["power"].y >= 76, "power moved down, away from the pads"
+def test_the_mouse_sits_at_the_top_with_power_right_beneath():
+    """Power is also the recentre control and gets used, so it is a pill you can
+    hit directly under the pads, not tucked away at the bottom."""
+    std = _preset("standard")
+    pads = [std[n] for n in ("left", "right", "scroll")]
+    assert all(b.y <= 2 for b in pads), "the pads start at the top"
+    bottom = max(b.y + b.h for b in pads)
+    assert bottom <= std["power"].y <= bottom + 8, "power right beneath, in reach"
+    assert std["power"].w >= 16, "a pill, not a dot"
+    assert all(not b.css_class for b in std.values()), "the plain layout: nothing moves it"
 
 
 def test_ui_layout_rejects_a_path_instead_of_a_name(tmp_path):
@@ -208,8 +221,8 @@ def test_ui_layout_rejects_a_path_instead_of_a_name(tmp_path):
         load_pointer_config(p)
 
 
-def test_the_shipped_layout_is_two_handed_and_a_choice_is_remembered(tmp_path):
-    """Ships as two hands for anyone new, and whatever is chosen after that
+def test_the_shipped_layout_is_the_mouse_and_a_choice_is_remembered(tmp_path):
+    """Ships as the mouse for anyone new, and whatever is chosen after that
     persists, because it is written into pointer.json rather than held in
     memory."""
     import json
@@ -220,29 +233,62 @@ def test_the_shipped_layout_is_two_handed_and_a_choice_is_remembered(tmp_path):
 
     p = tmp_path / "pointer.json"
     p.write_text(json.dumps({}))
-    assert load_pointer_config(p).ui.layout == "standard", "absent means two hands"
+    assert load_pointer_config(p).ui.layout == "standard", "absent means the mouse"
 
-    p.write_text(json.dumps({"ui": {"layout": "one-handed"}}))
-    assert load_pointer_config(p).ui.layout == "one-handed", "a choice is honoured"
+    p.write_text(json.dumps({"ui": {"layout": "thumb-right"}}))
+    assert load_pointer_config(p).ui.layout == "thumb-right", "a choice is honoured"
 
     # Empty still means layout.json, for installs that predate presets.
     p.write_text(json.dumps({"ui": {"layout": ""}}))
     assert load_pointer_config(p).ui.layout == ""
 
 
-def test_one_handed_keeps_power_below_the_pads():
-    """The same relationship the two-handed layout has -- power under the pads,
-    not over them -- while the pads keep their place in thumb reach."""
-    from phice.config import load_layout
-    from phice.paths import DEFAULTS_DIR
+def test_the_thumb_layouts_stack_at_the_edge_under_the_thumb():
+    """One block for the hand holding the phone: left click above right click
+    against the edge, the wheel beside them on the centre side, power one
+    short reach further in. The layout puts the block at the top; the theme
+    slides it by --block-y, so it has to leave room to travel."""
+    r, lh = _preset("thumb-right"), _preset("thumb-left")
+    for hand, b in (("right", r), ("left", lh)):
+        assert b["left"].y + b["left"].h <= b["right"].y, f"{hand}: left click above right"
+        assert (b["left"].x, b["left"].w) == (b["right"].x, b["right"].w), f"{hand}: one stack"
+        assert b["left"].label == "L" and b["right"].label == "R", f"{hand}: says which is which"
+        assert all(("thumb" in btn.css_class) for btn in b.values()), f"{hand}: the theme moves it"
+        assert min(btn.y for btn in b.values()) <= 2, f"{hand}: starts at the top"
+        assert max(btn.y + btn.h for btn in b.values()) <= 45, f"{hand}: room to slide down"
+    # Right hand: the stack hugs the right edge, the wheel is to its left, power further left.
+    assert r["left"].x + r["left"].w >= 95
+    assert r["scroll"].x + r["scroll"].w <= r["left"].x
+    assert r["power"].x + r["power"].w <= r["scroll"].x
+    # Left hand is the mirror image.
+    for name in ("left", "right", "scroll", "power"):
+        assert lh[name].x == 100 - (r[name].x + r[name].w), f"{name} mirrors"
+        assert (lh[name].y, lh[name].w, lh[name].h) == (r[name].y, r[name].w, r[name].h)
 
-    one = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "one-handed.json").buttons}
-    std = {b.id: b for b in load_layout(DEFAULTS_DIR / "layouts" / "standard.json").buttons}
-    pads = [one[n] for n in ("left", "right", "scroll")]
 
-    assert all(b.y >= 45 for b in pads), "the pads stay in the bottom half"
-    assert one["power"].y >= max(b.y + b.h for b in pads), "power sits below the pads"
-    assert one["power"].y + one["power"].h <= 100, "and stays on the screen"
-    # Both layouts now read the same way: pads, then power underneath.
-    assert std["power"].y >= max(std[n].y + std[n].h for n in ("left", "right", "scroll"))
-    assert one["left"].x == 100 - (one["right"].x + one["right"].w), "symmetric, either hand"
+def test_the_centred_layout_is_the_mouse_made_movable():
+    std, c = _preset("standard"), _preset("thumb-centre")
+    for name in ("left", "right", "scroll", "power"):
+        assert (c[name].x, c[name].y, c[name].w, c[name].h) == \
+            (std[name].x, std[name].y, std[name].w, std[name].h), name
+        assert "ergo-c" in c[name].css_class, "the theme slides this one"
+    assert max(b.y + b.h for b in c.values()) <= 56, "room to slide down"
+
+
+def test_ui_block_y_is_a_share_of_the_pad(tmp_path):
+    """Where the block sits, 0 at the top and 1 at the bottom. A number the
+    theme interprets, so anything outside that range is a config error."""
+    import json
+
+    import pytest
+
+    from phice.config import ConfigError, PointerConfig, load_pointer_config
+
+    assert PointerConfig().ui.block_y == 0.65
+    p = tmp_path / "pointer.json"
+    p.write_text(json.dumps({"ui": {"block_y": 0.2}}))
+    assert load_pointer_config(p).ui.block_y == 0.2
+    for bad in (1.5, -0.1, "low", True):
+        p.write_text(json.dumps({"ui": {"block_y": bad}}))
+        with pytest.raises(ConfigError):
+            load_pointer_config(p)

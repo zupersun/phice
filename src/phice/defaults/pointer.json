@@ -40,7 +40,8 @@
     "haptics": true,
     "keep_awake": "always",
     "appearance": "dark",
-    "layout": "standard"
+    "layout": "standard",
+    "block_y": 0.65
   },
   "scroll_deadzone": 0.035,
   "scroll_rate_px_per_s": 2400.0,

@@ -223,18 +223,6 @@ b { color: var(--fg); font-weight: 500; }
 :root[data-theme="dark"] .knob { --knob-i: 0; }
 :root[data-theme="light"] .knob { --knob-i: 1; }
 
-/* The grip switch is the same control, positioned from its own attribute rather
-   than the document's theme. Two stops, so the same halves arithmetic applies. */
-#grip[data-v="standard"] .knob { --knob-i: 0; }
-#grip[data-v="one-handed"] .knob { --knob-i: 1; }
-#grip { width: 132px; margin-top: 10px; }
-#grip + .seg-labels { width: 132px; }
-#grip[data-v="standard"] + .seg-labels span:nth-child(1),
-#grip[data-v="one-handed"] + .seg-labels span:nth-child(2) {
-  color: var(--fg);
-  font-weight: 500;
-}
-
 .seg-labels {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -250,3 +238,148 @@ b { color: var(--fg); font-weight: 500; }
   color: var(--fg);
   font-weight: 500;
 }
+
+/* Layout: one bar. The left third is Mouse; the right two thirds are
+   Ergonomic, and inside them the knob has three places, left thumb, centred,
+   right thumb. Crossing from Mouse lands in the middle; from there the knob
+   drags to either side. The script sets data-v, toggles .ergo while the knob
+   is in the right two thirds (so the labels can cross-fade during a drag),
+   and publishes --knob-x while a finger is down. Everything drawn is here. */
+:root {
+  /* A spring with a little overshoot, the way a Dynamic Island opens: fast
+     out, past the mark by six percent, then settled. */
+  --island: linear(
+    0, 0.013 2%, 0.05 4.5%, 0.16 8%, 0.37 13%, 0.62 19%, 0.84 26%, 0.98 33%,
+    1.05 41%, 1.065 48%, 1.045 57%, 1.015 67%, 0.995 78%, 0.997 88%, 1);
+}
+.mode {
+  position: relative; height: 28px; margin-top: 10px; padding: 3px;
+  border-radius: 999px; background: var(--seg-track); box-shadow: var(--groove);
+  cursor: pointer; touch-action: none;
+}
+.mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mode .stop { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+/* The ergonomic section: a hairline ring around the right two thirds, shown
+   while the knob is over there, so its three places read as one family within
+   the bar. */
+.mode::before {
+  content: ""; position: absolute; top: 3px; bottom: 3px; right: 3px;
+  left: calc(3px + (100% - 6px) / 3); border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line); opacity: 0; transition: opacity 220ms ease-out;
+}
+.mode.ergo::before { opacity: 1; }
+.mode .knob {
+  position: absolute; top: 3px; bottom: 3px; width: calc((100% - 6px) / 3);
+  border-radius: 999px; background: var(--seg-knob); box-shadow: var(--knob-edge);
+  left: calc(3px + var(--knob-x, var(--knob-i, 0)) * (100% - 6px));
+  transition: left var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out);
+}
+.mode[data-dragging] .knob { transition: none; }
+.mode[data-v="standard"]  .knob { --knob-i: 0; }
+.mode[data-v="thumb-left"]   .knob { --knob-i: 0.3333; }
+.mode[data-v="thumb-centre"] .knob { --knob-i: 0.5; }
+.mode[data-v="thumb-right"]  .knob { --knob-i: 0.6667; }
+
+/* Labels: Mouse under the left third, Ergonomic under the right two thirds;
+   once the knob is over there Ergonomic fades out and Left, Centre and Right
+   fade in, each under the knob's place. */
+.mode-labels {
+  position: relative; height: 15px; margin-top: 3px;
+  font-size: 10px; letter-spacing: 0.02em; color: var(--dim);
+}
+.mode-labels span {
+  position: absolute; top: 0; text-align: center;
+  transition: opacity 220ms ease-out, color 220ms ease-out;
+}
+.l-mouse  { left: 0; width: 33.33%; }
+.l-ergo   { left: 33.33%; width: 66.67%; }
+.l-left   { left: 41.67%; width: 16.67%; opacity: 0; }
+.l-centre { left: 58.33%; width: 16.67%; opacity: 0; }
+.l-right  { left: 75%;    width: 16.67%; opacity: 0; }
+.mode.ergo + .mode-labels .l-ergo { opacity: 0; }
+.mode.ergo + .mode-labels .l-left, .mode.ergo + .mode-labels .l-centre,
+.mode.ergo + .mode-labels .l-right { opacity: 1; }
+.mode[data-v="standard"]  + .mode-labels .l-mouse,
+.mode[data-v="thumb-left"]   + .mode-labels .l-left,
+.mode[data-v="thumb-centre"] + .mode-labels .l-centre,
+.mode[data-v="thumb-right"]  + .mode-labels .l-right { color: var(--fg); font-weight: 500; }
+
+/* The drawer below the bar. Its height is fixed, so nothing below it moves
+   while the knob or the drawing is dragged; it opens on the island spring,
+   pushing the cards beneath down a touch past their place and back, while
+   its contents rise out of a blur. */
+.reveal {
+  --open: 0;
+  height: calc(var(--open) * 150px); overflow: hidden;
+  transition: height 520ms var(--island);
+}
+.mode:not([data-v="standard"]) ~ .reveal { --open: 1; }
+.reveal .inner {
+  padding-top: 12px; opacity: 0; filter: blur(6px); translate: 0 -10px; scale: 0.97;
+  transform-origin: 50% 0;
+  transition: opacity 240ms ease-out, filter 320ms ease-out, translate 520ms var(--island), scale 520ms var(--island);
+}
+.mode:not([data-v="standard"]) ~ .reveal .inner {
+  opacity: 1; filter: blur(0); translate: 0 0; scale: 1;
+  transition: opacity 260ms ease-out 60ms, filter 360ms ease-out 60ms, translate 520ms var(--island), scale 520ms var(--island);
+}
+.reveal .hint { margin: 0; font-size: 12px; color: var(--dim); text-align: center; }
+
+/* Where the controls sit: a small phone drawn with the chosen layout, and the
+   drawing is the control, dragged up or down. It sits under the knob's place,
+   left, centre or right, and slides between them. The script publishes
+   --block-y (0 top .. 1 bottom) on .place, and --block-drag while a finger
+   is down. */
+.place { position: relative; height: 108px; margin-top: 10px; }
+.place[data-v="thumb-left"]   { --pos: 0; }
+.place[data-v="thumb-centre"] { --pos: 0.5; }
+.place[data-v="thumb-right"]  { --pos: 1; }
+.mini {
+  position: absolute; top: 0; left: calc(var(--pos, 1) * (100% - 52px));
+  width: 52px; height: 108px; border-radius: 11px;
+  background: var(--seg-track); box-shadow: var(--groove); cursor: grab; touch-action: none;
+  transition: left 420ms var(--seg-spring, ease-out);
+}
+.mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mini[data-dragging] { cursor: grabbing; }
+.mini i {
+  position: absolute; display: none; background: var(--seg-knob); box-shadow: var(--knob-edge);
+  top: calc(5px + var(--block-drag, var(--block-y, 0.65)) * var(--mini-travel, 56px));
+  transition: top var(--seg-spring-ms, 320ms) var(--seg-spring, ease-out);
+}
+.mini[data-dragging] i { transition: none; }
+/* left or right thumb: the stack and its wheel */
+.place[data-v="thumb-left"] .mini, .place[data-v="thumb-right"] .mini { --mini-travel: 56px; }
+.place[data-v="thumb-left"] .mini .block, .place[data-v="thumb-right"] .mini .block,
+.place[data-v="thumb-left"] .mini .wheel, .place[data-v="thumb-right"] .mini .wheel { display: block; height: 42px; }
+.mini .block { width: 20px; border-radius: 5px; }
+.mini .wheel { width: 3px; border-radius: 999px; opacity: 0.55; box-shadow: none; }
+.place[data-v="thumb-right"] .mini .block { right: 5px; }
+.place[data-v="thumb-right"] .mini .wheel { right: 29px; }
+.place[data-v="thumb-left"] .mini .block { left: 5px; }
+.place[data-v="thumb-left"] .mini .wheel { left: 29px; }
+/* centred: the mouse, pads and power as one piece */
+.place[data-v="thumb-centre"] .mini { --mini-travel: 44px; }
+.place[data-v="thumb-centre"] .mini .pad-l, .place[data-v="thumb-centre"] .mini .pad-r,
+.place[data-v="thumb-centre"] .mini .power, .place[data-v="thumb-centre"] .mini .wheel { display: block; }
+.place[data-v="thumb-centre"] .mini .pad-l, .place[data-v="thumb-centre"] .mini .pad-r { width: 17px; height: 36px; border-radius: 5px; }
+.place[data-v="thumb-centre"] .mini .pad-l { left: 6px; }
+.place[data-v="thumb-centre"] .mini .pad-r { right: 6px; }
+.place[data-v="thumb-centre"] .mini .wheel { left: 25px; width: 2px; height: 36px; }
+.place[data-v="thumb-centre"] .mini .power {
+  left: 17px; width: 18px; height: 6px; border-radius: 999px;
+  top: calc(5px + 42px + var(--block-drag, var(--block-y, 0.65)) * var(--mini-travel, 44px));
+}
+/* Dragging with no phone to move. The line sits beside the drawing, laid out
+   always and only shown once a drag has happened while disconnected, so
+   nothing shifts; the script sets data-tried on .place and clears it on
+   connect. */
+.place .warn {
+  position: absolute; top: 50%; translate: 0 -50%; margin: 0;
+  font-size: 12px; color: var(--bad); visibility: hidden;
+}
+.place[data-v="thumb-right"] .warn  { left: 0; }
+.place[data-v="thumb-left"] .warn   { right: 0; }
+.place[data-v="thumb-centre"] .warn { left: calc(50% + 38px); }
+.place[data-tried] .warn { visibility: visible; }
+body[data-pairing="connected"] .place .warn { visibility: hidden; }

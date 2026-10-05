@@ -2,11 +2,15 @@
 
 Markup only, held apart from pages.py because four hundred lines of HTML
 sitting in a module of Python functions makes both harder to read, and
-because together they were past this project's own file length limit.
+because together they were past this project's own file length limit. The
+panel's Layout card, markup and script, lives in panel_layout.py for the
+same reason.
 Neither carries design -- both load stylesheets the user owns, and their
 scripts publish numbers and attributes rather than colours or sizes.
 """
 from __future__ import annotations
+
+from .panel_layout import LAYOUT_CARD, LAYOUT_SCRIPT
 
 PANEL_HTML = """<!doctype html>
 <meta charset="utf-8">
@@ -57,21 +61,7 @@ try {
   <button id="grant">Grant permission\u2026</button>
 </div>
 
-<div class="card">
-  <b>Grip</b>
-  <p class="lede">One-handed moves the buttons into thumb reach and puts power at
-     the top, out of the way of an accidental press.</p>
-  <div class="seg" id="grip" role="radiogroup" aria-label="Layout" tabindex="0">
-    <span class="knob" aria-hidden="true"></span>
-    <span class="stop" role="radio" data-v="standard" aria-label="Two hands"></span>
-    <span class="stop" role="radio" data-v="one-handed" aria-label="One hand"></span>
-  </div>
-  <div class="seg-labels" aria-hidden="true">
-    <span>Two hands</span><span>One hand</span>
-  </div>
-</div>
-
-<div class="card">
+""" + LAYOUT_CARD + """<div class="card">
   <b>Pointer feel</b>
   <p class="lede">Point the phone at a few dots and Phice measures how much of
      your screen one degree of wrist actually covers. Under a minute, no cursor
@@ -123,13 +113,18 @@ async function refresh() {
     dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
     document.getElementById("v-ptr").textContent = d.phase;
     document.getElementById("stale").hidden = !d.client_stale;
-    // Never move the knob under a finger that is dragging it.
-    if (!gripDragging) {
-      // "custom" means layout.json rather than a preset; show it as standard so
+    // Never move the knob, or the drawing, under a finger that is dragging it.
+    if (!modeDrag) {
+      // "custom" means layout.json rather than a preset; show it as the mouse so
       // the knob has somewhere to sit rather than vanishing off the track.
-      const shown = GRIPS.includes(d.layout) ? d.layout : "standard";
-      if (shown !== grip.dataset.v) applyGrip(shown);
+      const shown = LAYOUTS.includes(d.layout) ? d.layout : "standard";
+      if (shown !== mode.dataset.v) applyLayout(shown);
     }
+    if (!blockDragging && typeof d.block_y === "number") {
+      place.style.setProperty("--block-y", d.block_y.toFixed(3));
+      mini.setAttribute("aria-valuenow", d.block_y.toFixed(3));
+    }
+    if (pairing === "connected") delete place.dataset.tried;
     document.getElementById("calibrated").textContent =
       d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
@@ -146,63 +141,7 @@ document.getElementById("newcode").onclick = async () => {
 document.getElementById("grant").onclick = async () => {
   await fetch("/debug/grant"); refresh();
 };
-// The grip switch, same contract as appearance: the script sets an attribute and
-// posts the choice; what that looks like is decided in panel.css.
-const GRIPS = ["standard", "one-handed"];
-const grip = document.getElementById("grip");
-let gripDragging = false;
-
-function applyGrip(name) {
-  grip.dataset.v = name;
-  for (const s of grip.querySelectorAll(".stop")) {
-    s.setAttribute("aria-checked", String(s.dataset.v === name));
-  }
-}
-function gripIndexAt(clientX) {
-  const r = grip.getBoundingClientRect();
-  if (!r.width) return 0;
-  return Math.min(1, Math.max(0, ((clientX - r.left) / r.width) * 2 - 0.5));
-}
-async function chooseGrip(name) {
-  applyGrip(name);
-  try { await fetch("/debug/layout?v=" + name); } catch (e) { /* the poll retries */ }
-}
-grip.addEventListener("pointerdown", (ev) => {
-  gripDragging = true;
-  grip.dataset.dragging = "1";
-  grip.setPointerCapture(ev.pointerId);
-  grip.style.setProperty("--knob-drag", gripIndexAt(ev.clientX).toFixed(3));
-});
-grip.addEventListener("pointermove", (ev) => {
-  if (gripDragging) grip.style.setProperty("--knob-drag", gripIndexAt(ev.clientX).toFixed(3));
-});
-const endGrip = (ev) => {
-  if (!gripDragging) return;
-  gripDragging = false;
-  delete grip.dataset.dragging;
-  grip.style.removeProperty("--knob-drag");
-  chooseGrip(GRIPS[Math.round(gripIndexAt(ev.clientX))]);
-};
-grip.addEventListener("pointerup", endGrip);
-grip.addEventListener("pointercancel", endGrip);
-// A plain click as well: pointer capture inside a WKWebView has surprised this
-// project before, and a switch that silently does nothing is worse than one
-// that only clicks.
-grip.addEventListener("click", (ev) => {
-  if (!gripDragging) chooseGrip(GRIPS[Math.round(gripIndexAt(ev.clientX))]);
-});
-for (const stop of grip.querySelectorAll(".stop")) {
-  stop.addEventListener("click", (ev) => { ev.stopPropagation(); chooseGrip(stop.dataset.v); });
-}
-grip.addEventListener("keydown", (ev) => {
-  const i = GRIPS.indexOf(grip.dataset.v || "standard");
-  if (ev.key === "ArrowLeft" && i > 0) chooseGrip(GRIPS[i - 1]);
-  else if (ev.key === "ArrowRight" && i < GRIPS.length - 1) chooseGrip(GRIPS[i + 1]);
-  else return;
-  ev.preventDefault();
-});
-
-document.getElementById("calibrate").onclick = async () => {
+""" + LAYOUT_SCRIPT + """document.getElementById("calibrate").onclick = async () => {
   // The calibration screen handles pairing itself, so this needs no phone yet.
   await fetch("/calibrate/start");
 };

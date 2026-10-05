@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "11";
+  const CLIENT_VERSION = "12";
 
   const el = {
     body: document.body,
@@ -265,6 +265,14 @@
     if (msg.ui) {
       state.haptics = !!msg.ui.haptics;
       if (msg.ui.appearance) setAppearance(msg.ui.appearance);
+      // Where a movable layout's block sits, 0..1, and whether a finger on the
+      // Mac's panel is still moving it. Two facts, published as a number and an
+      // attribute; the theme turns them into position and easing.
+      if (typeof msg.ui.block_y === "number") {
+        el.body.style.setProperty("--block-y", msg.ui.block_y.toFixed(3));
+      }
+      if (msg.ui.block_dragging) el.body.dataset.blockDragging = "1";
+      else delete el.body.dataset.blockDragging;
     }
   }
 
