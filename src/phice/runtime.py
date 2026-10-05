@@ -28,6 +28,7 @@ from .control import ControlServer
 from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
 from .engine import PointerEngine
 from .paths import Paths, client_version
+from .qr import PairingQR, pairing_url
 from .rtc import RTCTransport
 from .status import Status
 from .window import WindowRequests
@@ -56,6 +57,7 @@ class Runtime:
         self.engine = PointerEngine(self.config, backend)
         self.engine.set_roles(self.layout.roles())
         self.pairing = signaling.Pairing()
+        self.qr = PairingQR()
         self.rtc: RTCTransport | None = None
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
         self.recorder = None                                 # an open text file while recording
@@ -74,6 +76,7 @@ class Runtime:
                      "/debug/grant": lambda: {"accessibility": accessibility_trusted(prompt=True)},
                      "/debug/panel": self.windows.show_panel,
                      "/debug/newcode": self.new_pair_code,
+                     "/debug/qr": self.debug_qr,
                      "/calibrate/state": self.calibration_state,
                      "/calibrate/start": self.start_calibration,
                      "/calibrate/begin": self.calibration.begin,
@@ -223,7 +226,7 @@ class Runtime:
         d["client_reported"] = rtc.client_caps if rtc else ""
         d["client_stale"] = bool(rtc and rtc.client_stale)
         d["signaling_url"] = self.config.signaling_url
-        d["phone_url"] = f"{self.config.signaling_url}/app"
+        d["phone_url"] = pairing_url(self.config.signaling_url, d["pair_code"])
         # True while the letterbox holds this session's offer and nobody has
         # answered it. After a disconnect the previous offer lingers there until
         # the fresh one is gathered and published; answering it fails ICE.
@@ -356,7 +359,7 @@ class Runtime:
         s["connected"] = status["connected"]
         s["phase"] = status["phase"]
         s["pair_code"] = status["pair_code"]
-        s["phone_url"] = f"{self.config.signaling_url}/app"
+        s["phone_url"] = pairing_url(self.config.signaling_url, status["pair_code"])
         s["ready"] = status["connected"] and status["phase"] in ("on", "hold", "held")
         return s
 
@@ -428,6 +431,9 @@ class Runtime:
         data.setdefault("ui", {})[key] = value
         path.write_text(json.dumps(data, indent=2) + "\n")
         self._dispatch(self._apply_pointer(path))
+
+    def debug_qr(self) -> dict:
+        return self.qr.describe(self.config.signaling_url, self.status.read()["pair_code"])
 
     def new_pair_code(self) -> None:
         """Drop the current code and republish under a fresh one.

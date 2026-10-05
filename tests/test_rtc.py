@@ -803,3 +803,90 @@ async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_pa
         await asyncio.gather(task, return_exceptions=True)
         if rt.rtc:
             await rt.rtc.close()
+
+
+async def test_the_phone_link_carries_the_code_and_the_panel_can_ask_for_its_qr(tmp_path):
+    """The link the panel shows and copies is the short one with the code as
+    its path, and the QR is the same link, drawn by the Mac."""
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    assert "/debug/qr" in rt.control._actions
+    rt.status.update(pair_code="34XEJA")
+    assert rt._debug_cursor()["phone_url"].endswith("/34XEJA")
+    qr = rt.debug_qr()
+    assert qr["code"] == "34XEJA" and qr["url"].endswith("/34XEJA") and qr["svg"].startswith("<svg")
+    assert rt.debug_qr() == qr
+    rt.status.update(pair_code="")
+    assert rt.debug_qr()["svg"] == "" and rt._debug_cursor()["phone_url"].endswith("/app")
+
+
+async def test_the_code_shows_before_the_relay_is_fetched_and_the_relay_is_kept(tmp_path, monkeypatch):
+    """Minting first puts the code on screen while the credentials and the
+    offer are still on their way; keeping the credentials for the lifetime the
+    service states takes one cold request out of every renewal."""
+    import json as _json
+
+    from phice.paths import Paths
+    from phice.runtime import Runtime
+
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    d = _json.loads(paths.pointer_json.read_text())
+    d["signaling_url"] = "https://example.invalid"
+    paths.pointer_json.write_text(_json.dumps(d))
+    calls = {"ice": 0, "offers": 0}
+    gate = asyncio.Event()
+    code_at_fetch: list[str] = []
+
+    class FakeSignaling:
+        ice_ttl = 3600.0
+
+        def __init__(self, *a, **kw):
+            pass
+
+        async def fetch_ice_servers(self):
+            calls["ice"] += 1
+            code_at_fetch.append(rt.status.read()["pair_code"])
+            await gate.wait()
+            return [{"urls": "stun:stun.example.invalid:3478"}]
+
+        async def publish_offer(self, code, offer):
+            calls["offers"] += 1
+            return 300.0
+
+        async def wait_for_answer(self, code, **kw):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt.rtc_ice_servers = ()
+    rt._loop = asyncio.get_running_loop()
+    task = asyncio.ensure_future(signaling.run(rt))
+    try:
+        for _ in range(50):
+            if calls["ice"]:
+                break
+            await asyncio.sleep(0.05)
+        assert calls["ice"] == 1
+        assert len(code_at_fetch[0]) == 6, "the code is on screen before the relay fetch"
+        gate.set()
+        for _ in range(60):
+            if calls["offers"] == 1:
+                break
+            await asyncio.sleep(0.05)
+        assert calls["offers"] == 1
+        rt.new_pair_code()
+        for _ in range(60):
+            if calls["offers"] == 2:
+                break
+            await asyncio.sleep(0.05)
+        assert calls["offers"] == 2 and calls["ice"] == 1, "credentials kept for their lifetime"
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        if rt.rtc:
+            await rt.rtc.close()

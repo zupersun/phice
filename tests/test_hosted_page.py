@@ -3,6 +3,7 @@
 The page is plain files with no build step and no JS test runner, so these check
 the few invariants that have actually broken in the field.
 """
+import json
 import re
 from pathlib import Path
 
@@ -119,3 +120,16 @@ def test_where_the_block_sits_is_a_number_the_theme_interprets(js):
     way --scroll-pos works."""
     assert "--block-y" in js and "block_dragging" in js
     assert "translate" not in js and "transform" not in js
+
+
+def test_the_link_can_carry_the_code(js):
+    """The QR on the Mac encodes phice.vercel.app/ABC123. The site forwards that
+    to the page with the code in the query, and the page fills it in, so a scan
+    needs no typing; the root forwards too, so the typed address is one word."""
+    assert 'URLSearchParams(location.search).get("c")' in js
+    vercel = json.loads((WEB.parent / "vercel.json").read_text())
+    redirects = {r["source"]: r["destination"] for r in vercel.get("redirects", [])}
+    assert redirects.get("/") == "/app/", "the root forwards to the app"
+    assert any("/app/?c=:code" in dst for src, dst in redirects.items() if ":code" in src), \
+        "a six-character path carries the code"
+    assert not (WEB.parent / "index.html").exists(), "the redirect replaces the meta-refresh page"

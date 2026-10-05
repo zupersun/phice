@@ -164,3 +164,24 @@ def test_the_panel_offers_every_shipped_layout_and_nothing_else():
     assert set(re.findall(r'data-v="([^"]+)"', bar)) == presets
     assert "/debug/block" in PANEL_HTML and "/debug/block-drag" in PANEL_HTML
     assert 'id="grip"' not in PANEL_HTML
+
+
+def test_the_panel_is_two_screens():
+    """Until a phone connects the window shows only the way in: the ticket, the
+    steps, and the one permission worth fixing early. The controls arrive once
+    a phone has connected."""
+    from phice.templates import PANEL_HTML
+    a = PANEL_HTML.index('class="screen-pair"')
+    b = PANEL_HTML.index('class="screen-live"')
+    pair = PANEL_HTML[a:b]
+    live = PANEL_HTML[b:PANEL_HTML.index("<script>", b)]
+    assert 'id="qr"' in pair and 'id="code"' in pair and 'id="link"' in pair, \
+        "ticket: tile, code, address"
+    assert 'class="steps"' in pair and pair.count("<li>") == 3
+    assert 'id="grant"' in pair, "the one thing worth fixing before a phone arrives"
+    assert 'id="mode"' in live and 'id="calibrate"' in live and 'id="newcode"' in live
+    assert "Calibrate pointer<" in live, "no ellipsis"
+    for gone in ("How to connect", "Pointer feel", "Grip</b>", 'id="url"',
+                 'id="copy"', "Enter this on your phone", "It renews itself"):
+        assert gone not in PANEL_HTML, gone
+    assert "/debug/qr" in PANEL_HTML and "/debug/newcode" in PANEL_HTML

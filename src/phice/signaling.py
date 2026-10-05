@@ -67,6 +67,9 @@ class SignalingClient:
         if not allow_insecure and not base.startswith("https://"):
             raise SignalingError("signaling base URL must use https")
         self.base = base
+        #: How long the service said its last relay credentials are good for,
+        #: in seconds; 0 until it has said.
+        self.ice_ttl = 0.0
 
     # ----- transport --------------------------------------------------------
 
@@ -114,6 +117,9 @@ class SignalingClient:
             return None
         if not body or not isinstance(body.get("iceServers"), list):
             return None
+        ttl = body.get("ttl")
+        numeric = isinstance(ttl, (int, float)) and not isinstance(ttl, bool)
+        self.ice_ttl = float(ttl) if numeric and ttl > 0 else 0.0
         return body["iceServers"]
 
     async def publish_offer(self, code: str, offer: dict) -> float:
@@ -201,14 +207,32 @@ async def run(rt: Runtime) -> None:
     page reach the motion sensors and the Mac without anything installed.
     """
     client = SignalingClient(rt.config.signaling_url)
+    kept: tuple[tuple, float] | None = None   # relay servers, and until when they are good
     while True:
+        # Mint and show the code before anything touches the network. Minting
+        # after the relay fetch meant a new code sat on the old one for as long
+        # as a cold service took to answer, which read as a dead button.
+        #
+        # The code itself lives for the whole process: minting a new one after
+        # every disconnect sent the user back to the Mac each time, and the
+        # page's remembered code was always the dead one.
+        code = rt.pairing.code or new_pairing_code()
+        rt.pairing.code = code
+        rt.status.update(pair_code=code)
+
         ice = ice_servers(rt)
-        if ice is None:
+        if ice is None and kept is not None and time.time() < kept[1]:
+            ice = kept[0]
+        elif ice is None:
             # Take the relay from the signaling service so both peers get the
-            # same one. Credentials are short-lived and never stored here.
+            # same one. Kept for half the lifetime the service states, so a
+            # session built at the end of that is still good when it connects;
+            # fetching per offer cost one cold request on every renewal.
             fetched = await client.fetch_ice_servers()
             if fetched:
                 ice = tuple(fetched)
+                ttl = float(getattr(client, "ice_ttl", 0.0) or 0.0)
+                kept = (ice, time.time() + ttl / 2) if ttl > 0 else None
                 if any("turn:" in str(s.get("urls", "")) for s in fetched):
                     log.info("using a relay from the signaling service")
                 else:
@@ -222,19 +246,8 @@ async def run(rt: Runtime) -> None:
                               ice_servers=(rt.rtc_ice_servers
                                            if rt.rtc_ice_servers is not None
                                            else ice))
-        # Mint and show the code before gathering candidates, not after. ICE
-        # gathering takes seconds, and minting afterwards meant "new code" sat
-        # there doing nothing visible for all of them. The phone may now ask for
-        # an offer that is still being built, which is why the page retries
-        # rather than failing on the first miss.
-        #
-        # The code itself lives for the whole process: minting a new one after
-        # every disconnect sent the user back to the Mac each time, and the
-        # page's remembered code was always the dead one.
-        code = rt.pairing.code or new_pairing_code()
-        rt.pairing.code = code
-        rt.status.update(pair_code=code)
-
+        # The phone may ask for an offer that is still being built, which is
+        # why the page retries rather than failing on the first miss.
         offer = await rt.rtc.create_offer()
         try:
             ttl = await client.publish_offer(code, offer)

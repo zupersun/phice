@@ -37,59 +37,92 @@ try {
 </div>
 <p class="sub" id="sub">Checking\u2026</p>
 
-<div class="card" id="pair-card">
-  <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
-  <div class="code-life" aria-hidden="true"><i></i></div>
-  <p class="code-hint" id="code-hint">Renewing\u2026</p>
-</div>
-
-<div class="card">
-  <div class="url" id="url">\u2014</div>
-  <button id="copy">Copy link</button>
-  <button id="newcode">New code</button>
-</div>
-
-<div class="card">
-  <div class="row"><span class="dot" id="d-acc"></span>
-    <span class="what">Permissions</span><span class="val" id="v-acc">?</span></div>
-  <div class="row"><span class="dot" id="d-conn"></span>
-    <span class="what">Connection</span><span class="val" id="v-conn">?</span></div>
-  <div class="row"><span class="dot" id="d-ptr"></span>
-    <span class="what">Pointer</span><span class="val" id="v-ptr">?</span></div>
-  <p class="note" id="stale" hidden>The phone is showing a cached copy of the
-     page. Close the tab and open the link again.</p>
-  <button id="grant">Grant permission\u2026</button>
-</div>
-
-""" + LAYOUT_CARD + """<div class="card">
-  <b>Pointer feel</b>
-  <p class="lede">Point the phone at a few dots and Phice measures how much of
-     your screen one degree of wrist actually covers. Under a minute, no cursor
-     involved, and nothing is saved until you approve it.</p>
-  <p class="when" id="calibrated">Not calibrated yet</p>
-  <button id="calibrate" class="primary">Calibrate pointer\u2026</button>
-</div>
-
-<div class="card">
-  <b>How to connect</b>
-  <ol>
-    <li>Open the link above on your iPhone.</li>
-    <li>Type the code, then tap <b>Start</b> and allow motion access.</li>
-    <li>Point at the cursor and press any button to begin.</li>
+<!-- Until a phone connects: only the way in. -->
+<div class="screen-pair">
+  <div class="card ticket" id="pair-card">
+    <div class="stub" id="qr" role="img" aria-label="QR code for the pairing link"></div>
+    <div class="body">
+      <div class="code" id="code">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</div>
+      <div class="code-life" aria-hidden="true"><i></i></div>
+      <p class="line" id="line">Scan, or enter the code at
+        <button id="link" class="text" title="Copy the link">\u2026</button></p>
+      <p class="line" id="code-hint">Renewing\u2026</p>
+    </div>
+  </div>
+  <ol class="steps">
+    <li>Connect your iPhone with the code above. It joins this Mac over the web.</li>
+    <li>Tap <b>Start</b> on the phone and allow motion, so it can tell where it
+        points.</li>
+    <li>Point it at the cursor and press any button on the phone to
+        begin.</li>
   </ol>
-  <p class="note">Closing this window leaves Phice running in the menu bar.</p>
+  <div class="card allow" id="allow" hidden>
+    <span class="dot bad"></span>
+    <span class="what">Allow Phice to move the cursor
+      <small>macOS asks once, in Accessibility</small></span>
+    <button id="grant" class="primary">Allow</button>
+  </div>
+</div>
+
+<!-- Once one has: the controls. -->
+<div class="screen-live">
+  <div class="card">
+    <div class="conn">
+      <span class="dot" id="d-conn"></span>
+      <span class="what"><span id="device">Your phone</span>
+        <small>Connected \u00b7 the code stays valid for next time</small></span>
+      <span class="code-s" id="code-s">\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7</span>
+      <button id="newcode" class="text">New code</button>
+    </div>
+    <div class="conn-rows">
+      <div class="row"><span class="dot" id="d-ptr"></span>
+        <span class="what">Pointer</span><span class="val" id="v-ptr">?</span></div>
+      <div class="row"><span class="dot" id="d-acc"></span>
+        <span class="what">Permissions</span><span class="val" id="v-acc">?</span>
+        <button id="grant-live" class="text" hidden>Allow</button></div>
+    </div>
+    <p class="note" id="stale" hidden>The phone is showing a cached copy of the
+       page. Close the tab and open the link again.</p>
+  </div>
+
+""" + LAYOUT_CARD + """<div class="card pointer">
+    <div class="what"><b>Pointer</b><span class="val" id="calibrated">Not calibrated yet</span></div>
+    <button id="calibrate" class="primary">Calibrate pointer</button>
+  </div>
+  <p class="foot">Closing this window keeps Phice in the menu bar</p>
 </div>
 
 <script>
 function dot(el, cls) { el.className = "dot" + (cls ? " " + cls : ""); }
+const hostOf = (url) => { try { return new URL(url).host; } catch (e) { return url || ""; } };
+const link = document.getElementById("link");
+let linkUrl = "";
+let copiedUntil = 0;
+let qrShown = "";
+
+// The QR is the pairing link, drawn by the Mac. Asked for once per code, not
+// on every poll; the stylesheet decides its size and colour.
+async function drawQR(code) {
+  try {
+    const r = await fetch("/debug/qr", { cache: "no-store" });
+    const q = await r.json();
+    if (q.code === code) { document.getElementById("qr").innerHTML = q.svg; qrShown = code; }
+  } catch (e) { /* the next poll asks again */ }
+}
+
 async function refresh() {
   try {
     const r = await fetch("/debug/cursor", { cache: "no-store" });
     const d = await r.json();
-    document.getElementById("code").textContent = d.pair_code || "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
-    document.getElementById("url").textContent = d.phone_url || "\u2014";
+    const code = d.pair_code || "\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7";
+    document.getElementById("code").textContent = code;
+    document.getElementById("code-s").textContent = code;
+    if (d.pair_code && d.pair_code !== qrShown) drawQR(d.pair_code);
+    linkUrl = d.phone_url || "";
+    if (Date.now() > copiedUntil) link.textContent = hostOf(linkUrl);
     // Which of four situations the code is in, and how much life it has left
-    // (0..1). Only a number and an attribute cross this line; panel.css draws.
+    // (0..1). Only a number and an attribute cross this line; panel.css draws,
+    // and chooses which of the two screens shows.
     const pairing = d.connected ? "connected"
                   : d.pairing_error ? "error"
                   : d.offer_ready ? "ready" : "renewing";
@@ -97,21 +130,21 @@ async function refresh() {
     document.body.style.setProperty("--code-life",
                     (pairing === "ready" ? (Number(d.code_life) || 0) : 0).toFixed(3));
     document.getElementById("code-hint").textContent = {
-      connected: "Connected. The code stays valid for next time.",
       error: "Can\u2019t reach the pairing service. Phice keeps trying.",
-      ready: "Enter this on your phone. It renews itself.",
       renewing: "Renewing\u2026",
-    }[pairing];
+    }[pairing] || "";
     document.getElementById("sub").textContent =
       d.connected ? "Connected to " + (d.device_name || "your phone")
                   : "Waiting for your phone";
-    const acc = document.getElementById("v-acc");
-    acc.textContent = d.accessibility ? "granted" : "not granted";
+    document.getElementById("device").textContent = d.device_name || "Your phone";
+    document.getElementById("v-acc").textContent = d.accessibility ? "granted" : "not granted";
     dot(document.getElementById("d-acc"), d.accessibility ? "ok" : "bad");
-    document.getElementById("grant").hidden = !!d.accessibility;
-    document.getElementById("v-conn").textContent = d.connected ? "on" : "off";
-    dot(document.getElementById("d-conn"), d.connected ? "ok" : "warn");
+    document.getElementById("grant-live").hidden = !!d.accessibility;
+    document.getElementById("allow").hidden = !!d.accessibility;
     document.getElementById("v-ptr").textContent = d.phase;
+    const ptr = d.phase === "on" ? "ok" : d.phase === "off" ? "warn" : "";
+    dot(document.getElementById("d-ptr"), ptr);
+    dot(document.getElementById("d-conn"), ptr);
     document.getElementById("stale").hidden = !d.client_stale;
     // Never move the knob, or the drawing, under a finger that is dragging it.
     if (!modeDrag) {
@@ -129,18 +162,36 @@ async function refresh() {
       d.calibrated ? "Last calibrated " + d.calibrated : "Not calibrated yet";
     // Never yank the knob out from under a finger that is dragging it.
     if (!dragging && d.appearance && d.appearance !== seg.dataset.v) applyTheme(d.appearance);
-    dot(document.getElementById("d-ptr"),
-        d.phase === "on" ? "ok" : d.phase === "off" ? "warn" : "");
   } catch (e) { /* the app is restarting; the next tick will catch up */ }
 }
-document.getElementById("copy").onclick = () =>
-  navigator.clipboard.writeText(document.getElementById("url").textContent);
+// The address in the sentence copies the link, code included: with Universal
+// Clipboard that lands straight in Safari on the phone.
+link.onclick = async () => {
+  if (!linkUrl) return;
+  try { await navigator.clipboard.writeText(linkUrl); } catch (e) { return; }
+  copiedUntil = Date.now() + 1200;
+  link.textContent = "Copied";
+  setTimeout(() => { copiedUntil = 0; link.textContent = hostOf(linkUrl); }, 1200);
+};
+// Flip to renewing at once and ask often until the offer is up: the poll's
+// second was most of what "new code" used to wait for.
+let fastUntil = 0;
+function fastPoll() {
+  fastUntil = Date.now() + 8000;
+  const tick = async () => {
+    await refresh();
+    if (Date.now() < fastUntil && document.body.dataset.pairing === "renewing") setTimeout(tick, 250);
+  };
+  tick();
+}
 document.getElementById("newcode").onclick = async () => {
-  await fetch("/debug/newcode", { method: "POST" }); refresh();
+  document.body.dataset.pairing = "renewing";
+  await fetch("/debug/newcode", { method: "POST" });
+  fastPoll();
 };
-document.getElementById("grant").onclick = async () => {
-  await fetch("/debug/grant"); refresh();
-};
+for (const id of ["grant", "grant-live"]) {
+  document.getElementById(id).onclick = async () => { await fetch("/debug/grant"); refresh(); };
+}
 """ + LAYOUT_SCRIPT + """document.getElementById("calibrate").onclick = async () => {
   // The calibration screen handles pairing itself, so this needs no phone yet.
   await fetch("/calibrate/start");

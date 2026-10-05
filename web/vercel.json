@@ -1,5 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    { "source": "/", "destination": "/app/", "permanent": false },
+    { "source": "/:code([A-Za-z0-9]{6})", "destination": "/app/?c=:code", "permanent": false }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

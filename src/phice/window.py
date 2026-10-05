@@ -118,11 +118,14 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                          | AppKit.NSWindowStyleMaskClosable
                          | AppKit.NSWindowStyleMaskFullSizeContentView)
             else:
-                rect = AppKit.NSMakeRect(0, 0, 420, 620)
+                # One size. Without the resizable style the zoom button is dead
+                # and full screen cannot happen, so every card stays the width it
+                # was designed at; minimise and close remain. The height holds
+                # the Layout card with its drawer open.
+                rect = AppKit.NSMakeRect(0, 0, 420, 780)
                 style = (AppKit.NSWindowStyleMaskTitled
                          | AppKit.NSWindowStyleMaskClosable
-                         | AppKit.NSWindowStyleMaskMiniaturizable
-                         | AppKit.NSWindowStyleMaskResizable)
+                         | AppKit.NSWindowStyleMaskMiniaturizable)
             cls = _fullscreen_window(AppKit) if fullscreen else AppKit.NSWindow
             win = cls.alloc().initWithContentRect_styleMask_backing_defer_(
                 rect, style, AppKit.NSBackingStoreBuffered, False)
@@ -143,6 +146,13 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                 win.setFrame_display_(rect, True)
             else:
                 win.center()
+                # Where it was left, from the second opening on. And it joins the
+                # active space when opened, a full-screen app's included, rather
+                # than switching the Mac back to the desktop to show itself.
+                win.setFrameAutosaveName_("PhicePanel")
+                win.setCollectionBehavior_(
+                    AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+                    | AppKit.NSWindowCollectionBehaviorMoveToActiveSpace)
             view = WebKit.WKWebView.alloc().initWithFrame_(rect)
             view.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
             win.setContentView_(view)
