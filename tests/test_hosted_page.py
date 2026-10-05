@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from phice.paths import DEFAULTS_DIR
+
 WEB = Path(__file__).resolve().parents[1] / "web" / "app"
 
 
@@ -133,3 +135,23 @@ def test_the_link_can_carry_the_code(js):
     assert any("/app/?c=:code" in dst for src, dst in redirects.items() if ":code" in src), \
         "a six-character path carries the code"
     assert not (WEB.parent / "index.html").exists(), "the redirect replaces the meta-refresh page"
+
+
+def test_the_recentre_hold_pinches_the_pad_and_swells_the_led():
+    """Holding the power button to recentre: the whole pad pinches in by a
+    share of itself as the hold's progress climbs, and springs back the moment
+    the Mac recentres; the LED swells and its glow reaches further. Both ride
+    the one progress number the theme already interpolates, so a tap too short
+    to recentre shows neither. The old lift of the shell toward white is gone:
+    its drop on the recentred state read as a second flash."""
+    css = (DEFAULTS_DIR / "theme.css").read_text()
+    assert "--recenter-pinch: 0.08;" in css
+    assert "--recenter-swell:" in css
+    pad = css[css.index("#pad {", css.index("--recenter-pinch")):]
+    pad = pad[:pad.index("}")]
+    assert "scale: calc(1 - var(--recenter-progress, 0) * var(--recenter-pinch))" in pad
+    assert "transition: scale" in pad and "--scroll-spring" in pad, "springs back"
+    led = css[css.index(".role-power::after {"):]
+    led = led[:led.index("}")]
+    assert "var(--recenter-swell)" in led
+    assert "--flash" not in css, "the lift toward white is gone"
