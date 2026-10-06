@@ -345,3 +345,30 @@ def test_the_logo_is_the_mark_alone_and_the_name_is_never_shouted():
     for where in (LOGO_SVG, PANEL_HTML):
         assert "PHICE" not in where
     assert "Phice" in PANEL_HTML
+
+
+def test_the_app_icon_is_the_mark_on_a_tile():
+    """The Mac's icon is the same mark the menu bar draws, white on a near-black
+    tile, cut to the rounded square every macOS icon shares so it lines up with
+    its neighbours. Drawn rather than committed, so it cannot fall out of step."""
+    from phice.icons import app_icon
+    px = _rgba_grid(app_icon(64))
+    assert len(px) == 64 and len(px[0]) == 64
+    assert px[0][0][3] == 0, "the canvas outside the tile is transparent"
+    assert px[36][32][3] == 255, "the tile is opaque where the mark sits"
+    assert px[36][32][0] > 200, "the mark is the light one"
+    assert px[52][12][0] < 90, "the tile around it is the dark one"
+    top, bottom = px[10][32][0], px[58][32][0]
+    assert top > bottom, "the tile lifts a little toward the top"
+
+
+def _rgba_grid(png: bytes) -> list[list[tuple[int, int, int, int]]]:
+    """Decode one of our own RGBA PNGs back to pixels."""
+    import zlib
+    w = int.from_bytes(png[16:20], "big")
+    i = png.index(b"IDAT")
+    n = int.from_bytes(png[i - 4:i], "big")
+    raw = zlib.decompress(png[i + 4:i + 4 + n])
+    stride = w * 4 + 1
+    return [[tuple(raw[r * stride + 1 + c * 4 + k] for k in range(4)) for c in range(w)]
+            for r in range(len(raw) // stride)]
