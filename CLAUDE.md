@@ -122,8 +122,9 @@ The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
 Dependency order, and nothing may point backwards:
 
 ```
-orientation  filters  protocol  paths  panel_layout  panel_howto  calibrate  window  qr   (no dependencies)
-templates    <- panel_layout panel_howto
+orientation  filters  protocol  icons  panel_layout  panel_howto  calibrate  window  qr   (no deps)
+paths        <- icons
+templates    <- icons panel_layout panel_howto
 config       <- paths
 status       <- paths
 engine       <- config cursor_backend filters orientation protocol

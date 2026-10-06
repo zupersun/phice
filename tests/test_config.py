@@ -292,3 +292,56 @@ def test_ui_block_y_is_a_share_of_the_pad(tmp_path):
         p.write_text(json.dumps({"ui": {"block_y": bad}}))
         with pytest.raises(ConfigError):
             load_pointer_config(p)
+
+
+def _alpha_grid(png: bytes) -> list[list[int]]:
+    """Decode one of our own grayscale+alpha PNGs back to its alpha values."""
+    import zlib
+    w = int.from_bytes(png[16:20], "big")
+    i = png.index(b"IDAT")
+    n = int.from_bytes(png[i - 4:i], "big")
+    raw = zlib.decompress(png[i + 4:i + 4 + n])
+    stride = w * 2 + 1
+    return [[raw[r * stride + 1 + c * 2 + 1] for c in range(w)]
+            for r in range(len(raw) // stride)]
+
+
+def test_the_menu_bar_wears_the_logo_in_four_weights():
+    """One mark in the menu bar rather than four drawings of a mouse: filled while
+    a phone is connected, outlined when none is, and the weight saying how live the
+    pointer is. The parting is cut out of all four -- it is what makes the mark a
+    mouse rather than a pill, and it must survive being rasterised this small."""
+    from phice.icons import SIZE, icon_disconnected, icon_off, icon_on, icon_warn
+    g = {n: _alpha_grid(f()) for n, f in (("on", icon_on), ("off", icon_off),
+                                         ("disconnected", icon_disconnected),
+                                         ("warn", icon_warn))}
+    ink = {n: sum(sum(row) for row in grid) for n, grid in g.items()}
+    assert ink["on"] > ink["off"], "an armed pointer is the heaviest"
+    assert ink["off"] > ink["disconnected"] and ink["off"] > ink["warn"], \
+        "a connected phone is filled; the hollow ones carry less ink"
+    assert ink["warn"] > ink["disconnected"], "the one that needs you is the brighter outline"
+    mid = SIZE // 2
+    for n in ("on", "off"):
+        assert g[n][26][mid] > 150, f"{n} is filled"
+    for n in ("disconnected", "warn"):
+        assert g[n][26][mid] == 0, f"{n} is hollow"
+    for n in ("on", "off"):
+        assert g[n][10][mid] == 0, f"{n} has the parting cut out of it"
+    for n in ("disconnected", "warn"):
+        assert g[n][10][mid] > 0, f"{n} draws the parting instead, or it reads as a pill"
+    for n, grid in g.items():
+        assert grid[10][mid - 9] > 0, f"{n} has a body either side of it"
+
+
+def test_the_logo_is_the_mark_alone_and_the_name_is_never_shouted():
+    """The shipped logo is the mouse and nothing else: no lettering baked in, so the
+    panel can set Phice beside it in the window's own type and anyone can use the
+    mark on its own. The name is a word, not an acronym -- never in capitals."""
+    from phice.icons import LOGO_PATH, LOGO_SVG
+    from phice.templates import PANEL_HTML
+    assert LOGO_PATH.count("M ") == 2, "the body, and the parting cut out of it"
+    assert 'fill-rule="evenodd"' in LOGO_SVG and "currentColor" in LOGO_SVG
+    assert "<text" not in LOGO_SVG, "no lettering in the mark"
+    for where in (LOGO_SVG, PANEL_HTML):
+        assert "PHICE" not in where
+    assert "Phice" in PANEL_HTML

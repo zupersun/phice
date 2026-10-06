@@ -10,6 +10,7 @@ scripts publish numbers and attributes rather than colours or sizes.
 """
 from __future__ import annotations
 
+from .icons import LOGO_PATH
 from .panel_howto import HOWTO_CARD, HOWTO_SCRIPT
 from .panel_layout import LAYOUT_CARD, LAYOUT_SCRIPT
 
@@ -25,7 +26,8 @@ try {
 } catch (e) { /* private browsing, etc.: falls back to system appearance */ }
 </script>
 <div class="topbar">
-  <h1>Phice</h1>
+  <h1><svg class="logo" viewBox="0 0 100 100" aria-hidden="true"><path
+      fill="currentColor" fill-rule="evenodd" d='""" + LOGO_PATH + """'/></svg>Phice</h1>
   <div class="appearance">
     <div class="seg" id="seg" role="radiogroup" aria-label="Appearance" tabindex="0">
       <span class="knob" aria-hidden="true"></span>

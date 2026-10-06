@@ -121,7 +121,11 @@ body {
   -webkit-user-select: none; user-select: none;
 }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-h1 { font-size: 17px; font-weight: 500; margin: 0 0 2px; letter-spacing: 0.02em; }
+/* Top left: the mark, then the name. The mark is the shipped logo drawn in the
+   window's own ink; the name is a word, not an acronym, so it is never shouted. */
+h1 { display: flex; align-items: center; gap: 8px;
+     font-size: 17px; font-weight: 500; margin: 0 0 2px; letter-spacing: 0.02em; }
+.logo { width: 18px; height: 18px; flex: none; fill: currentColor; }
 .sub { color: var(--dim); margin: 0 0 12px; font-size: 13px; }
 
 /* A card is a tonal step, not an outline; the ring is only there in light. */
