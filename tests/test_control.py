@@ -263,3 +263,17 @@ def test_the_code_life_bar_lands_a_catch_up_at_once():
     assert "codeJump" in PANEL_HTML, "the script marks a jump"
     css = (DEFAULTS_DIR / "panel.css").read_text()
     assert "body[data-code-jump] .code-life i { transition: none; }" in css
+
+
+def test_the_panel_wears_the_mark_beside_its_name():
+    """Top left, where the window's title was: the mouse mark, then Phice in the
+    window's own type. The mark is the shipped logo's own path, so the window and
+    assets/logo.svg can never drift apart."""
+    from phice.icons import LOGO_PATH
+    from phice.templates import PANEL_HTML
+    top = PANEL_HTML[PANEL_HTML.index('class="topbar"'):PANEL_HTML.index('class="sub"')]
+    assert LOGO_PATH in top and ">Phice<" in top
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    assert ".logo {" in css, "how big the mark is, and in what colour, is the stylesheet's"
+    h1 = css[css.index("h1 {"):css.index("}", css.index("h1 {"))]
+    assert "uppercase" not in h1, "the name is never shouted"
