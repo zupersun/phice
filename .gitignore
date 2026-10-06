@@ -25,3 +25,7 @@ node_modules/
 
 # visual brainstorming session files
 .superpowers/
+
+# drawn at build time from the mark
+packaging/AppIcon.icns
+packaging/AppIcon.iconset/

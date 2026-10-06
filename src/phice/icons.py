@@ -69,15 +69,13 @@ _SEAM_W, _SEAM_Y, _SEAM_H = 5.0, 11.0, 30.0
 _STROKE = 2.6                        # the hollow mark's weight, in icon pixels
 
 
-def _mark(alpha: int = 255, hollow: bool = False) -> list[list[int]]:
-    """The logo rasterised into the menu bar's square, antialiased by supersampling.
+def _shape(cx: float, ty: float, bw: float, bh: float):
+    """The mark's two questions for a body of this size, in whatever units the
+    caller is drawing in: is a point inside the body, and is it inside the parting.
 
-    Circular hips rather than the continuous ones the SVG draws: at eighteen points
-    the difference is well under a pixel, and the arithmetic stays readable.
+    Everything that rasterises the mark asks these, so the menu bar and the app
+    icon cannot drift from each other or from LOGO_PATH.
     """
-    bh = SIZE - 4.0
-    bw = bh * _BODY_W / _BODY_H
-    cx, ty = SIZE / 2, 2.0
     sw = bw * _SEAM_W / _BODY_W
     sy, sh = ty + bh * _SEAM_Y / _BODY_H, bh * _SEAM_H / _BODY_H
 
@@ -104,27 +102,52 @@ def _mark(alpha: int = 255, hollow: bool = False) -> list[list[int]]:
         return (math.hypot(x - cx, y - (sy + r)) <= r
                 or math.hypot(x - cx, y - (sy + sh - r)) <= r)
 
-    px, n = _blank(), 4
-    for row in range(SIZE):
-        for col in range(SIZE):
-            hits = 0
-            for i in range(n):
-                for j in range(n):
-                    x, y = col + (j + 0.5) / n, row + (i + 0.5) / n
-                    if not body(x, y):
-                        continue
-                    if hollow:
-                        # Hollow, the parting is drawn rather than cut: a ring on
-                        # its own is a pill, and the parting is what makes it a
-                        # mouse at eighteen points.
-                        if body(x, y, _STROKE) and not seam(x, y):
-                            continue
-                    elif seam(x, y):
-                        continue
-                    hits += 1
-            if hits:
-                px[row][col] = round(alpha * hits / (n * n))
-    return px
+    return body, seam
+
+
+def _coverage(size, test, box=None, n=4):
+    """Antialias a shape into a grid of 0..1, sampling finely only where it changes.
+
+    Five probes say whether a pixel is wholly in, wholly out, or on an edge; only
+    edges pay for the full grid. At a thousand pixels square that is the difference
+    between a second and a minute.
+    """
+    x0, y0, x1, y1 = box or (0, 0, size, size)
+    out = [[0.0] * size for _ in range(size)]
+    for row in range(max(0, int(y0)), min(size, int(y1) + 1)):
+        for col in range(max(0, int(x0)), min(size, int(x1) + 1)):
+            probes = [test(col + dx, row + dy) for dx, dy in
+                      ((0.03, 0.03), (0.97, 0.03), (0.03, 0.97), (0.97, 0.97), (0.5, 0.5))]
+            if all(probes):
+                out[row][col] = 1.0
+            elif any(probes):
+                hits = sum(test(col + (j + 0.5) / n, row + (i + 0.5) / n)
+                           for i in range(n) for j in range(n))
+                out[row][col] = hits / (n * n)
+    return out
+
+
+def _mark(alpha: int = 255, hollow: bool = False) -> list[list[int]]:
+    """The logo rasterised into the menu bar's square, antialiased by supersampling.
+
+    Circular hips rather than the continuous ones the SVG draws: at eighteen points
+    the difference is well under a pixel, and the arithmetic stays readable.
+    """
+    bh = SIZE - 4.0
+    bw = bh * _BODY_W / _BODY_H
+    body, seam = _shape(SIZE / 2, 2.0, bw, bh)
+
+    def ink(x: float, y: float) -> bool:
+        if not body(x, y):
+            return False
+        if hollow:
+            # Hollow, the parting is drawn rather than cut: a ring on its own is a
+            # pill, and the parting is what makes it a mouse at eighteen points.
+            return (not body(x, y, _STROKE)) or seam(x, y)
+        return not seam(x, y)
+
+    cov = _coverage(SIZE, ink)
+    return [[round(alpha * c) for c in row] for row in cov]
 
 
 # Four weights of the one mark. Filled means a phone is on the other end; hollow
@@ -147,6 +170,52 @@ def icon_disconnected() -> bytes:
 def icon_warn() -> bytes:
     """Something needs you: the permission, or the pairing service. Hollow, but lit."""
     return _png(_mark(255, hollow=True))
+
+
+# The Mac app icon: the mark on a tile. macOS gives every icon the same grid so
+# they line up in the Dock and in Finder -- the art is a rounded square 824 wide
+# in a canvas of 1024, centred -- and the rounding is a squircle, the fifth-power
+# superellipse, not a circular arc. The tile is the window's own near-black with
+# a breath of lift at the top; the mark on it is the white of the mouse itself.
+_TILE = 824 / 1024
+_TILE_TOP, _TILE_BOTTOM = (0x3A, 0x3A, 0x3E), (0x1B, 0x1B, 0x1D)
+_TILE_INK = (0xF7, 0xF7, 0xF9)
+_MARK_ON_TILE = 0.67                 # the mark's box, as a share of the tile
+
+
+def app_icon(size: int = 1024) -> bytes:
+    """The icon at one size, as RGBA. The iconset is this drawn once and resampled."""
+    cx = size / 2
+    half = size * _TILE / 2
+    mbox = size * _TILE * _MARK_ON_TILE
+    bw, bh = mbox * _BODY_W / 100, mbox * _BODY_H / 100
+    body, seam = _shape(cx, cx - mbox / 2 + mbox * 0.09, bw, bh)
+
+    def tile(x: float, y: float) -> bool:
+        return abs((x - cx) / half) ** 5 + abs((y - cx) / half) ** 5 <= 1.0
+
+    def ink(x: float, y: float) -> bool:
+        return body(x, y) and not seam(x, y)
+
+    tile_a = _coverage(size, tile, (cx - half - 1, cx - half - 1,
+                                    cx + half + 1, cx + half + 1))
+    mark_a = _coverage(size, ink, (cx - bw / 2 - 1, cx - bh / 2 - 1,
+                                   cx + bw / 2 + 1, cx + bh / 2 + 1))
+    px = []
+    for row in range(size):
+        t = row / (size - 1)
+        base = tuple(round(a + (b - a) * t) for a, b in zip(_TILE_TOP, _TILE_BOTTOM, strict=True))
+        line = []
+        for col in range(size):
+            ta = tile_a[row][col]
+            if ta <= 0.0:
+                line.append((0, 0, 0, 0))
+                continue
+            m = mark_a[row][col]
+            rgb = tuple(round(c + (i - c) * m) for c, i in zip(base, _TILE_INK, strict=True))
+            line.append((*rgb, round(255 * ta)))
+        px.append(line)
+    return _png_rgba(px)
 
 
 def write_defaults(assets: Path) -> None:

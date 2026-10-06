@@ -1,7 +1,14 @@
 # PyInstaller spec for Phice.app
 #   uv run pyinstaller packaging/phice.spec --noconfirm
 # Produces dist/Phice.app
+import os
+
 from PyInstaller.utils.hooks import collect_submodules
+
+# Drawn by make-icon.py from the same mark the menu bar uses, so it is absent
+# in a bare checkout; the bundle is still valid without it, just unbranded.
+icon = os.path.join(SPECPATH, "AppIcon.icns")
+icon = icon if os.path.exists(icon) else None
 
 block_cipher = None
 
@@ -56,7 +63,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Phice.app",
-    icon=None,
+    icon=icon,
     bundle_identifier="com.phice.app",   # part of the designated requirement; never change it
     info_plist={
         "LSUIElement": True,             # menu bar only, no Dock icon
