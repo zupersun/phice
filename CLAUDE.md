@@ -25,8 +25,12 @@ must be reachable:
 
 ```bash
 uv run phice --config-dir /tmp/e2e --http-port 18080 run --backend fake --headless &
+curl -s "http://127.0.0.1:18080/debug/enable?v=1"   # pairing is off until asked for
 uv run python tools/fake_phone.py --pattern sweep --check --http-port 18080
 ```
+
+Without that middle line the Mac never publishes an offer and every pattern fails with
+"the Mac is not offering a pairing code" — the gate doing its job, not a broken transport.
 
 Patterns: `still roll sweep square click doubleclick rightclick drag chord scroll rest`.
 All eleven must pass before shipping. Drop `--backend fake` to drive the real cursor.
