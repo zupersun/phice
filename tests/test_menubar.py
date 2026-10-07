@@ -49,3 +49,32 @@ def test_every_combination_names_an_icon_in_the_table():
                      pairing_error=pairing_error)
         icon, _ = describe(s)
         assert icon in ICONS and icon in TITLES, (accessibility, connected, phase, pairing_error)
+
+
+def test_the_reopen_handler_shows_the_window_and_is_safe_to_install_twice():
+    """Launching Phice again -- Spotlight, Launchpad, Finder, the Dock -- must
+    bring the window back. macOS sends applicationShouldHandleReopen: to the
+    running instance, and the delegate rumps owns does not implement it, so the
+    only visible way in was a menu bar icon the notch can swallow."""
+    from Foundation import NSObject
+
+    from phice.menubar import REOPEN_SEL, install_reopen_handler
+
+    asked = []
+
+    class _ReopenProbe(NSObject):
+        pass
+
+    assert not _ReopenProbe.instancesRespondToSelector_(REOPEN_SEL)
+    assert install_reopen_handler(lambda: asked.append(1), _ReopenProbe) is True
+    assert _ReopenProbe.instancesRespondToSelector_(REOPEN_SEL)
+
+    delegate = _ReopenProbe.alloc().init()
+    # True so AppKit knows the reopen was handled; the window request is the point.
+    assert delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, False) is True
+    assert asked == [1], "it asks the runtime for the panel"
+
+    # Installing again must be a no-op rather than an error or a double-add.
+    assert install_reopen_handler(lambda: asked.append(2), _ReopenProbe) is True
+    delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, True)
+    assert asked == [1, 1], "still the handler installed first; nothing stacked"

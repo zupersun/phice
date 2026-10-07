@@ -21,6 +21,55 @@ TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice·", "on": "Ph
 ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
                       "?Privacy_Accessibility")
 
+#: What macOS sends the *running* instance when the app is launched again.
+REOPEN_SEL = "applicationShouldHandleReopen:hasVisibleWindows:"
+
+
+def install_reopen_handler(show, cls=None) -> bool:
+    """Make launching Phice again bring the window back.
+
+    Opening an app that is already running starts no new process: macOS
+    activates the one that is running and sends it this delegate message. The
+    delegate rumps owns does not implement it, so every launch after the first
+    did nothing at all, and the only way back in was a menu bar icon that the
+    notch swallows on a full menu bar -- leaving a running app with no reachable
+    window. `show` is called for any launch route: Spotlight, Launchpad, Finder,
+    the Dock, or `open -a`.
+
+    The method is added to the delegate class rather than a subclass because
+    rumps instantiates its own and sets it as the delegate itself. `cls` exists
+    so a test can prove this against a throwaway class instead of mutating the
+    real one.
+    """
+    import objc
+
+    if cls is None:
+        from rumps.rumps import NSApp as cls  # noqa: N813 - rumps' delegate class
+    if cls.instancesRespondToSelector_(REOPEN_SEL):
+        return True   # already installed; adding twice would raise
+
+    def _reopen(self, app, has_visible_windows) -> bool:
+        # The window is opened by the menu bar's pump, not here: a window may
+        # only be made where AppKit lives, and this already runs there, but the
+        # one-shot mailbox is the single path so the two cannot race.
+        try:
+            log.info("relaunched (visible windows: %s); showing the panel",
+                     bool(has_visible_windows))
+            show()
+        except Exception:
+            log.warning("could not ask for the window on reopen", exc_info=True)
+        return True
+
+    try:
+        # Signature: BOOL (self, _cmd, NSApplication *, BOOL).
+        objc.classAddMethods(cls, [objc.selector(_reopen, selector=REOPEN_SEL.encode(),
+                                                 signature=b"B@:@B")])
+    except Exception:
+        log.warning("could not install the reopen handler; launching Phice again "
+                    "will not reopen the window", exc_info=True)
+        return False
+    return True
+
 
 def accessibility_trusted(prompt: bool = False) -> bool:
     ok = _trusted(prompt)
@@ -55,11 +104,19 @@ class PhiceApp(rumps.App):
         self.runtime = runtime
         self.paths: Paths = runtime.paths
         self._icon_state = ""
+        # Launching Phice again must bring the window back, whatever the route.
+        # Without this the menu bar icon is the only way in, and the notch hides
+        # it whenever the bar is full.
+        install_reopen_handler(runtime.windows.show_panel)
+        # A Dock icon from the start and for good: it is the only reliable way to
+        # see that Phice is running and to get back to it, since macOS may park
+        # the menu bar icon behind the notch where it cannot be clicked.
+        window.show_in_dock(True)
 
         self.item_status = rumps.MenuItem("Starting…")
         self.item_status.set_callback(None)
-        self.item_enabled = rumps.MenuItem("Pointer enabled", callback=self.toggle_enabled)
-        self.item_enabled.state = True
+        self.item_enabled = rumps.MenuItem("Phice on", callback=self.toggle_enabled)
+        self.item_enabled.state = False   # starts red; refresh keeps it in step
         self.item_record = rumps.MenuItem("Record session", callback=self.toggle_record)
         self.item_login = rumps.MenuItem("Launch at login", callback=self.toggle_login)
         self.item_login.state = agent_plist_path().exists()
@@ -140,7 +197,9 @@ class PhiceApp(rumps.App):
             agent_plist_path().unlink(missing_ok=True)
 
     def new_code(self, _):
-        """Drop the phone that is connected, if any, and publish a fresh code."""
+        """Turn Phice on if it was off, then publish a fresh code (dropping the
+        phone that is connected, if any). Asking for a code means wanting to pair."""
+        self.runtime.set_enabled(True)
         self.runtime.new_pair_code()
         self.show_panel()
 
@@ -186,8 +245,11 @@ class PhiceApp(rumps.App):
             # what the user needs to see.
             self.show_panel()
         s = self.runtime.status.read()
+        self.item_enabled.state = s["enabled"]
         icon, label = describe(s)
         self._set_icon(icon)
+        if not s["enabled"]:
+            label = "Phice is off — turn it on to connect"
         if s["error"]:
             label = f"Config error: {s['error'][:48]}"
         self.item_status.title = label

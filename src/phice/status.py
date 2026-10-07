@@ -30,7 +30,9 @@ class Status:
     phase: str = "disconnected"
     accessibility: bool = False
     pair_code: str = ""
-    enabled: bool = True
+    #: The on/off (green/red) switch. Starts red: the Mac polls the pairing
+    #: letterbox only once turned on, so an idle Mac costs nothing.
+    enabled: bool = False
     error: str = ""
     #: Set while the letterbox cannot be reached. Separate from `error`, which is
     #: about the config files: the panel and the menu bar say different things.

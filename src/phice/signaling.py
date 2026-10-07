@@ -21,7 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .rtc import RTCTransport
@@ -180,11 +180,34 @@ class Pairing:
     code: str = ""
     waiter: asyncio.Task | None = None
     rotate: bool = False
+    #: Set (green) while the user wants the Mac reachable; clear (red) otherwise.
+    #: The publish loop parks on this and touches the letterbox not at all while
+    #: it is clear, so an idle Mac costs nothing. The runtime drives it from the
+    #: on/off toggle.
+    gate: asyncio.Event = field(default_factory=asyncio.Event)
+    #: Tells a cancellation of the wait that came from going red apart from one
+    #: that came from a new code or a shutdown, the same way `rotate` does.
+    disabled: bool = False
     #: When the current offer was accepted by the letterbox (wall clock) and for
     #: how many seconds it promised to keep it. Together they are the code's
     #: remaining life, which the panel draws.
     published_at: float = 0.0
     ttl: float = 0.0
+
+    async def set_active(self, enabled: bool) -> None:
+        """Open the gate (green) or close it and stop the poll in flight (red).
+
+        Runs on the loop thread. Cancelling the waiter is flagged `disabled` so
+        the loop parks on the gate rather than republishing -- the same tell
+        `rotate` uses to mark a cancellation for a new code apart from a shutdown.
+        """
+        if enabled:
+            self.gate.set()
+            return
+        self.gate.clear()
+        if self.waiter is not None and not self.waiter.done():
+            self.disabled = True
+            self.waiter.cancel()
 
 
 def ice_servers(rt: Runtime) -> tuple | None:
@@ -209,6 +232,10 @@ async def run(rt: Runtime) -> None:
     client = SignalingClient(rt.config.signaling_url)
     kept: tuple[tuple, float] | None = None   # relay servers, and until when they are good
     while True:
+        # Park here while red. This is the whole of "on demand": a Mac nobody has
+        # turned on publishes no offer and polls for no answer, so it costs the
+        # letterbox nothing. Going green sets the gate and releases this at once.
+        await rt.pairing.gate.wait()
         # Mint and show the code before anything touches the network. Minting
         # after the relay fetch meant a new code sat on the old one for as long
         # as a cold service took to answer, which read as a dead button.
@@ -281,11 +308,14 @@ async def run(rt: Runtime) -> None:
             await rt.rtc.close()
             continue
         except asyncio.CancelledError:
-            # Two very different things arrive here: the panel asking for a
-            # new code, and this whole task being shut down. Swallowing both
-            # made the loop immortal -- the app could not quit and the test
-            # suite hung at random.
+            # Three different things arrive here: going red, the panel asking for
+            # a new code, and the whole task being shut down. The first two loop
+            # (and going red then parks on the gate); only a real shutdown may
+            # propagate, or the loop goes immortal and the app cannot quit.
             await rt.rtc.close()
+            if rt.pairing.disabled:
+                rt.pairing.disabled = False
+                continue
             if not rt.pairing.rotate:
                 raise
             rt.pairing.rotate = False

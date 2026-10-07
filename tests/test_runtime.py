@@ -220,3 +220,31 @@ def test_the_debug_snapshot_says_whether_scrolling_is_being_reversed(tmp_path):
     assert d["scroll_reversed"] is True and d["scroll_watch"] == "listen"
     d = Runtime(paths, FakeCursor(), 0)._debug_cursor()
     assert d["scroll_reversed"] is False and d["scroll_watch"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_starts_red_and_the_toggle_drives_the_gate(tmp_path):
+    """On demand: the Mac starts idle (red) and only publishes/polls once the
+    user turns it on (green). The gate is what the signaling loop waits on."""
+    paths = Paths(tmp_path / "cfg")
+    paths.ensure()
+    rt = Runtime(paths, FakeCursor(), 0)
+    rt._loop = asyncio.get_running_loop()
+
+    assert rt.status.read()["enabled"] is False, "starts red"
+    assert rt.pairing.gate.is_set() is False, "nothing waits to be polled"
+
+    rt.set_enabled(True)
+    await asyncio.sleep(0.02)
+    assert rt.status.read()["enabled"] is True and rt.pairing.gate.is_set()
+
+    async def never():
+        await asyncio.sleep(100)
+
+    rt.pairing.waiter = asyncio.ensure_future(never())
+    rt.set_enabled(False)                          # toggled red: cancel the poll, clear the gate
+    await asyncio.sleep(0.02)
+    assert rt.status.read()["enabled"] is False
+    assert rt.pairing.gate.is_set() is False
+    assert rt.pairing.disabled is True
+    assert rt.pairing.waiter.cancelled()

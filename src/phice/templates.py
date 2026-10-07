@@ -63,6 +63,11 @@ try {
       <small>macOS asks once, in Accessibility</small></span>
     <button id="grant" class="primary">Allow</button>
   </div>
+  <div class="card allow" id="turnon-card" hidden>
+    <span class="what">Phice is off
+      <small>Turn it on to show a code and let your phone connect</small></span>
+    <button id="turnon" class="primary">Turn on</button>
+  </div>
 </div>
 
 <!-- Once one has: the controls. -->
@@ -121,13 +126,19 @@ async function refresh() {
     if (d.pair_code && d.pair_code !== qrShown) drawQR(d.pair_code);
     linkUrl = d.phone_url || "";
     if (Date.now() > copiedUntil) link.textContent = hostOf(linkUrl);
-    // Which of four situations the code is in, and how much life it has left
-    // (0..1). Only a number and an attribute cross this line; panel.css draws,
-    // and chooses which of the two screens shows.
+    // Which situation the code is in, and how much life it has left (0..1).
+    // Only a number and an attribute cross this line; panel.css draws, and
+    // chooses which of the two screens shows. "off" is red: the Mac is not
+    // polling the letterbox at all until turned on.
     const pairing = d.connected ? "connected"
+                  : d.enabled === false ? "off"
                   : d.pairing_error ? "error"
                   : d.offer_ready ? "ready" : "renewing";
     document.body.dataset.pairing = pairing;
+    // Off: hide the (dead) code and show the turn-on card. Both ride the `hidden`
+    // attribute, like the Allow card, so this works without the pushed panel.css.
+    document.getElementById("turnon-card").hidden = pairing !== "off";
+    document.getElementById("pair-card").hidden = pairing === "off";
     // A second's poll moves the bar a hair, and that step eases. A catch-up --
     // the window was minimised and the page paused, or the code is new --
     // moves it a long way, and easing that raced the bar across the card. The
@@ -143,9 +154,11 @@ async function refresh() {
     document.getElementById("code-hint").textContent = {
       error: "Can\u2019t reach the pairing service. Phice keeps trying.",
       renewing: "Renewing\u2026",
+      off: "Phice is off. Turn it on to show a code.",
     }[pairing] || "";
     document.getElementById("sub").textContent =
       d.connected ? "Connected to " + (d.device_name || "your phone")
+                  : pairing === "off" ? "Phice is off"
                   : "Waiting for your phone";
     document.getElementById("device").textContent = d.device_name || "Your phone";
     document.getElementById("v-acc").textContent = d.accessibility ? "granted" : "not granted";
@@ -198,6 +211,12 @@ function fastPoll() {
 document.getElementById("newcode").onclick = async () => {
   document.body.dataset.pairing = "renewing";
   await fetch("/debug/newcode", { method: "POST" });
+  fastPoll();
+};
+// Turn on (red -> green): the Mac starts polling the letterbox and shows a code.
+document.getElementById("turnon").onclick = async () => {
+  document.body.dataset.pairing = "renewing";
+  await fetch("/debug/enable?v=1");
   fastPoll();
 };
 for (const id of ["grant", "grant-live"]) {

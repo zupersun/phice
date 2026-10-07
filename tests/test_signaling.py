@@ -1,10 +1,13 @@
+import asyncio
 import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import SimpleNamespace
 
 import pytest
 
+from phice import signaling
 from phice.signaling import (
     DEFAULT_OFFER_TTL_S,
     SignalingClient,
@@ -204,3 +207,80 @@ async def test_wait_for_answer_returns_before_expiry_when_not_yet_expired(stub):
     got = await c.wait_for_answer("ABC234", timeout=3.0, interval=0.05,
                                   expires_at=time.time() + 60)
     assert got["sdp"] == "z"
+
+
+class _FakeRTC:
+    def __init__(self, **kw):
+        self.pc = SimpleNamespace(connectionState="closed")
+        self.closed = 0
+
+    async def create_offer(self):
+        return {"type": "offer", "sdp": "x"}
+
+    async def accept_answer(self, answer):
+        pass
+
+    async def close(self):
+        self.closed += 1
+
+
+def _fake_runtime():
+    return SimpleNamespace(
+        config=SimpleNamespace(signaling_url="https://letterbox.example", ice_servers=()),
+        pairing=signaling.Pairing(),
+        status=SimpleNamespace(update=lambda **k: None),
+        engine=object(),
+        layout=SimpleNamespace(to_dict=lambda: {}),
+        paths=SimpleNamespace(theme_css=SimpleNamespace(read_text=lambda: "")),
+        record=lambda raw: None,
+        rtc=None,
+        rtc_ice_servers=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_is_silent_until_green_and_stops_when_toggled_red(monkeypatch):
+    """The whole point of on-demand: red publishes and polls nothing, green does,
+    and flipping back to red stops it dead rather than republishing forever."""
+    published = []
+
+    class FakeClient:
+        def __init__(self, base, allow_insecure=False):
+            pass
+
+        async def fetch_ice_servers(self):
+            return None
+
+        async def publish_offer(self, code, offer):
+            published.append(code)
+            return 5.0
+
+        async def wait_for_answer(self, code, timeout=300.0, interval=1.0,
+                                  expires_at=None, clock=None):
+            await asyncio.sleep(timeout)          # a phone that never comes
+            raise signaling.SignalingError("timed out")
+
+    monkeypatch.setattr(signaling, "SignalingClient", FakeClient)
+    monkeypatch.setattr(signaling, "RTCTransport", _FakeRTC)
+    rt = _fake_runtime()
+    task = asyncio.ensure_future(signaling.run(rt))
+    try:
+        await asyncio.sleep(0.05)
+        assert published == [], "red: nothing is published while the gate is clear"
+
+        rt.pairing.gate.set()                     # toggled green
+        await asyncio.sleep(0.05)
+        assert published, "green: it publishes an offer and begins polling"
+        assert rt.pairing.waiter is not None
+
+        rt.pairing.disabled = True                # toggled red mid-wait
+        rt.pairing.gate.clear()
+        rt.pairing.waiter.cancel()
+        await asyncio.sleep(0.05)
+        n = len(published)
+        await asyncio.sleep(0.1)
+        assert len(published) == n, "red again: it stops and does not republish"
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

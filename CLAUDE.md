@@ -59,6 +59,7 @@ curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
 | `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
 | `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel says so, and the menu bar does too unless it is still asking for Accessibility; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
 | `scroll_reversed: true` | A scroll reverser (Scroll Reverser, Mos, LinearMouse...) is negating the Mac's own scroll events as it would a mouse's, and the backend is compensating; the strip still scrolls the way `scroll_natural` says. Scrolling backwards with this `false` and `scroll_watch: "off"` means the tap could not be created, so the reverser goes unnoticed: see constraint 16. |
+| `enabled: false` | Phice is off (red). It mints no code, publishes no offer, and never polls the pairing letterbox, so a phone cannot connect and an idle Mac costs no Vercel requests. The normal startup state. Turn it on from the menu bar ("Phice on") or the panel's Turn on button; see constraint 17. |
 
 The pointer switching itself off a second after it is armed is the packet timeout doing
 its job, not a bug: no packets are arriving.
@@ -225,6 +226,19 @@ These were each discovered the hard way. Changing them re-breaks the product.
     counts as the reverser stopping.
     Do not replace this with reading `com.apple.swipescrolldirection`: that setting has nothing
     to do with it, and `scroll_natural` means what it says either way.
+17. **Pairing is on demand, gated by the on/off switch, and the Mac starts off.** The old loop
+    published an offer and polled `/api/answer` once a second forever, so an always-on Mac spent
+    ~86k Vercel requests a day doing nothing and blew the free tier in about a week. Now the
+    publish/poll loop parks on `Pairing.gate`; it runs only while green (`status.enabled`), so an
+    idle Mac touches the letterbox not at all. `set_enabled` drives engine and gate together --
+    one switch, red by default (`Status.enabled=False` plus `engine.set_enabled(False)` in
+    `Runtime.__init__`; the gate's `asyncio.Event` starts clear). The gate is toggled on the loop
+    thread via `_dispatch(pairing.set_active(...))`, so **`_main` must set `self._loop` as its
+    first line** -- `run --headless` goes straight through `asyncio.run` and would otherwise leave
+    it `None`, the dispatch is dropped, and green never publishes (every fake-phone check then
+    fails with "the Mac is not offering a pairing code"). Going red cancels the poll in flight
+    with `disabled=True` so the loop parks rather than republishing, the same tell `rotate` uses
+    for a new code. The engine default stays enabled so the pure-engine tests need no runtime.
 
 ## Why the page is hosted
 
@@ -254,6 +268,14 @@ out of it. Check this before assuming a service is free or disposable.
 | **Redis Cloud** (via Vercel marketplace) | free tier | pairing; the pointer keeps working once connected |
 | **Cloudflare Realtime TURN** | free tier, **1000 GB/month** | pairing across different networks |
 | Apple Developer | **not used** | — downloads show "unidentified developer" |
+
+**Vercel requests are driven by pairing, which is on demand.** The letterbox functions
+(`/api/offer`, `/api/answer`, `/api/ice`) count against Vercel's edge/CDN-request quota, and
+nothing is cached (`Cache-Control: no-store`). The Mac polls `/api/answer` about once a second
+while waiting for a phone, but only while switched on (green); it starts off and parks silently
+otherwise, so an idle Mac costs zero requests. Before this, the always-on loop polled 24/7 and
+spent ~86k requests a day, which exhausted the free tier in about a week. See constraint 17.
+During an active session the Mac talks peer-to-peer and does not poll the letterbox at all.
 
 ### The TURN relay is the only metered dependency
 

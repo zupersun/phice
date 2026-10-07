@@ -95,6 +95,42 @@ def _fullscreen_window(AppKit):
     return _fullscreen_class
 
 
+def show_in_dock(on: bool) -> bool:
+    """Give Phice a Dock icon, or take it away.
+
+    Phice is set regular once at startup and left there. The Dock icon is the
+    one home that always works: the menu bar icon is placed by macOS and lands
+    behind the notch whenever the bar is full, with nothing an app can set to
+    move it. Toggling this per window proved unshippable -- AppKit drops a window
+    ordering issued around the switch, so reopening sometimes showed nothing.
+
+    Returns whether the policy actually changed, which the caller needs: AppKit
+    swallows a window ordering issued in the same breath as the switch.
+    """
+    try:
+        import AppKit
+        app = AppKit.NSApp
+        if app is None:                      # no AppKit app: headless or a test
+            return False
+        want = (AppKit.NSApplicationActivationPolicyRegular if on
+                else AppKit.NSApplicationActivationPolicyAccessory)
+        if app.activationPolicy() != want:
+            # The return value matters: AppKit refuses the downgrade back to
+            # accessory in some states, and a silent refusal leaves a Dock icon
+            # for an app with no window -- exactly the confusion this is for.
+            ok = app.setActivationPolicy_(want)
+            log.info("Dock icon %s (setActivationPolicy -> %s, now %s)",
+                     "on" if on else "off", ok, app.activationPolicy())
+            if on:
+                app.activateIgnoringOtherApps_(True)
+            return True
+        if on:
+            app.activateIgnoringOtherApps_(True)
+    except Exception:
+        log.warning("could not change Phice's Dock presence", exc_info=True)
+    return False
+
+
 #: Kept alive by key: a released NSWindow closes itself. The panel and the
 #: calibration screen are separate windows because they are different shapes --
 #: resizing one into the other would leave the panel full screen afterwards.
@@ -177,6 +213,12 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
             _windows[key] = (win, view)
 
         win, view = _windows[key]
+        if key == "panel":
+            # Already regular from startup; this only re-asserts it and brings
+            # Phice forward. The policy is deliberately never toggled back: every
+            # accessory <-> regular switch destabilised window ordering, and a
+            # reopen landing on one of them showed no window at all.
+            show_in_dock(True)
         view.loadRequest_(NSURLRequest.requestWithURL_(NSURL.URLWithString_(url)))
         AppKit.NSApp.activateIgnoringOtherApps_(True)
         if fullscreen:
@@ -188,10 +230,27 @@ def open_panel(url: str, title: str = "Phice", *, key: str = "panel",
                 | AppKit.NSApplicationPresentationHideMenuBar)
             win.setFrame_display_(AppKit.NSScreen.mainScreen().frame(), True)
         win.makeKeyAndOrderFront_(None)
+        if key == "panel":
+            # Ordering the window front in the same turn as an accessory ->
+            # regular switch is simply dropped by AppKit: the app gains its Dock
+            # icon and no window appears, which is what made reopening from
+            # Spotlight look dead. Repeat it once the switch has settled.
+            from Foundation import NSTimer
+            NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+                0.25, False, lambda t: _reshow(AppKit, win))
         return True
     except Exception:
         log.exception("could not open the %s window", key)
         return False
+
+
+def _reshow(AppKit, win) -> None:
+    try:
+        AppKit.NSApp.activateIgnoringOtherApps_(True)
+        win.makeKeyAndOrderFront_(None)
+        log.info("panel re-ordered front (visible: %s)", bool(win.isVisible()))
+    except Exception:
+        log.warning("could not re-order the panel", exc_info=True)
 
 
 def resize_panel(height: float, key: str = "panel") -> None:
