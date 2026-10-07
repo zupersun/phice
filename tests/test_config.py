@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -372,3 +373,18 @@ def _rgba_grid(png: bytes) -> list[list[tuple[int, int, int, int]]]:
     stride = w * 4 + 1
     return [[tuple(raw[r * stride + 1 + c * 4 + k] for k in range(4)) for c in range(w)]
             for r in range(len(raw) // stride)]
+
+
+def test_the_bundle_wears_its_icon_and_shows_itself_in_the_dock():
+    """Two things the spec must keep saying. The icon is the mark, drawn into the
+    bundle at build time -- a build that loses it falls back to PyInstaller's own
+    placeholder, which is what shipped the one time this regressed. And Phice is
+    not a hidden agent: with a window open it belongs in the Dock, which is also
+    the one place its icon is large enough to recognise."""
+    spec = (Path(__file__).resolve().parents[1] / "packaging" / "phice.spec").read_text()
+    assert 'icon = os.path.join(SPECPATH, "AppIcon.icns")' in spec
+    assert "icon=icon," in spec, "the BUNDLE has to be handed it"
+    assert '"LSUIElement"' not in spec, "that key hides the app, and its icon, from the Dock"
+    build = (Path(__file__).resolve().parents[1] / "packaging" / "build.sh").read_text()
+    assert "make-icon.py" in build, "the icon is drawn before the freeze"
+    assert "AppIcon.icns" in build, "and the build refuses a bundle without it"

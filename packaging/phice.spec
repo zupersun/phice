@@ -66,7 +66,10 @@ app = BUNDLE(
     icon=icon,
     bundle_identifier="com.phice.app",   # part of the designated requirement; never change it
     info_plist={
-        "LSUIElement": True,             # menu bar only, no Dock icon
+        # No LSUIElement: Phice shows in the Dock while it runs, like any app with
+        # a window open. It used to hide there, which left the app's icon visible
+        # nowhere but Finder, and left a running Phice with no way back to its
+        # window except a menu bar icon that may be behind the notch.
         "CFBundleName": "Phice",
         "CFBundleDisplayName": "Phice",
         "CFBundleShortVersionString": "0.2.0",
