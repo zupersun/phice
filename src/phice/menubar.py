@@ -21,6 +21,54 @@ TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice·", "on": "Ph
 ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
                       "?Privacy_Accessibility")
 
+#: What macOS sends the instance that is already running when Phice is launched again.
+REOPEN_SEL = "applicationShouldHandleReopen:hasVisibleWindows:"
+
+
+def install_reopen_handler(show, cls=None) -> bool:
+    """Make launching Phice again bring its window back.
+
+    Opening an app that is already running starts no second process: macOS
+    activates the one that is running and sends its delegate this message. The
+    delegate rumps installs does not implement it, so every launch after the
+    first did nothing at all -- the Dock icon, Spotlight, Launchpad and `open -a`
+    alike -- which left a running Phice whose window had been closed with no way
+    back except a menu bar icon the notch can swallow on a full bar.
+
+    The method goes onto rumps' delegate class rather than a subclass, because
+    rumps builds that instance and hands it to AppKit itself. `cls` lets a test
+    prove the mechanism against a throwaway class instead of the real one.
+    """
+    import objc
+
+    if cls is None:
+        from rumps.rumps import NSApp as cls  # noqa: N813 - rumps' delegate class
+    if cls.instancesRespondToSelector_(REOPEN_SEL):
+        return True            # already on; adding a selector twice raises
+
+    def _reopen(self, app, has_visible_windows) -> bool:
+        # Only asked for here. The window is made by the menu bar's pump, which
+        # already owns the AppKit thread, so there is one path to a window and
+        # nothing to race. Asking while a window is up is harmless: the request
+        # is a one-shot mailbox and reopening brings it to the active space.
+        try:
+            log.info("launched again (windows visible: %s); asking for the panel",
+                     bool(has_visible_windows))
+            show()
+        except Exception:
+            log.warning("could not ask for the window on reopen", exc_info=True)
+        return True
+
+    try:
+        # BOOL (self, _cmd, NSApplication *, BOOL)
+        objc.classAddMethods(cls, [objc.selector(_reopen, selector=REOPEN_SEL.encode(),
+                                                 signature=b"B@:@B")])
+    except Exception:
+        log.warning("no reopen handler; launching Phice again will not reopen the "
+                    "window", exc_info=True)
+        return False
+    return True
+
 
 def accessibility_trusted(prompt: bool = False) -> bool:
     ok = _trusted(prompt)
@@ -55,6 +103,9 @@ class PhiceApp(rumps.App):
         self.runtime = runtime
         self.paths: Paths = runtime.paths
         self._icon_state = ""
+        # Clicking the Dock icon, or launching Phice any other way, must bring
+        # the window back rather than doing nothing.
+        install_reopen_handler(runtime.windows.show_panel)
 
         self.item_status = rumps.MenuItem("Starting…")
         self.item_status.set_callback(None)

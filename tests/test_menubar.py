@@ -5,6 +5,8 @@ the only place the suite runs.
 """
 import itertools
 
+import pytest
+
 from phice.menubar import ICONS, TITLES, describe
 
 
@@ -49,3 +51,39 @@ def test_every_combination_names_an_icon_in_the_table():
                      pairing_error=pairing_error)
         icon, _ = describe(s)
         assert icon in ICONS and icon in TITLES, (accessibility, connected, phase, pairing_error)
+
+
+def test_launching_phice_again_brings_its_window_back():
+    """Opening an app that is already running starts no second process: macOS
+    activates the one that is running and sends its delegate this message. The
+    delegate rumps installs does not implement it, so every launch after the
+    first did nothing at all -- clicking the Dock icon, Spotlight, Launchpad and
+    `open -a` alike -- which left a running Phice whose window had been closed
+    with no way back except a menu bar icon the notch can swallow.
+
+    Installed onto rumps' own delegate class, since rumps builds that instance
+    and hands it to AppKit itself; the throwaway class here proves the mechanism
+    without mutating the real one.
+    """
+    objc = pytest.importorskip("objc")
+    from Foundation import NSObject
+
+    from phice.menubar import REOPEN_SEL, install_reopen_handler
+
+    class ReopenProbe(NSObject):
+        pass
+
+    opened = []
+    assert install_reopen_handler(lambda: opened.append(1), cls=ReopenProbe) is True
+    assert ReopenProbe.instancesRespondToSelector_(REOPEN_SEL)
+    delegate = ReopenProbe.alloc().init()
+    assert delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, False) is True
+    assert opened == [1], "the window is asked for"
+    # Asked for again even when a window is already up: the one-shot mailbox
+    # makes that idempotent, and refusing would strand a window on another space.
+    delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, True)
+    assert opened == [1, 1]
+    # Installing twice must not raise: a selector cannot be added to a class
+    # twice, and the menu bar is built again on every reload.
+    assert install_reopen_handler(lambda: opened.append(2), cls=ReopenProbe) is True
+    assert objc is not None
