@@ -176,6 +176,7 @@ async def test_runtime_publishes_an_offer_under_a_code(tmp_path, monkeypatch):
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()  # loopback: no STUN round trip
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(60):
@@ -229,6 +230,7 @@ async def test_the_pairing_code_survives_a_reconnect(tmp_path, monkeypatch):
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(80):
@@ -365,6 +367,7 @@ async def test_new_code_rotates_even_with_a_phone_already_connected(tmp_path):
     rt = Runtime(paths, FakeCursor(), 0)
     rt._loop = asyncio.get_running_loop()
     rt.rtc_ice_servers = ()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(100):
@@ -663,6 +666,7 @@ async def test_a_fresh_session_carries_the_chosen_layout_not_layout_json(tmp_pat
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(60):
@@ -718,6 +722,7 @@ async def test_the_loop_waits_as_long_as_the_letterbox_keeps_the_offer(tmp_path,
     monkeypatch.setattr("phice.signaling.SignalingClient", FakeSignaling)
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(60):
@@ -784,6 +789,7 @@ async def test_an_unreachable_letterbox_is_reported_and_the_report_clears(tmp_pa
     monkeypatch.setattr("phice.signaling.RETRY_S", 0.05)
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(60):
@@ -865,6 +871,7 @@ async def test_the_code_shows_before_the_relay_is_fetched_and_the_relay_is_kept(
     rt = Runtime(paths, FakeCursor(), 0)
     rt.rtc_ice_servers = ()
     rt._loop = asyncio.get_running_loop()
+    rt.pairing.gate.set()   # green: the Mac is on so it pairs
     task = asyncio.ensure_future(signaling.run(rt))
     try:
         for _ in range(50):

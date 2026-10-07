@@ -57,15 +57,15 @@ def test_launching_phice_again_brings_its_window_back():
     """Opening an app that is already running starts no second process: macOS
     activates the one that is running and sends its delegate this message. The
     delegate rumps installs does not implement it, so every launch after the
-    first did nothing at all -- clicking the Dock icon, Spotlight, Launchpad and
+    first did nothing at all -- the Dock icon, Spotlight, Launchpad, Finder and
     `open -a` alike -- which left a running Phice whose window had been closed
-    with no way back except a menu bar icon the notch can swallow.
+    with no way back except a menu bar icon the notch can swallow on a full bar.
 
-    Installed onto rumps' own delegate class, since rumps builds that instance
-    and hands it to AppKit itself; the throwaway class here proves the mechanism
-    without mutating the real one.
+    The method goes onto rumps' own delegate class, since rumps builds that
+    instance and hands it to AppKit itself; the throwaway class here proves the
+    mechanism without mutating the real one.
     """
-    objc = pytest.importorskip("objc")
+    pytest.importorskip("objc")
     from Foundation import NSObject
 
     from phice.menubar import REOPEN_SEL, install_reopen_handler
@@ -73,17 +73,24 @@ def test_launching_phice_again_brings_its_window_back():
     class ReopenProbe(NSObject):
         pass
 
-    opened = []
-    assert install_reopen_handler(lambda: opened.append(1), cls=ReopenProbe) is True
+    asked = []
+    assert not ReopenProbe.instancesRespondToSelector_(REOPEN_SEL)
+    assert install_reopen_handler(lambda: asked.append(1), ReopenProbe) is True
     assert ReopenProbe.instancesRespondToSelector_(REOPEN_SEL)
+
     delegate = ReopenProbe.alloc().init()
+    # True so AppKit knows the reopen was handled; asking for the window is the point.
     assert delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, False) is True
-    assert opened == [1], "the window is asked for"
-    # Asked for again even when a window is already up: the one-shot mailbox
-    # makes that idempotent, and refusing would strand a window on another space.
+    assert asked == [1], "it asks the runtime for the panel"
+
+    # Asked for again even when a window is already up: the request is a one-shot
+    # mailbox, and refusing would strand a window left behind on another space.
     delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, True)
-    assert opened == [1, 1]
-    # Installing twice must not raise: a selector cannot be added to a class
-    # twice, and the menu bar is built again on every reload.
-    assert install_reopen_handler(lambda: opened.append(2), cls=ReopenProbe) is True
-    assert objc is not None
+    assert asked == [1, 1]
+
+    # Installing twice must be a no-op, not an error and not a second handler:
+    # a selector cannot be added to a class twice, and the menu bar is rebuilt
+    # on every config reload.
+    assert install_reopen_handler(lambda: asked.append(2), ReopenProbe) is True
+    delegate.applicationShouldHandleReopen_hasVisibleWindows_(None, False)
+    assert asked == [1, 1, 1], "still the handler installed first; nothing stacked"

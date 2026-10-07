@@ -57,6 +57,7 @@ class Runtime:
         self.engine = PointerEngine(self.config, backend)
         self.engine.set_roles(self.layout.roles())
         self.pairing = signaling.Pairing()
+        self.engine.set_enabled(False)   # start red; status defaults red to match
         self.qr = PairingQR()
         self.rtc: RTCTransport | None = None
         self.rtc_ice_servers: tuple[str, ...] | None = None  # None = the default STUN
@@ -83,7 +84,8 @@ class Runtime:
                      "/calibrate/begin": self.calibration.begin,
                      "/calibrate/apply": self.apply_calibration,
                      "/calibrate/cancel": self.cancel_calibration},
-            settings={"/debug/layout": self.set_layout,
+            settings={"/debug/enable": lambda v: self.set_enabled(v == "1") is None,
+                      "/debug/layout": self.set_layout,
                       "/debug/block": self.set_block,
                       "/debug/block-drag": self.set_block_drag,
                       "/debug/panel-size": self.windows.request_height,
@@ -295,6 +297,7 @@ class Runtime:
     def set_enabled(self, enabled: bool) -> None:
         self.engine.set_enabled(enabled)
         self.status.update(enabled=enabled)
+        self._dispatch(self.pairing.set_active(enabled))   # red parks the loop
 
     def force_reload(self) -> None:
         """Menu action: re-read every config file regardless of mtime."""
@@ -464,6 +467,7 @@ class Runtime:
     # ----- lifecycle --------------------------------------------------------
 
     async def _main(self) -> None:
+        self._loop = asyncio.get_running_loop()   # every entry path, headless too
         self.http_port = await asyncio.to_thread(self.control.start)
         log.info("control panel at http://127.0.0.1:%d/panel", self.http_port)
         await asyncio.gather(signaling.run(self), self._watch_config(), self._status_loop())
@@ -472,8 +476,7 @@ class Runtime:
         """Run the loop on a worker thread so AppKit can own the main thread."""
         def run():
             loop = asyncio.new_event_loop()
-            self._loop = loop
-            asyncio.set_event_loop(loop)
+            asyncio.set_event_loop(loop)   # _main sets self._loop as its first line
             try:
                 loop.run_until_complete(self._main())
             except asyncio.CancelledError:

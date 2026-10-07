@@ -109,8 +109,8 @@ class PhiceApp(rumps.App):
 
         self.item_status = rumps.MenuItem("Starting…")
         self.item_status.set_callback(None)
-        self.item_enabled = rumps.MenuItem("Pointer enabled", callback=self.toggle_enabled)
-        self.item_enabled.state = True
+        self.item_enabled = rumps.MenuItem("Phice on", callback=self.toggle_enabled)
+        self.item_enabled.state = False   # starts red; refresh keeps it in step
         self.item_record = rumps.MenuItem("Record session", callback=self.toggle_record)
         self.item_login = rumps.MenuItem("Launch at login", callback=self.toggle_login)
         self.item_login.state = agent_plist_path().exists()
@@ -191,7 +191,9 @@ class PhiceApp(rumps.App):
             agent_plist_path().unlink(missing_ok=True)
 
     def new_code(self, _):
-        """Drop the phone that is connected, if any, and publish a fresh code."""
+        """Turn Phice on if it was off, then publish a fresh code (dropping the
+        phone that is connected, if any). Asking for a code means wanting to pair."""
+        self.runtime.set_enabled(True)
         self.runtime.new_pair_code()
         self.show_panel()
 
@@ -237,8 +239,11 @@ class PhiceApp(rumps.App):
             # what the user needs to see.
             self.show_panel()
         s = self.runtime.status.read()
+        self.item_enabled.state = s["enabled"]
         icon, label = describe(s)
         self._set_icon(icon)
+        if not s["enabled"]:
+            label = "Phice is off — turn it on to connect"
         if s["error"]:
             label = f"Config error: {s['error'][:48]}"
         self.item_status.title = label
