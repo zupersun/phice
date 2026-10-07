@@ -4,8 +4,9 @@ They are HTML in a WKWebView rather than native widgets, for the same reason the
 phone UI is: the design lives in a CSS file the user owns and can restyle,
 instead of being compiled into the app. The window is only a frame around it.
 
-Closing a window does not quit anything -- the app is LSUIElement, so it keeps
-running in the menu bar, and opening Phice again brings the panel back.
+Closing a window does not quit anything: Phice keeps running, in the Dock and in
+the menu bar, and launching it again -- clicking its Dock icon included -- asks
+for the panel back through the mailbox below.
 """
 from __future__ import annotations
 
