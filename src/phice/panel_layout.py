@@ -21,14 +21,16 @@ LAYOUT_CARD = """<div class="card">
     <span class="l-right">Right</span>
   </div>
   <div class="reveal"><div class="inner">
-    <p class="hint">Drag the controls to where your thumb rests</p>
     <div class="place" id="place">
       <div class="mini" role="slider" aria-label="Where the controls sit"
            aria-valuemin="0" aria-valuemax="1" aria-valuenow="0.65" tabindex="0">
         <i class="pad-l"></i><i class="pad-r"></i><i class="power"></i>
         <i class="wheel"></i><i class="block"></i>
       </div>
-      <p class="warn" role="status">Phone not connected</p>
+      <div class="aside">
+        <p class="hint">Drag the controls to where your thumb rests</p>
+        <p class="warn" role="status">Phone not connected</p>
+      </div>
     </div>
   </div></div>
 </div>

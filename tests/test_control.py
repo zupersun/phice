@@ -277,3 +277,25 @@ def test_the_panel_names_itself_and_wears_no_badge():
     css = (DEFAULTS_DIR / "panel.css").read_text()
     h1 = css[css.index("h1 {"):css.index("}", css.index("h1 {"))]
     assert "uppercase" not in h1, "the name is never shouted"
+
+
+def test_the_layout_drawer_keeps_its_drawing_still():
+    """The small phone stays at the left edge of the drawer whichever side the
+    controls are on, with the sentence beside it. It used to slide left, centre
+    and right with the mode, which moved the one thing the eye is tracking --
+    and the block drawn inside it already says which side was chosen, so the
+    drawing travelling as well said it twice."""
+    from phice.panel_layout import LAYOUT_CARD
+    place = LAYOUT_CARD[LAYOUT_CARD.index('class="place"'):]
+    assert place.index('class="mini"') < place.index('class="hint"'), \
+        "the drawing first, then the words beside it"
+    assert 'class="hint"' in place and 'class="warn"' in place, \
+        "both lines live beside the drawing, not above it"
+    css = (DEFAULTS_DIR / "panel.css").read_text()
+    mini = css[css.index(".mini {"):css.index("}", css.index(".mini {"))]
+    assert "--pos" not in css, "nothing moves the drawing across the card any more"
+    assert "transition: left" not in mini and "left:" not in mini, "it does not travel"
+    # What the mode still changes: which controls are drawn, and which edge of
+    # the drawing the block sits against.
+    for side, edge in (("thumb-left", "left: 5px"), ("thumb-right", "right: 5px")):
+        assert f'.place[data-v="{side}"] .mini .block {{ {edge}; }}' in css, side
