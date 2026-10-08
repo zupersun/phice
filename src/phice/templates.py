@@ -451,8 +451,7 @@ document.getElementById("apply").onclick = async () => {
   if (!out.ok) return;
   // Nothing left to do here, so leave: fade out, then close. Sitting on a
   // finished screen waiting to be dismissed is a step with no purpose.
-  body.dataset.leaving = "1";
-  setTimeout(stop, 620);
+  stop();
 };
 document.getElementById("again").onclick = async () => {
   autoBegun = false;
@@ -462,9 +461,21 @@ document.getElementById("again").onclick = async () => {
 // Borderless and full screen, so there is no title bar to close. Escape and a
 // visible button are the only ways out; leaving someone stuck behind a window
 // covering their whole display would be unforgivable.
-const stop = async () => {
-  body.dataset.leaving = "1";          // respond now; the window follows
-  try { await fetch("/calibrate/cancel"); } catch (e) { delete body.dataset.leaving; }
+const stop = () => {
+  // Fade first, then close. Asking the Mac to close straight away tore the
+  // window away inside a tick, so the 600ms fade in calibrate.css never played
+  // and the return to the panel was a cut. Every exit now uses this one path --
+  // Close, Escape, and saving -- so they all leave the same way.
+  if (body.dataset.leaving === "1") return;
+  body.dataset.leaving = "1";
+  setTimeout(async () => {
+    try {
+      await fetch("/calibrate/cancel");
+      // Land back on Phice rather than on whatever happened to be behind the
+      // full-screen window.
+      await fetch("/debug/panel", { method: "POST" });
+    } catch (e) { delete body.dataset.leaving; }
+  }, 620);
 };
 document.getElementById("quit").onclick = stop;
 document.getElementById("close").onclick = stop;
