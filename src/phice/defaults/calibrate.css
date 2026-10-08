@@ -36,10 +36,11 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  /* No cursor. The pointer is switched off for the duration, so the arrow just
-     sits there being the one thing on screen that is not a dot. The window
-     covers the whole display, so hiding it here hides it everywhere. */
-  cursor: none;
+  /* A cursor by default. Hiding it for the whole window hid it on the screens
+     that have something to click too -- the finished card's three buttons and
+     the intro's Close -- and a full-screen window with an invisible pointer
+     leaves no way to press them. Hidden only while actually aiming, below. */
+  cursor: auto;
   /* Leaving fades rather than vanishing: a full-screen window blinking out is
      startling, and the fade also covers the window actually closing. */
   transition: opacity 600ms ease;
@@ -197,6 +198,9 @@ body[data-leaving="1"] { opacity: 0; }
 
 #done { position: fixed; inset: 0; display: none; place-content: center; padding: 40px; }
 body[data-done="1"] #done { display: grid; }
+/* The arrow is noise while aiming: the pointer is switched off and the only
+   thing on screen should be the dot. This is the one state that hides it. */
+body[data-started="1"]:not([data-done="1"]) { cursor: none; }
 body[data-done="1"] #target, body[data-done="1"] #hud { display: none; }
 #done h1 { font-size: 22px; margin: 0 0 4px; }
 #done p { color: var(--dim); margin: 0 0 18px; }

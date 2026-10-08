@@ -215,7 +215,21 @@ def resize_panel(height: float, key: str = "panel") -> None:
         wanted = AppKit.NSMakeRect(content.origin.x,
                                    content.origin.y + content.size.height - height,
                                    content.size.width, height)
-        win.setFrame_display_animate_(win.frameRectForContentRect_(wanted), True, True)
+        frame = win.frameRectForContentRect_(wanted)
+        x, y = frame.origin.x, frame.origin.y
+        w, h = frame.size.width, frame.size.height
+        # Keeping the top edge put sends the bottom off the screen when the page
+        # grows -- connecting swaps the short pairing card for the taller live
+        # one, and half the window ended up below the display with no way to
+        # reach it. Hold the top where it is only while the whole window still
+        # fits; past that, slide it up rather than off.
+        screen = win.screen() or AppKit.NSScreen.mainScreen()
+        if screen is not None:
+            vis = screen.visibleFrame()
+            h = min(h, vis.size.height)
+            y = max(y, vis.origin.y)
+            y = min(y, vis.origin.y + vis.size.height - h)
+        win.setFrame_display_animate_(AppKit.NSMakeRect(x, y, w, h), True, True)
     except Exception:
         log.exception("could not resize the %s window", key)
 
