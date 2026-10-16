@@ -25,7 +25,7 @@ from .config import (
     parse_layout,
 )
 from .control import ControlServer
-from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted
+from .cursor_backend import CursorBackend, FakeCursor, accessibility_trusted, prompt_accessibility
 from .engine import PointerEngine
 from .paths import Paths, client_version
 from .qr import PairingQR, pairing_url
@@ -73,9 +73,8 @@ class Runtime:
                    "/howto.css": paths.howto_css.read_bytes,
                    "/calibrate.css": paths.calibrate_css.read_bytes},
             actions={"/debug/cursor": self._debug_cursor,
-                     # Prompting from this process is what makes macOS list *this*
-                     # binary; asking from a terminal would add the terminal.
-                     "/debug/grant": lambda: {"accessibility": accessibility_trusted(prompt=True)},
+                     # The only way in now: it prompts and opens the pane.
+                     "/debug/grant": lambda: {"accessibility": prompt_accessibility()},
                      "/debug/panel": self.windows.show_panel,
                      "/debug/newcode": self.new_pair_code,
                      "/debug/qr": self.debug_qr,

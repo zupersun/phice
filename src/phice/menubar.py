@@ -9,7 +9,6 @@ import rumps
 
 from . import window
 from .cli import agent_plist_path
-from .cursor_backend import accessibility_trusted as _trusted
 from .paths import Paths
 from .runtime import Runtime
 
@@ -18,8 +17,6 @@ log = logging.getLogger("phice.menubar")
 ICONS = {"warn": "menubar/warn.png", "disconnected": "menubar/disconnected.png",
          "off": "menubar/off.png", "on": "menubar/on.png"}
 TITLES = {"warn": "Phice!", "disconnected": "Phice", "off": "Phice·", "on": "Phice●"}
-ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
-                      "?Privacy_Accessibility")
 
 #: What macOS sends the instance that is already running when Phice is launched again.
 REOPEN_SEL = "applicationShouldHandleReopen:hasVisibleWindows:"
@@ -70,13 +67,6 @@ def install_reopen_handler(show, cls=None) -> bool:
     return True
 
 
-def accessibility_trusted(prompt: bool = False) -> bool:
-    ok = _trusted(prompt)
-    if not ok and prompt:
-        log.info("prompted for Accessibility")
-    return ok
-
-
 def describe(s: dict) -> tuple[str, str]:
     """Icon name and status line for a status snapshot, most urgent first.
 
@@ -114,21 +104,27 @@ class PhiceApp(rumps.App):
         self.item_record = rumps.MenuItem("Record session", callback=self.toggle_record)
         self.item_login = rumps.MenuItem("Launch at login", callback=self.toggle_login)
         self.item_login.state = agent_plist_path().exists()
+        self.item_stop = rumps.MenuItem("Stop calibrating", callback=self.stop_calibrating)
+        self._show_stop(False)
 
+        # Two choices at the top: the window, and the switch. The window is
+        # where pairing, a new code and the Accessibility prompt now live, so
+        # the menu stopped repeating them; what has no other home sits one
+        # level down, the way a status bar app's rarer items usually do.
         self.menu = [
             self.item_status,
             None,
-            rumps.MenuItem("Open Phice window", callback=self.show_panel),
-            rumps.MenuItem("Calibrate pointer…", callback=self.calibrate),
-            rumps.MenuItem("Stop calibrating", callback=self.stop_calibrating),
+            rumps.MenuItem("Show Phice", callback=self.show_panel),
             self.item_enabled,
-            rumps.MenuItem("Reload config now", callback=self.reload_config),
-            rumps.MenuItem("Open config folder", callback=self.open_config),
-            self.item_record,
+            self.item_stop,
             None,
-            rumps.MenuItem("Grant Accessibility…", callback=self.grant_accessibility),
-            self.item_login,
-            rumps.MenuItem("New pairing code", callback=self.new_code),
+            ("Advanced", [
+                rumps.MenuItem("Calibrate pointer…", callback=self.calibrate),
+                rumps.MenuItem("Open config folder", callback=self.open_config),
+                self.item_record,
+                self.item_login,
+                rumps.MenuItem("Reload config now", callback=self.reload_config),
+            ]),
             None,
             rumps.MenuItem("Quit Phice", callback=self.quit),
         ]
@@ -178,10 +174,6 @@ class PhiceApp(rumps.App):
         if path:
             rumps.notification("Phice", "Recording", str(path))
 
-    def grant_accessibility(self, _):
-        accessibility_trusted(prompt=True)
-        subprocess.run(["open", ACCESSIBILITY_PANE], check=False)
-
     def toggle_login(self, sender):
         sender.state = not sender.state
         if sender.state:
@@ -190,18 +182,21 @@ class PhiceApp(rumps.App):
         else:
             agent_plist_path().unlink(missing_ok=True)
 
-    def new_code(self, _):
-        """Turn Phice on if it was off, then publish a fresh code (dropping the
-        phone that is connected, if any). Asking for a code means wanting to pair."""
-        self.runtime.set_enabled(True)
-        self.runtime.new_pair_code()
-        self.show_panel()
-
     def quit(self, _):
         self.runtime.stop()
         rumps.quit_application()
 
     # ----- periodic refresh -------------------------------------------------
+
+    def _show_stop(self, shown: bool) -> None:
+        """Show the calibration escape hatch only while calibrating.
+
+        It has to exist somewhere other than the calibration window, which
+        covers the whole display -- but an item that does nothing for all but a
+        minute of Phice's life is clutter the rest of the time. rumps has no
+        wrapper for this, so the NSMenuItem is asked directly.
+        """
+        self.item_stop._menuitem.setHidden_(not shown)
 
     def _set_icon(self, name: str) -> None:
         if name == self._icon_state:
@@ -240,6 +235,7 @@ class PhiceApp(rumps.App):
             self.show_panel()
         s = self.runtime.status.read()
         self.item_enabled.state = s["enabled"]
+        self._show_stop(bool(self.runtime.calibration.state().get("running")))
         icon, label = describe(s)
         self._set_icon(icon)
         if not s["enabled"]:

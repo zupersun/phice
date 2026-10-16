@@ -6,6 +6,7 @@ display, y grows downward.
 from __future__ import annotations
 
 import logging
+import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -284,3 +285,20 @@ def accessibility_trusted(prompt: bool = False) -> bool:
     except Exception:
         log.warning("could not query Accessibility trust", exc_info=True)
         return False
+
+
+ACCESSIBILITY_PANE = ("x-apple.systempreferences:com.apple.preference.security"
+                      "?Privacy_Accessibility")
+
+
+def prompt_accessibility() -> bool:
+    """Ask for the permission, and open the pane where it is actually given.
+
+    Prompting from this process is what makes macOS list *this* binary; asking
+    from a terminal would add the terminal. macOS shows its dialog once per
+    launch and then stays silent, so the pane is opened too -- otherwise the
+    second press of a button that says Allow appears to do nothing.
+    """
+    ok = accessibility_trusted(prompt=True)
+    subprocess.run(["open", ACCESSIBILITY_PANE], check=False)
+    return ok
