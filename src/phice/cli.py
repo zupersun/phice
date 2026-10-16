@@ -162,7 +162,35 @@ def _bootout(uid: int) -> None:
     subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
 
 
+def _ephemeral_location() -> str:
+    """Name the reason this executable's path will not exist later, or "".
+
+    install writes a login agent naming sys.executable, so the path has to
+    outlive the install. macOS runs a quarantined app from a randomised
+    read-only copy, which is gone once the image is ejected; an app left on the
+    mounted volume goes the same way. RunAtLoad then starts nothing, silently,
+    and the only symptom is no menu bar icon -- which this project already
+    refuses to treat as a way to see state. Unfrozen is exempt: a source
+    checkout on an external disk runs the module, not a bundle path.
+    """
+    if not getattr(sys, "frozen", False):
+        return ""
+    exe = str(sys.executable)
+    if "/AppTranslocation/" in exe:
+        return "a temporary copy macOS made because the app is still quarantined"
+    if exe.startswith("/Volumes/"):
+        return "a mounted disk or image"
+    return ""
+
+
 def cmd_install(args) -> int:
+    where = _ephemeral_location()
+    if where:
+        print(f"Phice is running from {where}:\n  {sys.executable}\n"
+              "A login agent pointing there would start nothing after a restart.\n"
+              "Drag Phice to your Applications folder, open it from there, and run\n"
+              "this again.", file=sys.stderr)
+        return 1
     paths = _paths(args)
     plist = agent_plist_path()
     plist.parent.mkdir(parents=True, exist_ok=True)

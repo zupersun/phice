@@ -1,7 +1,15 @@
 import plistlib
 import sys
 
+import pytest
+
 from phice import cli
+
+
+def _install_args(tmp_path):
+    class A:
+        config_dir = str(tmp_path / "config")
+    return A()
 
 
 def test_plist_runs_the_module_when_not_frozen(monkeypatch, tmp_path):
@@ -85,3 +93,54 @@ def test_a_second_launch_reopens_the_window_instead_of_starting_a_rival(monkeypa
                           "backend": "fake"})
     assert cli.cmd_run(args) == 0
     assert asked == [8080], "it must ask the running instance, not start a second one"
+
+
+def test_install_refuses_from_a_translocated_copy(monkeypatch, tmp_path, capsys):
+    """Dragging to Applications is not cosmetic advice.
+
+    macOS runs a quarantined app from a randomised read-only path, and install
+    writes a login agent naming that exact executable. The path is gone after
+    the image is ejected, so RunAtLoad silently starts nothing and the only
+    symptom is a missing menu bar icon -- state the repo already refuses to
+    rely on. Refuse rather than write an agent aimed at a path that will vanish.
+    """
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/private/var/folders/ab/cd/X/"
+                        "AppTranslocation/U-U-I-D/d/Phice.app/Contents/MacOS/Phice")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cli.subprocess, "run",
+                        lambda *a, **k: pytest.fail("launchctl must not be invoked"))
+
+    rc = cli.cmd_install(_install_args(tmp_path))
+
+    assert rc == 1
+    assert not (tmp_path / "Library" / "LaunchAgents").exists()
+    assert "Applications" in capsys.readouterr().err
+
+
+def test_install_refuses_from_a_mounted_image(monkeypatch, tmp_path, capsys):
+    """Same failure by another route: an app left on the mounted volume, or on
+    any disk that is not always attached, names a path that disappears."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/Volumes/Phice 0.2.0/Phice.app/Contents/MacOS/Phice")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cli.subprocess, "run",
+                        lambda *a, **k: pytest.fail("launchctl must not be invoked"))
+
+    assert cli.cmd_install(_install_args(tmp_path)) == 1
+    assert "Applications" in capsys.readouterr().err
+
+
+def test_install_proceeds_from_applications(monkeypatch, tmp_path):
+    """The guard must not stand between a properly installed app and its agent."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", "/Applications/Phice.app/Contents/MacOS/Phice")
+    assert cli._ephemeral_location() == ""
+
+
+def test_the_guard_ignores_a_source_checkout(monkeypatch):
+    """A dev venv on an external disk is not a translocated bundle; only the
+    frozen app writes an agent naming a bundle path."""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(sys, "executable", "/Volumes/External/phice/.venv/bin/python")
+    assert cli._ephemeral_location() == ""

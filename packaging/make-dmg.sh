@@ -3,10 +3,16 @@
 #
 # A disk image with an Applications symlink rather than a zip, because the drag
 # is load-bearing: macOS translocates a quarantined app that is launched where
-# it was downloaded, running it from a read-only random path. Phice then writes
-# its config folder somewhere that vanishes, and the Accessibility grant binds
-# to a path the next launch does not have. Dragging it out clears the
-# quarantine's translocation and the grant sticks.
+# it was downloaded, running it from a randomised read-only path that is gone
+# once the image is ejected. `phice install` writes a login agent naming that
+# exact executable, so an install done from inside the image starts nothing
+# after a restart, with no menu bar icon and nothing to see. cli.py refuses that
+# install outright; the drag is how the user avoids meeting the refusal.
+#
+# Not the config folder and not the grant: config lives under
+# ~/Library/Application Support/Phice wherever the app runs from, and the signed
+# build's Accessibility grant keys on the designated requirement rather than the
+# path. The login agent is the part that breaks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
