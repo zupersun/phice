@@ -74,14 +74,18 @@
   /* The app only runs on macOS, so only a Mac is offered it -- and never
      without what it needs, which is the difference between a download and a
      user who thinks the app is broken. */
-  body:not([data-mac="1"]) #btn-get,
-  body:not([data-mac="1"]) #screen-desktop .fine{display:none}
+  body:not([data-mac="1"]) #step-mac{display:none}
   body[data-mac="1"] #screen-desktop .after{display:none}
-  #screen-desktop .fine{font-size:13px;margin-top:14px}
-  #screen-desktop .cta{margin-top:22px}
+  #screen-desktop .fine{font-size:13px;margin-top:10px}
+  #screen-desktop .cta{margin-top:0}
+  /* Each half sits under the name of the device it happens on. */
+  #screen-desktop .step{margin-top:26px}
+  #screen-desktop .where{font-size:13px;letter-spacing:.04em;
+                         color:var(--sh-dim);opacity:.75;margin:0 0 10px}
+  #screen-desktop .step p:not(.where){margin:0}
   /* Every other screen is read at phone width; this is the one seen on a
      wide display, where a full-width line of text does not read. */
-  #screen-desktop>div{max-width:26rem}
+  #screen-desktop>div{max-width:30rem}
   #screen-desktop b{color:var(--sh-fg);font-weight:500}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
@@ -152,13 +156,24 @@
        there is nothing to point with: say so, and send them where it works. -->
   <div class="screen" id="screen-desktop">
     <div>
-      <h1>Phice runs on your phone</h1>
-      <a class="cta" id="btn-get"
-         href="https://github.com/zupersun/phice/releases/latest/download/Phice.dmg">Download Phice for Mac</a>
-      <p class="fine">macOS 13 or later on Apple silicon. Not notarized, so the first
-         launch needs Privacy &amp; Security › Open Anyway.</p>
-      <p>Open <b id="here">phice.vercel.app</b> on your iPhone.</p>
-      <p class="after">It points a Mac running Phice, not this computer.</p>
+      <h1>Use an iPhone as an air mouse for your Mac</h1>
+      <!-- Two devices with two jobs, each under the name of the device it
+           happens on. Saying only "Phice runs on your phone" above a Download
+           for Mac button read as a contradiction: nothing told the reader that
+           the app and the remote are different halves. -->
+      <div class="step" id="step-mac">
+        <p class="where">On your Mac</p>
+        <a class="cta" id="btn-get"
+           href="https://github.com/zupersun/phice/releases/latest/download/Phice.dmg">Download Phice for Mac</a>
+        <p class="fine">macOS 13 or later on Apple silicon. Not notarized, so the first
+           launch needs Privacy &amp; Security › Open Anyway.</p>
+      </div>
+      <div class="step">
+        <p class="where">On your iPhone</p>
+        <p>Open <b id="here">phice.vercel.app</b>. Point the phone,
+           the cursor follows.</p>
+      </div>
+      <p class="after">Phice points a Mac, not this computer.</p>
     </div>
   </div>
 
