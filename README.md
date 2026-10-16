@@ -16,8 +16,7 @@ needs Privacy & Security › **Open Anyway**.
 
 ## Setup
 
-1. Drag **Phice** to Applications, open it, and grant Accessibility — that is
-   what moves the cursor.
+1. Drag **Phice** to Applications, then open it and grant Accessibility.
 2. It runs in the background. Turn it on from the menu bar icon, or **Turn on**
    in its window.
 3. Open <https://phice.vercel.app/app> on the phone, enter the code, tap Start.
