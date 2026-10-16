@@ -45,11 +45,18 @@ Settings › Privacy & Security › **Open Anyway**. It does not recur.
 | Tap the power button | Pointer off |
 | Hold the power button | Recentre the cursor |
 
-Rolling the phone does nothing. Face-down switches the pointer off.
+- **Roll does nothing.** Turning the phone about its own axis cannot move the
+  cursor.
+- **Face-down is off.** Set the phone down and the pointer stops.
+- **Calibrate pointer…** measures how much screen one degree of your wrist
+  covers. Point at sixteen dots and hold.
 
-**Calibrate pointer…** measures how much screen one degree of wrist covers:
-point at sixteen dots and hold. Colours, sizes and buttons are editable files —
-see [docs/configuration.md](docs/configuration.md).
+---
+
+## Make it yours
+
+Every colour, size, button and position is a file you edit — see
+[docs/configuration.md](docs/configuration.md).
 
 ## Licence
 
