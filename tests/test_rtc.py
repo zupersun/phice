@@ -290,6 +290,58 @@ async def test_the_phone_is_told_what_the_engine_did(transport):
         await transport.close()
 
 
+async def test_switching_phice_off_from_another_thread_reaches_the_phone(transport):
+    """The menu bar and the panel both live on threads of their own.
+
+    aiortc's send() queues the bytes and then schedules the flush with
+    asyncio.ensure_future, which raises on a thread with no running loop -- so a
+    push from the menu bar was swallowed by notify_state's except clause. The
+    cursor stopped and the phone went on showing a green LED, because the phone
+    draws that from these messages and nothing told it otherwise.
+    """
+    states: list[dict] = []
+    phone = RTCPeerConnection(configuration=_no_stun())
+    opened = asyncio.get_running_loop().create_future()
+
+    @phone.on("datachannel")
+    def on_channel(channel):
+        @channel.on("message")
+        def on_message(msg):
+            m = json.loads(msg)
+            if m["t"] == "state":
+                states.append(m)
+
+        if not opened.done():
+            opened.set_result(channel)
+
+    offer = await transport.create_offer()
+    await phone.setRemoteDescription(RTCSessionDescription(**offer))
+    await phone.setLocalDescription(await phone.createAnswer())
+    await gather_complete(phone)
+    await transport.accept_answer({"sdp": phone.localDescription.sdp,
+                                   "type": phone.localDescription.type})
+    try:
+        channel = await asyncio.wait_for(opened, timeout=10)
+        for seq in range(1, 6):
+            channel.send(json.dumps({
+                "t": "s", "seq": seq, "ts": seq / 60, "o": [0, 0, 0], "rr": [0, 0, 0],
+                "g": [0, 0, 9.8], "b": {"left": 1}, "c": {"left": 1}, "sd": 0}))
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)
+        assert states[-1]["power"] is True, "pointing, so the phone shows it on"
+
+        states.clear()
+        # Exactly what the menu bar does, from a thread that is not the loop.
+        await asyncio.to_thread(transport.engine.set_enabled, False)
+        await asyncio.sleep(0.3)
+        assert states, "going off must be pushed, not swallowed"
+        assert states[-1]["power"] is False, "the LED cannot stay green"
+        assert states[-1]["enabled"] is False, "and the phone is told why"
+    finally:
+        await phone.close()
+        await transport.close()
+
+
 async def test_status_says_connected_while_a_phone_is_on_the_data_channel(tmp_path, monkeypatch):
     """/debug/cursor and the menu bar both read this. Reporting "not connected"
     through a working WebRTC session sends every diagnosis down the wrong path."""

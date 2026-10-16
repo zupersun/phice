@@ -156,7 +156,7 @@ class PointerEngine:
         cfg = self._cfg
         return state_message(conn=True, power=snap.power, phase=snap.phase.value,
                              recenter=snap.recenter, idle_hz=cfg.idle_hz,
-                             accessibility=accessibility,
+                             accessibility=accessibility, enabled=snap.enabled,
                              ui={"haptics": cfg.ui.haptics,
                                  "keep_awake": cfg.ui.keep_awake,
                                  "appearance": cfg.ui.appearance,

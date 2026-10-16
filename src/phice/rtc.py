@@ -61,6 +61,14 @@ async def gather_complete(pc: RTCPeerConnection, timeout: float = 10.0) -> None:
         log.warning("ICE gathering did not complete in %.0fs; publishing anyway", timeout)
 
 
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    """The loop running on this thread, or None when called from another one."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
 class RTCTransport:
     """One peer connection, one DataChannel, wired to the engine."""
 
@@ -112,6 +120,9 @@ class RTCTransport:
         self.client_stale = False
         self.hz = 0.0
         self._last_phase = "disconnected"
+        #: The loop the peer connection lives on, learned when the control
+        #: channel opens. State can be changed from any thread; sending can not.
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._hello_recorded = False
 
     # ----- signaling --------------------------------------------------------
@@ -166,6 +177,7 @@ class RTCTransport:
         @ctl.on("open")
         def _on_open() -> None:
             log.info("control channel open")
+            self._loop = asyncio.get_running_loop()
             self.engine.connected()
             # Without this the phone is blind: no status LED, no recenter
             # animation, no reaction to a press. Leaving it out made every
@@ -281,11 +293,31 @@ class RTCTransport:
         if phase != self._last_phase:
             log.info("phase %s -> %s", self._last_phase, phase)
             self._last_phase = phase
+        if self.ctl is None or self.ctl.readyState != "open":
+            return
+        # Built here, on the thread that made the change, so a message always
+        # describes the transition that caused it rather than whatever the
+        # engine has become by the time the loop gets round to sending it.
+        msg = self.state_message()
+        loop = self._loop
+        if loop is None or loop is _running_loop():
+            self._send_state(msg)
+            return
+        # aiortc queues the bytes and then schedules the flush with
+        # ensure_future, which needs a running loop in *this* thread. The menu
+        # bar and the panel have none, so a switch-off raised in here and was
+        # swallowed: the cursor stopped and the phone kept its green LED.
+        try:
+            loop.call_soon_threadsafe(self._send_state, msg)
+        except RuntimeError:  # loop already closed; nothing to tell the phone
+            log.debug("state push after the loop closed", exc_info=True)
+
+    def _send_state(self, msg: str) -> None:
         ch = self.ctl
         if ch is None or ch.readyState != "open":
             return
         try:
-            ch.send(self.state_message())
+            ch.send(msg)
         except Exception:  # a closing channel must not break an engine transition
             log.debug("state push failed", exc_info=True)
 

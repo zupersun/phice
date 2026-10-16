@@ -87,6 +87,15 @@ check("a state message drives data-state, not the screen flow", () => {
                   "the engine phase must not clobber the pairing flow");
 });
 
+check("the Mac's own switch is published for the theme to draw", () => {
+  // Pointer off and Phice off are different facts: the first is the pointer
+  // resting between presses, the second is a Mac where no press does anything.
+  api.handleMessage(JSON.stringify({ t: "state", phase: "off", enabled: false, ui: {} }));
+  assert.equal(app.doc.body.dataset.off, "1");
+  api.handleMessage(JSON.stringify({ t: "state", phase: "off", enabled: true, ui: {} }));
+  assert.equal(app.doc.body.dataset.off, undefined, "turning back on clears it");
+});
+
 check("an unknown message is ignored rather than throwing", () => {
   api.handleMessage(JSON.stringify({ t: "something-new" }));
   api.handleMessage("not json at all");

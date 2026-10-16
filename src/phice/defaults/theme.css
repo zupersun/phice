@@ -356,6 +356,21 @@ body[data-state="nopermission"] #ov-denied { display: flex; }
 }
 body[data-state="disconnected"] #banner { display: block; }
 
+/* Phice switched off on the Mac. The pad still works and the phone is still
+   connected; nothing it sends moves anything, which looks exactly like a dead
+   phone unless the pad says otherwise. */
+body[data-off] #pad { opacity: 0.45; transition: opacity 200ms ease-out; }
+body[data-off] #pad::after {
+  content: "Phice is off on the Mac";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 10px;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--fg-dim);
+}
+
 /* The haptic switch must really be rendered for iOS to fire the tick, so it is
    made imperceptible rather than hidden. opacity:0, visibility:hidden and
    display:none all silently disable it. */

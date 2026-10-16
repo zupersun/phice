@@ -259,6 +259,10 @@
       el.body.dataset.state = msg.phase;
       report("phase -> " + msg.phase);
     }
+    // Phice's own switch on the Mac, which is not the pointer's power. The page
+    // publishes the fact and the theme decides what an off Mac looks like.
+    if (msg.enabled === false) el.body.dataset.off = "1";
+    else delete el.body.dataset.off;
     if (msg.ui && msg.ui.recenter_ms) {
       el.body.style.setProperty("--recenter-ms", msg.ui.recenter_ms + "ms");
     }

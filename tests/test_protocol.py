@@ -80,5 +80,15 @@ def test_hello_ping_bye():
 
 def test_state_message_shape():
     d = json.loads(state_message(conn=True, power=False, phase="off", recenter=0.12345, idle_hz=0,
-                                 accessibility=True, ui={"haptics": True}))
+                                 accessibility=True, enabled=True, ui={"haptics": True}))
     assert d["t"] == "state" and d["recenter"] == 0.123 and d["ui"] == {"haptics": True}
+
+
+def test_state_says_whether_phice_itself_is_on_not_only_the_pointer():
+    """Pointer off and Phice off look the same on the phone otherwise: a dark
+    LED, and buttons that do nothing. Only one of them is worth a word."""
+    resting = json.loads(state_message(conn=True, power=False, phase="off", recenter=0.0,
+                                       idle_hz=0, accessibility=True, enabled=True, ui={}))
+    switched_off = json.loads(state_message(conn=True, power=False, phase="off", recenter=0.0,
+                                            idle_hz=0, accessibility=True, enabled=False, ui={}))
+    assert resting["enabled"] is True and switched_off["enabled"] is False

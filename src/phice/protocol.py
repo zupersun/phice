@@ -180,10 +180,16 @@ def parse_client_message(text: str) -> Hello | Ping | Bye | SensorPacket | Clien
 # --- server -> phone -------------------------------------------------------
 
 def state_message(*, conn: bool, power: bool, phase: str, recenter: float, idle_hz: int,
-                  accessibility: bool, ui: dict) -> str:
+                  accessibility: bool, enabled: bool, ui: dict) -> str:
+    """`enabled` is the Mac's own on/off switch, and is not `power`.
+
+    Power off is the pointer resting between presses; disabled is Phice
+    switched off on the Mac, where no press will do anything at all. The phone
+    showed them identically, so a Mac switched off mid-point looked like a
+    phone whose buttons had stopped working."""
     return json.dumps({"t": "state", "conn": conn, "power": power, "phase": phase,
                        "recenter": round(recenter, 3), "idle_hz": idle_hz,
-                       "accessibility": accessibility, "ui": ui})
+                       "accessibility": accessibility, "enabled": enabled, "ui": ui})
 
 
 def layout_message(layout_dict: dict) -> str:

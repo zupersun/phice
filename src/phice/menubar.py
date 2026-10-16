@@ -99,8 +99,11 @@ class PhiceApp(rumps.App):
 
         self.item_status = rumps.MenuItem("Starting…")
         self.item_status.set_callback(None)
-        self.item_enabled = rumps.MenuItem("Phice on", callback=self.toggle_enabled)
-        self.item_enabled.state = False   # starts red; refresh keeps it in step
+        # A verb, not a state with a tick beside it: "Phice on" with a checkmark
+        # reads as a label whether it is ticked or not, and the one thing anyone
+        # wants from this item is to know what clicking it will do. Starts red,
+        # and refresh keeps the word in step with the switch.
+        self.item_enabled = rumps.MenuItem("Turn Phice on", callback=self.toggle_enabled)
         self.item_record = rumps.MenuItem("Record session", callback=self.toggle_record)
         self.item_login = rumps.MenuItem("Launch at login", callback=self.toggle_login)
         self.item_login.state = agent_plist_path().exists()
@@ -158,9 +161,8 @@ class PhiceApp(rumps.App):
         has to be an exit somewhere else."""
         self.runtime.cancel_calibration()
 
-    def toggle_enabled(self, sender):
-        sender.state = not sender.state
-        self.runtime.set_enabled(bool(sender.state))
+    def toggle_enabled(self, _):
+        self.runtime.set_enabled(not self.runtime.status.read()["enabled"])
 
     def reload_config(self, _):
         self.runtime.force_reload()
@@ -234,7 +236,7 @@ class PhiceApp(rumps.App):
             # what the user needs to see.
             self.show_panel()
         s = self.runtime.status.read()
-        self.item_enabled.state = s["enabled"]
+        self.item_enabled.title = "Turn Phice off" if s["enabled"] else "Turn Phice on"
         self._show_stop(bool(self.runtime.calibration.state().get("running")))
         icon, label = describe(s)
         self._set_icon(icon)
