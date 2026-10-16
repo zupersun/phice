@@ -4,15 +4,19 @@
 
 # Phice
 
-Use an iPhone as an air mouse for macOS.<br>
-Point the phone, the cursor follows.
+**Use an iPhone as an air mouse for macOS.**
 
 [![Download Phice for Mac](https://img.shields.io/badge/Download-Phice%20for%20Mac-111827?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/zupersun/phice/releases/latest/download/Phice.dmg)
 
+macOS 13 or later · Apple silicon
+
 </div>
 
-The phone runs a web page, not an app. It streams orientation and touch over
-WebRTC; the Mac decides everything and drives the cursor.
+---
+
+Point the phone at the screen and the cursor is already there, and it stays
+there when your hand stops. The phone runs a web page, not an app: it streams
+orientation and touch over WebRTC, and the Mac decides everything.
 
 ## Setup
 
@@ -21,8 +25,13 @@ WebRTC; the Mac decides everything and drives the cursor.
    in its window.
 3. Open <https://phice.vercel.app/app> on the phone, enter the code, tap Start.
 
-Requires macOS 13 or later on Apple silicon. Phice is signed but not notarized,
-so the first launch needs Privacy & Security › **Open Anyway**.
+<details>
+<summary>If macOS refuses to open it</summary>
+
+Phice is code-signed, but not with a paid Apple Developer ID, so macOS
+quarantines the download and blocks the first launch. Open it once from System
+Settings › Privacy & Security › **Open Anyway**. It does not recur.
+</details>
 
 ## Controls
 
