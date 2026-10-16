@@ -4,7 +4,7 @@
 
 # Phice
 
-**Use an iPhone a pointer mouse for macOS.**
+**Use an iPhone as a pointer mouse for macOS.**
 
 [![Download Phice for Mac](https://img.shields.io/badge/Download-Phice%20for%20Mac-111827?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/zupersun/phice/releases/latest/download/Phice.dmg)
 
