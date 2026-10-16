@@ -29,3 +29,9 @@ node_modules/
 # drawn at build time from the mark
 packaging/AppIcon.icns
 packaging/AppIcon.iconset/
+
+# agent memory stores, regenerated per session
+.swarm/
+*.rvf
+*.rvf.lock
+ruvector.db
