@@ -78,6 +78,7 @@
   body:not([data-mac="1"]) #screen-desktop .fine{display:none}
   body[data-mac="1"] #screen-desktop .after{display:none}
   #screen-desktop .fine{font-size:13px;margin-top:14px}
+  #screen-desktop .cta{margin-top:22px}
   /* Every other screen is read at phone width; this is the one seen on a
      wide display, where a full-width line of text does not read. */
   #screen-desktop>div{max-width:26rem}
@@ -152,13 +153,12 @@
   <div class="screen" id="screen-desktop">
     <div>
       <h1>Phice runs on your phone</h1>
-      <p>Open <b id="here">phice.vercel.app</b> on your iPhone and it becomes an
-         air mouse for your Mac.</p>
       <a class="cta" id="btn-get"
-         href="https://github.com/zupersun/phice/releases/latest/download/Phice.dmg">Download for macOS</a>
-      <p class="fine">Apple silicon, macOS 13 or later. 40 MB. Not notarized by Apple, so
-         the first launch needs System Settings › Privacy &amp; Security › Open Anyway.</p>
-      <p class="after">It points a Mac running the Phice app, not this computer.</p>
+         href="https://github.com/zupersun/phice/releases/latest/download/Phice.dmg">Download Phice for Mac</a>
+      <p class="fine">macOS 13 or later on Apple silicon. Not notarized, so the first
+         launch needs Privacy &amp; Security › Open Anyway.</p>
+      <p>Open <b id="here">phice.vercel.app</b> on your iPhone.</p>
+      <p class="after">It points a Mac running Phice, not this computer.</p>
     </div>
   </div>
 
