@@ -58,6 +58,7 @@
   body[data-screen="pair"] #screen-pair,
   body[data-screen="connecting"] #screen-connecting,
   body[data-screen="failed"] #screen-failed,
+  body[data-screen="desktop"] #screen-desktop,
   body[data-screen="start"] #screen-start{display:flex}
   /* The code field is a recess in the shell, not a box drawn on it. */
   #code{font-size:30px;font-weight:500;letter-spacing:.3em;text-indent:.3em;
@@ -66,10 +67,21 @@
         box-shadow:var(--sh-inset);border-radius:14px;padding:14px;
         text-transform:uppercase;outline:none;-webkit-appearance:none;appearance:none}
   #code:focus{box-shadow:var(--sh-inset),0 0 0 1px var(--sh-accent)}
-  .screen button{font:inherit;font-size:17px;font-weight:500;padding:15px 32px;border:none;
-                 border-radius:999px;background:var(--sh-accent);color:var(--sh-ink);
-                 margin-top:16px}
+  .screen button,.screen .cta{font:inherit;font-size:17px;font-weight:500;padding:15px 32px;
+                 border:none;border-radius:999px;background:var(--sh-accent);color:var(--sh-ink);
+                 margin-top:16px;display:inline-block;text-decoration:none}
   .screen p{color:var(--sh-dim);line-height:1.5}
+  /* The app only runs on macOS, so only a Mac is offered it -- and never
+     without what it needs, which is the difference between a download and a
+     user who thinks the app is broken. */
+  body:not([data-mac="1"]) #btn-get,
+  body:not([data-mac="1"]) #screen-desktop .fine{display:none}
+  body[data-mac="1"] #screen-desktop .after{display:none}
+  #screen-desktop .fine{font-size:13px;margin-top:14px}
+  /* Every other screen is read at phone width; this is the one seen on a
+     wide display, where a full-width line of text does not read. */
+  #screen-desktop>div{max-width:26rem}
+  #screen-desktop b{color:var(--sh-fg);font-weight:500}
   #haptic{position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;
           left:-9999px;top:0}
   /* Connecting. Three rings leaving the centre, one after another: it takes a
@@ -132,6 +144,21 @@
       <h1>Connected</h1>
       <p>Tap to allow motion access.</p>
       <button type="button" id="btn-start">Start</button>
+    </div>
+  </div>
+
+  <!-- The link opens on anything. A laptop has no gyroscope and no touch, so
+       there is nothing to point with: say so, and send them where it works. -->
+  <div class="screen" id="screen-desktop">
+    <div>
+      <h1>Phice runs on your phone</h1>
+      <p>Open <b id="here">phice.vercel.app</b> on your iPhone and it becomes an
+         air mouse for your Mac.</p>
+      <a class="cta" id="btn-get"
+         href="https://github.com/zupersun/phice/releases/latest/download/Phice.dmg">Download for macOS</a>
+      <p class="fine">Apple silicon, macOS 13 or later. 40 MB. Not notarized by Apple, so
+         the first launch needs System Settings › Privacy &amp; Security › Open Anyway.</p>
+      <p class="after">It points a Mac running the Phice app, not this computer.</p>
     </div>
   </div>
 

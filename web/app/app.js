@@ -7,7 +7,7 @@
 (() => {
   "use strict";
 
-  const CLIENT_VERSION = "13";
+  const CLIENT_VERSION = "14";
 
   const el = {
     body: document.body,
@@ -535,10 +535,25 @@
   });
   document.getElementById("btn-retry").addEventListener("click", () => setScreen("pair"));
 
+  // ---------- the wrong device ----------
+
+  // The hosted link opens on anything, and a laptop cannot be an air mouse: no
+  // gyroscope, and nothing to put a finger on. Both facts are only guessable
+  // from the outside, so this blocks solely what it is sure of -- a pointer
+  // that is precise and no touch at all -- and lets everything it cannot answer
+  // through. Wrongly blocking a real phone would leave no way in whatsoever,
+  // whereas a laptop that gets through sees the pad it saw before this existed.
+  function laptop() {
+    const mm = window.matchMedia;
+    const coarse = mm ? mm("(pointer: coarse)").matches : true;
+    const touch = (navigator.maxTouchPoints || 0) > 0 || "ontouchstart" in window;
+    return !coarse && !touch;
+  }
+
   // A seam for the test harness. The client is otherwise sealed in this IIFE,
   // which is why nothing has ever executed it: every phone bug so far has been
   // in a file with no test able to reach inside it.
-  window.__phice = { handleMessage, renderLayout, applyState, state, el };
+  window.__phice = { handleMessage, renderLayout, applyState, state, el, laptop };
 
   // The link can carry the code, as phice.vercel.app/?c=ABC123: the Mac's QR
   // encodes it that way, so a scan needs no typing. A code in the link wins
@@ -546,5 +561,18 @@
   const fromLink = (new URLSearchParams(location.search).get("c") || "")
     .toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   el.code.value = fromLink.length === 6 ? fromLink : (localStorage.getItem("phice.code") || "");
-  setScreen("pair");
+  if (laptop()) {
+    // The address, not a hardcoded one: a preview deployment pairs through the
+    // host it was opened on, and sending the reader to the production one would
+    // pair them with nothing.
+    const here = document.getElementById("here");
+    if (here) here.textContent = location.host;
+    // Only a Mac is offered the app; it runs on nothing else.
+    if (/Mac/.test(navigator.platform || navigator.userAgent || "")) {
+      el.body.dataset.mac = "1";
+    }
+    setScreen("desktop");
+  } else {
+    setScreen("pair");
+  }
 })();

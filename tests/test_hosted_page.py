@@ -155,3 +155,18 @@ def test_the_recentre_hold_pinches_the_pad_and_swells_the_led():
     led = led[:led.index("}")]
     assert "var(--recenter-swell)" in led
     assert "--flash" not in css, "the lift toward white is gone"
+
+
+def test_a_laptop_is_sent_to_the_phone_and_offered_the_mac_app(html, js):
+    """The link opens on anything, and on a laptop there is nothing to point
+    with: no gyroscope, no touch. The page says so rather than showing a pad
+    that cannot work, and on a Mac it offers the app the phone pairs with.
+    The guess must fail open -- a browser that answers neither question is let
+    through, because wrongly blocking a real phone leaves no way in at all."""
+    assert 'id="screen-desktop"' in html
+    assert "(pointer: coarse)" in js and "maxTouchPoints" in js
+    assert "releases/latest/download/Phice.dmg" in html, "the canonical download URL"
+    assert 'body[data-mac="1"]' in html, "the download is offered on a Mac only"
+    # The build is arm64-only and signed but not notarized. A button without
+    # those facts produces a user who thinks a working app is broken.
+    assert "Apple silicon" in html and "Open Anyway" in html

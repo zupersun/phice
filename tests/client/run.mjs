@@ -115,5 +115,19 @@ check("the page carries a floor under the design", () => {
                "the fallback must give buttons a background, or they are invisible");
 });
 
+check("a browser that answers neither question is let through", () => {
+  // The harness has no matchMedia and no maxTouchPoints, like a browser too old
+  // to answer either. Blocking a real phone by accident leaves no way in at all,
+  // so the laptop gate must fail open.
+  assert.equal(app.doc.body.dataset.screen, "pair");
+  assert.equal(api.laptop(), false);
+});
+
+check("a precise pointer with no touch at all is a laptop", () => {
+  app.win.matchMedia = () => ({ matches: false });
+  app.win.navigator.maxTouchPoints = 0;
+  assert.equal(api.laptop(), true);
+});
+
 if (failures.length) { console.error(`\n${failures.length} failed`); process.exit(1); }
 console.log("all good");
