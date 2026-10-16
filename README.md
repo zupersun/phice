@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="64" height="64" alt="">
+![](docs/logo.svg)
 
 # Phice
 
 Use an iPhone as an air mouse for macOS.<br>
 Point the phone, the cursor follows.
 
-[![Download Phice for macOS](https://img.shields.io/badge/Download-Phice%20for%20macOS-111827?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/zupersun/phice/releases/latest/download/Phice.dmg)
+[![Download Phice for Mac](https://img.shields.io/badge/Download-Phice%20for%20Mac-111827?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/zupersun/phice/releases/latest/download/Phice.dmg)
 
 macOS 13 or later, Apple silicon. Signed but not notarized, so the first launch
 needs Privacy & Security › **Open Anyway**.
