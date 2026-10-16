@@ -72,8 +72,8 @@ app = BUNDLE(
         # window except a menu bar icon that may be behind the notch.
         "CFBundleName": "Phice",
         "CFBundleDisplayName": "Phice",
-        "CFBundleShortVersionString": "0.2.0",
-        "CFBundleVersion": "0.2.0",
+        "CFBundleShortVersionString": "0.2.1",
+        "CFBundleVersion": "0.2.1",
         "NSHumanReadableCopyright": "",
         "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,
