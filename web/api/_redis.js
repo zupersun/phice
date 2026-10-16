@@ -64,6 +64,15 @@ export async function getJson(key) {
   }
 }
 
+/** Count one hit against `key`, which expires `seconds` after its first. Returns the count. */
+export async function bump(key, seconds) {
+  return withClient(async (c) => {
+    const n = await c.incr(key);
+    if (n === 1) await c.expire(key, seconds);
+    return n;
+  });
+}
+
 export async function del(key) {
   await withClient((c) => c.del(key));
 }

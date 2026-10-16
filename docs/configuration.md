@@ -64,7 +64,7 @@ defaults, backing up whatever was there.
 | `idle_hz_when_auto_activate` | Packet rate the phone uses while idle and waiting to be picked up. |
 | `timeout_ms` | No packets for this long releases every button and powers off. |
 | `signaling_url` | Where the hosted page and its pairing letterbox live. The Mac publishes its offer there under the code, and the phone fetches it. Must be `https://`. |
-| `ice_servers` | Override the STUN/TURN servers both peers use. Empty by default: the letterbox hands out the same list to both sides, which is what lets them meet. |
+| `ice_servers` | Override the STUN/TURN servers both peers use. Empty by default: the letterbox hands out the same list to both sides, which is what lets them meet. Phice ships with no relay, so the two devices must share a network — put your own TURN credentials here to pair across networks. |
 | `mapping` | `absolute` (default) points the cursor where the phone points, anchored at the last recenter. `relative` integrates turn deltas like a trackpad in the air. |
 | `ui.appearance` | `dark` or `light`, for the phone and the Mac window together. The switch in the Mac window writes this. |
 | `ui.haptics` | Haptic tick on button press. Best-effort — see the note under Daily use. |

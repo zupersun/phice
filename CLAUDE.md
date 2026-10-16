@@ -281,7 +281,7 @@ out of it. Check this before assuming a service is free or disposable.
 | **GitHub** | free | nothing at runtime |
 | **Vercel** | Hobby tier is free but **non-commercial** | the phone page and pairing |
 | **Redis Cloud** (via Vercel marketplace) | free tier | pairing; the pointer keeps working once connected |
-| **Cloudflare Realtime TURN** | free tier, **1000 GB/month** | pairing across different networks |
+| **Cloudflare Realtime TURN** | **removed 2026-10-16** | nothing — the relay is gone; see below |
 | Apple Developer | **not used** | — downloads show "unidentified developer" |
 
 **Vercel requests are driven by pairing, which is on demand.** The letterbox functions
@@ -292,34 +292,45 @@ otherwise, so an idle Mac costs zero requests. Before this, the always-on loop p
 spent ~86k requests a day, which exhausted the free tier in about a week. See constraint 17.
 During an active session the Mac talks peer-to-peer and does not poll the letterbox at all.
 
-### The TURN relay is the only metered dependency
+### Nothing is metered any more, and that was deliberate
 
-A relay is required whenever the phone and the Mac are on different networks
-behind NAT — a phone on cellular and a Mac on a campus network can each reach
-outward and neither can be reached. Measured on a real pair: every non-relayed
-candidate failed. On a shared Wi-Fi it connects directly and uses no relay at all.
+**The phone and the Mac must be on the same network.** Removed on 2026-10-16 with the
+Cloudflare TURN key; the free tier was never the problem.
 
-**Measured cost**, from the real protocol: a 245-byte packet, ~305 bytes on the
-wire, 60 Hz, charged in both directions:
+The reasoning, so nobody re-adds it casually. A relay is required whenever the two
+devices are on different networks behind NAT — a phone on cellular and a Mac on a
+campus network can each reach outward and neither can be reached, and measured on a
+real pair, every non-relayed candidate failed. It cost ~132 MB per hour of pointing,
+or ~7,600 hours inside the 1000 GB free tier, which no single user would ever reach.
 
-- ~132 MB per hour of active pointing
-- ~7,600 hours inside the 1000 GB free tier
-- Nothing accrues while the pointer is off
+What made it untenable was the shape of the risk, not the size of it:
 
-Set a **$0 spend cap** in Cloudflare billing so exceeding the tier stops the
-service rather than generating a charge. Account and billing specifics are
-deliberately not recorded here: this file is public.
+- **Cloudflare offers no spend cap for Realtime.** An earlier version of this file
+  said to set one. There isn't one — past 1000 GB it simply bills at $0.05/GB. Do not
+  reinstate that instruction.
+- `/api/ice` has to be unauthenticated: the Mac needs a relay before it has a pairing
+  code and the page before it has anything at all. A public endpoint minting six-hour
+  relay credentials, drawn on an account with a card on it and no ceiling, is an
+  open-ended liability for a tool that is given away.
 
-### To cancel it
+It is rate-limited to 30 credentials per IP per hour as defence in depth, but a limit
+on *minting* does not bound the traffic each credential carries. Only the absent key
+does that.
 
-1. Cloudflare dashboard → **Realtime → TURN Server** → delete the key.
-2. Vercel → project → **Environment Variables** → remove `TURN_KEY_ID` and
+**Anyone who needs a relay can still have one** by putting their own credentials in
+`ice_servers` (see docs/configuration.md). That is the supported path, and it costs
+the project nothing.
+
+### If it is ever restored
+
+1. Cloudflare dashboard → **Realtime → TURN Server** → create a key.
+2. Vercel → project → **Environment Variables** → set `TURN_KEY_ID` and
    `TURN_API_TOKEN`, then redeploy.
 
-`/api/ice` degrades honestly rather than breaking: it keeps answering with STUN
-only, reports `relay: false` with a reason, and the Mac logs that it will connect
-on a shared network and nowhere else. Pairing across networks stops working;
-everything else is unaffected.
+Nothing else changes: `/api/ice` mints again the moment both are present. Without
+them it degrades honestly rather than breaking — it keeps answering with STUN only,
+reports `relay: false` with a reason, and the Mac logs that it will connect on a
+shared network and nowhere else.
 
 ## Conventions
 

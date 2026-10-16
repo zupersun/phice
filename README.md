@@ -41,6 +41,10 @@ in its window. Off, it mints no pairing code and talks to nothing.
 
 **4. Pair the phone.**
 
+**Put the phone on the same Wi-Fi as the Mac** — the two talk to each other
+directly, with nothing relaying between them, so a phone on cellular cannot
+reach it.
+
 The window shows a six-character code. Open
 [phice.vercel.app/app](https://phice.vercel.app/app) on the iPhone, enter the
 code, tap Start, and allow motion access. Nothing is installed on the phone.
@@ -89,7 +93,7 @@ them.
 | | |
 |---|---|
 | **Pairing** | The Mac publishes a WebRTC offer to a hosted letterbox under the six-character code; the phone fetches it and answers under the same code. The code expires and renews on its own. |
-| **Transport** | One data channel carrying JSON at 60 Hz. Direct between the two devices where the networks allow it, relayed through Cloudflare TURN where they do not — a phone on cellular and a Mac behind a campus firewall still meet. |
+| **Transport** | One data channel carrying JSON at 60 Hz, direct between the two devices. No relay stands in the middle, which is why they have to share a network — and why nothing about Phice is metered. Supply your own TURN server in `ice_servers` if you need to cross networks. |
 | **Motion** | CoreMotion orientation, projected to an aim vector. Roll cancels algebraically rather than by filtering, because the W3C rotation order applies gamma last, about the very axis the aim is projected from. |
 | **The cursor** | A pure engine on the Mac — an injected clock and a swappable backend, no I/O — posting Quartz events. Every pointer decision happens here, never on the phone. |
 | **The page** | Static, served by Vercel. Safari exposes motion sensors only on a secure page, which is why it is hosted rather than served from the Mac: no certificate to trust, no profile to install, no account. |
