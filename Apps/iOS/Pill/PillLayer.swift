@@ -54,7 +54,9 @@ struct PillLayer: View {
                         .transition(appearing)
                 }
                 if surface == .column {
-                    ClipboardColumn(geometry: g, items: model.clipboard, carried: carried?.item.id)
+                    ClipboardColumn(geometry: g, items: model.clipboard, carried: carried?.item.id) {
+                        model.send([.paste(itemID: $0.id)])
+                    }
                         .transition(.opacity)
                     columnTouches(g)
                 }
@@ -77,7 +79,7 @@ struct PillLayer: View {
             errors += 1
         }
         .onChange(of: model.pill) { optimistic = false }
-        .background { DimWatcher(model: model, dimmed: $dimmed) }
+        .background { DimWatcher(model: model, dimmed: $dimmed).allowsHitTesting(false) }
         .onAppear { model.restoreSaved() }
         .sensoryFeedback(.selection, trigger: menu.highlight) { $1 != nil }
         .sensoryFeedback(.impact(weight: .light), trigger: holds)

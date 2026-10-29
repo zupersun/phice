@@ -42,7 +42,7 @@ import Testing
                 ClipItem(id: "2", kind: .link, preview: "https://phice.app/mac", date: .now),
                 ClipItem(id: "3", kind: .image, preview: "Screenshot 14.02.31.png", date: .now),
                 ClipItem(id: "4", kind: .file, preview: "Q3-deck.key", date: .now),
-            ], carried: "2")
+            ], carried: "2") { _ in }
         })),
     ]
     try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)

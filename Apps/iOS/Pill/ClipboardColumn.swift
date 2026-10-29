@@ -8,6 +8,8 @@ struct ClipboardColumn: View {
     let items: [ClipItem]
     /// The item being dragged out, left behind as a ghost.
     let carried: String?
+    /// VoiceOver's way to paste a row, since it cannot drag one out.
+    let paste: (ClipItem) -> Void
 
     var body: some View {
         let column = geometry.column
@@ -34,6 +36,7 @@ struct ClipboardColumn: View {
                 ClipRow(item: item, ghost: item.id == carried)
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
+                    .accessibilityAction(named: "Paste") { paste(item) }
             }
         }
         .allowsHitTesting(false)
