@@ -1,0 +1,18 @@
+{
+  "dragLock" : false,
+  "launchpad" : true,
+  "lookUpForceClick" : true,
+  "missionControl" : 4,
+  "momentumScroll" : true,
+  "naturalScrolling" : true,
+  "notificationCenter" : true,
+  "pinchZoom" : true,
+  "secondaryClick" : "twoFingers",
+  "showDesktop" : true,
+  "smartZoom" : true,
+  "swipePages" : "twoFingerScroll",
+  "swipeSpaces" : 4,
+  "tapToClick" : true,
+  "threeFingerDrag" : false,
+  "trackingSpeed" : 1
+}

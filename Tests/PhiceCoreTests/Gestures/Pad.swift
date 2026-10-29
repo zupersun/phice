@@ -3,8 +3,6 @@
 /// A scripted hand on an iPhone-sized landscape pad. Time runs in 120 Hz slots; each slot is either
 /// a frame carrying every finger, as the pad sends them, or, while nothing changes, a bare tick.
 struct Pad {
-    static let width = 874.0, height = 402.0
-
     var r: Recogniser
     private(set) var slot = 0
     private(set) var frames: [TouchFrame] = []
@@ -15,8 +13,9 @@ struct Pad {
     var t: Double { Double(slot) / 120 }
 
     init(_ settings: TrackpadSettings = TrackpadSettings(), pill: Side = .left) {
-        r = Recogniser(settings: settings,
-                       geometry: PadGeometry(width: Self.width, height: Self.height, pillSide: pill))
+        var geometry = Replay.defaultGeometry
+        geometry.pillSide = pill
+        r = Recogniser(settings: settings, geometry: geometry)
     }
 
     init(_ configure: (inout TrackpadSettings) -> Void) {
@@ -118,14 +117,7 @@ struct Pad {
     mutating func clear() { events = [] }
 
     /// Everything but motion: clicks, shortcuts, force clicks, freezes, drops, momentum stops.
-    var actions: [PadEvent] {
-        events.filter {
-            switch $0 {
-            case .move, .scroll, .scrollEnded: false
-            default: true
-            }
-        }
-    }
+    var actions: [PadEvent] { events.filter(isAction) }
 
     /// Total pointer travel.
     var travel: (dx: Double, dy: Double) {
@@ -182,3 +174,10 @@ let press = PadEvent.button(.left, down: true, clicks: 1)
 let release = PadEvent.button(.left, down: false, clicks: 1)
 
 func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
+
+func isAction(_ event: PadEvent) -> Bool {
+    switch event {
+    case .move, .scroll, .scrollEnded: false
+    default: true
+    }
+}
