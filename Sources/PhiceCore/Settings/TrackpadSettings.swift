@@ -14,8 +14,11 @@ public enum SwipePages: String, Codable, Sendable {
 /// `com.apple.AppleMultitouchTrackpad`, `com.apple.trackpad.scaling` and
 /// `com.apple.swipescrolldirection`. Defaults are macOS's. A nil gesture is switched off.
 public struct TrackpadSettings: Codable, Sendable, Equatable {
-    /// `com.apple.trackpad.scaling`, 0...3.
-    public var trackingSpeed = 1.0
+    /// `com.apple.trackpad.scaling`, 0...3. The default is what macOS applies when the slider was
+    /// never moved (`HIDTrackpadAcceleration` 45056 / 65536).
+    public var trackingSpeed = 0.6875
+    /// The trackpad's scrolling speed, 0...3 (`HIDTrackpadScrollAcceleration`; default 20480 / 65536).
+    public var scrollSpeed = 0.3125
     public var tapToClick = true
     public var dragLock = false
     public var threeFingerDrag = false
@@ -35,4 +38,64 @@ public struct TrackpadSettings: Codable, Sendable, Equatable {
     public var showDesktop = true
 
     public init() {}
+}
+
+/// The phone (App Store) and the Mac agent (download) update separately, so a settings message may
+/// lack a field the receiver knows or carry one it doesn't: missing keys keep their defaults and
+/// unknown ones are ignored. A switched-off gesture is written as null, never left out, so it
+/// cannot come back as the default.
+extension TrackpadSettings {
+    enum CodingKeys: String, CodingKey {
+        case trackingSpeed, scrollSpeed, tapToClick, dragLock, threeFingerDrag, secondaryClick
+        case naturalScrolling, momentumScroll, pinchZoom, smartZoom, lookUpForceClick, swipePages
+        case swipeSpaces, missionControl, appExpose, notificationCenter, launchpad, showDesktop
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func read<T: Decodable>(_ key: CodingKeys, _ value: inout T) throws {
+            if c.contains(key) { value = try c.decode(T.self, forKey: key) }
+        }
+        try read(.trackingSpeed, &trackingSpeed)
+        try read(.scrollSpeed, &scrollSpeed)
+        try read(.tapToClick, &tapToClick)
+        try read(.dragLock, &dragLock)
+        try read(.threeFingerDrag, &threeFingerDrag)
+        try read(.secondaryClick, &secondaryClick)
+        try read(.naturalScrolling, &naturalScrolling)
+        try read(.momentumScroll, &momentumScroll)
+        try read(.pinchZoom, &pinchZoom)
+        try read(.smartZoom, &smartZoom)
+        try read(.lookUpForceClick, &lookUpForceClick)
+        try read(.swipePages, &swipePages)
+        try read(.swipeSpaces, &swipeSpaces)
+        try read(.missionControl, &missionControl)
+        try read(.appExpose, &appExpose)
+        try read(.notificationCenter, &notificationCenter)
+        try read(.launchpad, &launchpad)
+        try read(.showDesktop, &showDesktop)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(trackingSpeed, forKey: .trackingSpeed)
+        try c.encode(scrollSpeed, forKey: .scrollSpeed)
+        try c.encode(tapToClick, forKey: .tapToClick)
+        try c.encode(dragLock, forKey: .dragLock)
+        try c.encode(threeFingerDrag, forKey: .threeFingerDrag)
+        try c.encode(secondaryClick, forKey: .secondaryClick)
+        try c.encode(naturalScrolling, forKey: .naturalScrolling)
+        try c.encode(momentumScroll, forKey: .momentumScroll)
+        try c.encode(pinchZoom, forKey: .pinchZoom)
+        try c.encode(smartZoom, forKey: .smartZoom)
+        try c.encode(lookUpForceClick, forKey: .lookUpForceClick)
+        try c.encode(swipePages, forKey: .swipePages)
+        try c.encode(swipeSpaces, forKey: .swipeSpaces)
+        try c.encode(missionControl, forKey: .missionControl)
+        try c.encode(appExpose, forKey: .appExpose)
+        try c.encode(notificationCenter, forKey: .notificationCenter)
+        try c.encode(launchpad, forKey: .launchpad)
+        try c.encode(showDesktop, forKey: .showDesktop)
+    }
 }
