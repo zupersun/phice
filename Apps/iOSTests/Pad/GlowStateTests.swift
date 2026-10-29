@@ -19,6 +19,15 @@ import Testing
     #expect(next.light < 20 * GlowState.spread)
 }
 
+@Test func aContactStepTakesAbout80msToArrive() {
+    // The digitizer reports radius in steps of 2 x majorRadiusTolerance: 12.1 pt on an iPhone 17.
+    var glow = GlowState()
+    _ = glow.step(contact: 24.3, verdict: .live, now: 1)
+    let halfway = (24.3 + 36.4) / 2 * GlowState.spread
+    #expect(glow.step(contact: 36.4, verdict: .live, now: 1.04).light < halfway)
+    #expect(glow.step(contact: 36.4, verdict: .live, now: 1.24).light > 35 * GlowState.spread)
+}
+
 @Test func aForcePressBloomsThenDispersesAsTheFingerEasesOff() {
     var glow = GlowState()
     _ = glow.step(contact: 10, verdict: .live, now: 1)

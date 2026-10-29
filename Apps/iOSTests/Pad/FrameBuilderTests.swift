@@ -67,6 +67,18 @@ private func sample(_ key: UInt, _ phase: Touch.Phase, t: Double, x: Double = 0,
     #expect(first != second)
 }
 
+@Test func successiveTouchesAtFewAddressesStayDistinct() {
+    // On an iPhone 17, 100 separate touches came through on 3 UITouch addresses.
+    var builder = FrameBuilder()
+    var ids: Set<UInt16> = []
+    for n in 0 ..< 100 {
+        let t = Double(n)
+        ids.insert(builder.frames(from: [sample(UInt(n % 3), .began, t: t)])[0].touches[0].id)
+        _ = builder.frames(from: [sample(UInt(n % 3), .ended, t: t + 0.1, radius: 0)])
+    }
+    #expect(ids.count == 100)
+}
+
 @Test func aTouchNeverSeenLandingIsIgnored() {
     var builder = FrameBuilder()
     #expect(builder.frames(from: [sample(9, .moved, t: 1), sample(9, .ended, t: 1.1)]).isEmpty)

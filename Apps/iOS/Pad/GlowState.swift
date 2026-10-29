@@ -28,8 +28,9 @@ struct GlowState {
 
     mutating func step(contact: Double, verdict: TouchVerdict, now: Double) -> GlowShape {
         let dt = max(0, now - (last?.t ?? now))
-        // The digitizer reports contact size in coarse steps; easing turns them into breathing.
-        let r = radius.map { $0 + (contact - $0) * (1 - exp(-dt / 0.05)) } ?? contact
+        // The digitizer reports contact size in steps of 12 pt or so; easing over ~80 ms turns
+        // them into breathing.
+        let r = radius.map { $0 + (contact - $0) * (1 - exp(-dt / 0.08)) } ?? contact
         radius = r
         if verdict == .force, last?.verdict != .force {
             press = (now, r)
