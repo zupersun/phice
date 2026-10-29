@@ -1,0 +1,120 @@
+import Foundation
+
+/// One finger as the recogniser follows it from landing to lifting.
+struct Track: Sendable {
+    enum Status: Sendable {
+        /// Counted in gestures.
+        case live
+        /// Landed wide or gripping an edge; left out until it moves, relaxes or settles.
+        case waiting
+        /// A palm or a resting hand: left out until it lifts.
+        case rejected
+    }
+
+    let startX: Double, startY: Double, startT: Double
+    var x: Double, y: Double, radius: Double
+    /// Where the gesture in progress measures this finger's travel from.
+    var refX: Double, refY: Double
+    /// Strayed past the slop since landing, so it is not part of a tap.
+    var moved = false
+    var status: Status
+    let landedWide: Bool
+    var widest: Double
+    /// Resting radius, the mean of the first moments after landing; force press reads against it.
+    var rest: Double?
+    var restSum: Double, restCount = 1
+    var armed = true
+    var verdict = TouchVerdict.live
+
+    init(_ touch: Touch, at t: Double, status: Status, landedWide: Bool) {
+        startX = touch.x
+        startY = touch.y
+        startT = t
+        x = touch.x
+        y = touch.y
+        radius = touch.radius
+        refX = touch.x
+        refY = touch.y
+        self.status = status
+        self.landedWide = landedWide
+        widest = touch.radius
+        restSum = touch.radius
+        if status == .rejected { verdict = .rejected }
+    }
+
+    var travel: Double { hypot(x - refX, y - refY) }
+
+    mutating func follow(_ touch: Touch, at t: Double, tuning: GestureTuning) {
+        x = touch.x
+        y = touch.y
+        if hypot(x - startX, y - startY) > tuning.slop { moved = true }
+        // A lift frame's radius is the finger leaving, not pressing.
+        guard touch.phase != .ended, touch.phase != .cancelled else { return }
+        radius = touch.radius
+        widest = max(widest, radius)
+        guard rest == nil else { return }
+        if t - startT <= tuning.force.baselineWindow {
+            restSum += radius
+            restCount += 1
+        } else {
+            rest = restSum / Double(restCount)
+        }
+    }
+
+    mutating func reject() {
+        status = .rejected
+        verdict = .rejected
+    }
+}
+
+/// What the fingers on the pad are doing together.
+enum Mode: Equatable, Sendable {
+    case idle
+    /// Fingers down, nothing decided: could still be a tap.
+    case pending
+    case pointing
+    case scrolling
+    case pinching
+    /// Thumb and three fingers closing or opening.
+    case spreading
+    case swiping(Int)
+    /// Two fingers coming in from the right edge.
+    case edgeSwipe
+    /// Left button held by tap-to-drag (or drag lock); `since` is when the held finger landed.
+    case dragging(held: UInt16, since: Double)
+    /// The copy gesture: button held, cursor frozen, the item riding between the fingers.
+    case copying
+    case threeFingerDrag
+    /// The gesture has fired; nothing more until every finger lifts.
+    case done
+}
+
+/// One hand on the pad: from the first counted finger landing until the last one lifts.
+struct Session: Sendable {
+    var start = 0.0
+    var origin = (x: 0.0, y: 0.0)
+    /// Counted fingers down, in landing order.
+    var live: [UInt16] = []
+    var most = 0
+    var tap = true
+    /// The system took a finger: whatever this was, it does not complete.
+    var cancelled = false
+    /// Landed soon after a tap: holding or moving grabs.
+    var tapDrag = false
+    /// Landed while drag lock held the button.
+    var locked = false
+    /// Common travel of the fingers since `refT`, when their references were last set.
+    var acc = (x: 0.0, y: 0.0)
+    var refT = 0.0
+    /// Pinch or spread size at the last step.
+    var scale = 0.0
+    var lastStep = -Double.infinity
+    /// Scroll position over time, for the lift velocity.
+    var trail: [(t: Double, x: Double, y: Double)] = []
+}
+
+/// A recent tap, for double clicks, tap-to-drag and smart zoom.
+struct Tap: Sendable {
+    var t, x, y: Double
+    var fingers, clicks: Int
+}
