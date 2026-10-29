@@ -15,13 +15,14 @@ import Testing
     let received = Inbox()
     let access = Flag(true)
 
-    init(shortcuts: [String] = ["Resize", "Upload"]) {
+    init(shortcuts: [String] = ["Resize", "Upload"], autoAllow: Bool = false) {
         (phone, mac) = Loopback.pair()
         let clipboard = Clipboard(pasteboard: pasteboard, store: ClipStore(directory: directory))
         let access = access
         agent = AgentController(
             link: mac, poster: poster, clipboard: clipboard, directory: directory,
-            shortcuts: { shortcuts }, accessibility: { access.value }, clock: { 0 })
+            shortcuts: { shortcuts }, accessibility: { access.value }, clock: { 0 },
+            autoAllow: autoAllow)
         let inbox = received
         phone.onMessage = { inbox.messages.append($0) }
     }
@@ -146,10 +147,40 @@ private final class Flag: @unchecked Sendable {
 @Test func theFakePosterFlagSwapsTheRealOne() {
     let clipboard = Clipboard(pasteboard: .withUniqueName(),
                               store: ClipStore(directory: tempDirectory()))
-    let fake = AgentController.makePoster(arguments: ["Phice", "--fake-poster"], clipboard: clipboard)
-    let real = AgentController.makePoster(arguments: ["Phice"], clipboard: clipboard)
-    #expect(fake is FakePoster)
-    #expect(real is QuartzPoster)
+    func poster(_ arguments: [String]) -> any EventPoster {
+        AgentController.makePoster(LaunchOptions(arguments: arguments), clipboard: clipboard)
+    }
+    let log = tempDirectory().appendingPathComponent("calls.jsonl").path
+    #expect(poster(["Phice", "--fake-poster"]) is FakePoster)
+    #expect(poster(["Phice", "--fake-poster", log]) is LoggingPoster)
+    #expect(poster(["Phice"]) is QuartzPoster)
+}
+
+#if DEBUG
+@Test @MainActor func autoAllowAcceptsEveryPairingAndKeepsPairingOpen() async {
+    let rig = Rig(autoAllow: true)
+    rig.agent.start()
+    #expect(rig.mac.pairingOpen)
+    rig.agent.setPairingOpen(false)             // closing the window must not close pairing
+    #expect(rig.mac.pairingOpen)
+    rig.phone.start()
+    rig.phone.pair(with: rig.phone.macs[0])
+    await settle()
+    #expect(rig.agent.model.pairingRequest == nil)
+    #expect(rig.agent.model.connectedDevice == "Loopback iPhone")
+}
+#endif
+
+@Test @MainActor func withoutAutoAllowPairingStillWaitsForTheUser() async {
+    let rig = Rig()
+    rig.agent.start()
+    rig.agent.setPairingOpen(false)
+    #expect(!rig.mac.pairingOpen)
+    rig.phone.start()
+    rig.phone.pair(with: rig.phone.macs[0])
+    await settle()
+    #expect(rig.agent.model.pairingRequest != nil)
+    #expect(rig.agent.model.connectedDevice == nil)
 }
 
 @Test func theClipboardListFitsInAFrame() {

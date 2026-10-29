@@ -20,6 +20,8 @@ import PhiceNet
     private let accessibilityProbe: () -> Bool
     private let clock: () -> Double
     private let recorder: SessionRecorder
+    /// Accept every pairing request without asking. Debug builds only, for end-to-end tests.
+    private let autoAllow: Bool
     private var ticker: Timer?
     private var housekeeper: Timer?
     private var beats = 0
@@ -28,7 +30,12 @@ import PhiceNet
 
     init(link: any MacLink, poster: any EventPoster, clipboard: Clipboard, directory: URL,
          shortcuts: @escaping @Sendable () async -> [String], accessibility: @escaping () -> Bool,
-         clock: @escaping () -> Double) {
+         clock: @escaping () -> Double, autoAllow: Bool = false) {
+        #if DEBUG
+        self.autoAllow = autoAllow
+        #else
+        self.autoAllow = false   // the Allow click is the security boundary (constraint 7)
+        #endif
         self.link = link
         self.poster = poster
         self.clipboard = clipboard
@@ -41,32 +48,45 @@ import PhiceNet
                            curves: curves.pointer, scrollCurves: curves.scroll)
     }
 
-    /// `--fake-poster` records what would have been posted, for end-to-end tests with no cursor.
-    nonisolated static func makePoster(arguments: [String], clipboard: Clipboard) -> any EventPoster {
-        arguments.contains("--fake-poster") ? FakePoster() : QuartzPoster(clipboard: clipboard)
+    /// `--fake-poster [PATH]` stands in for the cursor, and logs what it was asked to do to PATH.
+    nonisolated static func makePoster(_ options: LaunchOptions,
+                                       clipboard: Clipboard) -> any EventPoster {
+        guard options.fakePoster else { return QuartzPoster(clipboard: clipboard) }
+        return options.fakePosterLog.map { LoggingPoster(log: $0) } ?? FakePoster()
     }
 
     static func live(arguments: [String]) -> AgentController {
+        let options = LaunchOptions(arguments: arguments)
         let directory = AppEnvironment.supportDirectory
         let clipboard = Clipboard(store: ClipStore(directory: directory))
         return AgentController(
-            link: LinkFactory.make(), poster: makePoster(arguments: arguments, clipboard: clipboard),
+            link: LinkFactory.make(), poster: makePoster(options, clipboard: clipboard),
             clipboard: clipboard, directory: directory,
             shortcuts: { await ShortcutsCLI.list() }, accessibility: { CGPreflightPostEventAccess() },
-            clock: { ProcessInfo.processInfo.systemUptime })
+            clock: { ProcessInfo.processInfo.systemUptime }, autoAllow: options.autoAllow)
     }
 
     func start() {
         link.onChange = { [weak self] in self?.linkChanged() }
         link.onMessage = { [weak self] message in self?.receive(message) }
         link.onPairingRequest = { [weak self] request in
-            self?.model.pairingRequest = request
-            self?.onNeedsWindow?()
+            guard let self else { return }
+            if autoAllow {
+                NSLog("PHICE --auto-allow: accepted pairing request from %@", request.deviceName)
+                return request.respond(true)
+            }
+            model.pairingRequest = request
+            onNeedsWindow?()
         }
         clipboard.store.onChange = { [weak self] in self?.pushClipboard() }
         refreshAccessibility()
         refreshLoginItem()
         housekeeper = schedule(every: 0.25) { $0.housekeep() }
+        if autoAllow {
+            NSLog("PHICE WARNING: --auto-allow is ON. Every pairing request is accepted unasked and "
+                  + "pairing stays open: the Allow boundary (CLAUDE.md constraint 7) is disabled.")
+            link.pairingOpen = true
+        }
         link.start()
     }
 
@@ -166,7 +186,7 @@ import PhiceNet
 
     /// A new iPhone can pair only while the window is open (constraint 7).
     func setPairingOpen(_ open: Bool) {
-        link.pairingOpen = open
+        link.pairingOpen = open || autoAllow
     }
 
     func resolvePairing(allow: Bool) {
