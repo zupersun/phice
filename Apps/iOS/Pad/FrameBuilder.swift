@@ -10,6 +10,8 @@ struct TouchSample: Equatable {
     var phase: Touch.Phase
     /// Seconds since boot (`UITouch.timestamp`), the clock `tick(now:)` is given too.
     var t: Double
+    /// `UITouch.majorRadiusTolerance`; 0 when unknown.
+    var tolerance = 0.0
 }
 
 /// Turns samples into `TouchFrame`s: one per instant the digitizer reported, holding every finger

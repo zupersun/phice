@@ -9,8 +9,9 @@ import PhiceCore
     var size = CGSize.zero
     var play: (Haptic) -> Void = { _ in }
     private var builder = FrameBuilder()
-    private var recogniser: Recogniser
+    private(set) var recogniser: Recogniser
     private var batch = FrameBatch()
+    private var quantumSet = false
 
     init(model: AppModel) {
         self.model = model
@@ -23,6 +24,13 @@ import PhiceCore
     var verdicts: [UInt16: TouchVerdict] { recogniser.verdicts }
 
     func touches(_ samples: [TouchSample]) {
+        // majorRadius moves in steps of twice its tolerance, which differs between models.
+        if !quantumSet, let landing = samples.first(where: {
+            $0.phase == .began && $0.tolerance.isFinite && $0.tolerance > 0
+        }) {
+            recogniser.tuning.force.quantum = 2 * landing.tolerance
+            quantumSet = true
+        }
         let frames = builder.frames(from: samples)
         guard !frames.isEmpty else { return }
         sync()
