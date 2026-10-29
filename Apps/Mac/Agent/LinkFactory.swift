@@ -1,7 +1,9 @@
+import Foundation
 import PhiceNet
 
-/// The one place that decides which transport the agent speaks. Loopback has no phone on the other
-/// end; the real link replaces this body with `NetworkMacLink()`.
+/// The one place that decides which transport the agent speaks.
 enum LinkFactory {
-    @MainActor static func make() -> any MacLink { Loopback.pair().mac }
+    @MainActor static func make() -> any MacLink {
+        NetworkMacLink(macName: Host.current().localizedName ?? "Mac")
+    }
 }

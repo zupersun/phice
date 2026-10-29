@@ -50,13 +50,17 @@ private struct Oriented: View {
 
 @MainActor final class AppSetup {
     let model: AppModel
-    private let devMac: DevMac
+    /// The in-memory Mac behind `-devmac`, for working on the UI with no Mac at hand.
+    private var devMac: DevMac?
 
     init() {
-        // shortcut: an in-memory Mac until PhiceNet's real link is merged in Phase 2.
-        let (phone, mac) = Loopback.pair()
-        devMac = DevMac(mac: mac)
-        model = AppModel(link: phone)
-        phone.start()
+        if CommandLine.arguments.contains("-devmac") {
+            let (phone, mac) = Loopback.pair()
+            devMac = DevMac(mac: mac)
+            model = AppModel(link: phone)
+        } else {
+            model = AppModel(link: NetworkPhoneLink(deviceName: UIDevice.current.name))
+        }
+        model.link.start()
     }
 }

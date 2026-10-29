@@ -68,7 +68,7 @@ public final class MacDriver {
         case let .enabled(on):
             if !on { releaseAll(); stopMomentum() }
             enabled = on
-        case .hello, .heartbeat, .record, .frames:
+        case .hello, .heartbeat, .record, .frames, .forget:
             break
         }
         return []
