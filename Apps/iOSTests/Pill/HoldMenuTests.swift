@@ -1,0 +1,101 @@
+import CoreGraphics
+import Testing
+@testable import PhiceiOS
+
+private let origin = CGPoint(x: 30, y: 200)
+
+@Test func aHoldOpensTheMenuWithNothingHighlighted() {
+    var menu = HoldMenu()
+    #expect(!menu.isOpen)
+    menu.open(at: origin)
+    #expect(menu.isOpen)
+    #expect(menu.highlight == nil)
+}
+
+@Test func theItemUnderTheFingerWaitsUntilItSlides() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    menu.move(to: CGPoint(x: 33, y: 204), over: .clipboard)
+    #expect(menu.highlight == nil)
+    menu.move(to: CGPoint(x: 30, y: 230), over: .clipboard)
+    #expect(menu.highlight == .clipboard)
+}
+
+@Test func releaseThenTapLeavesTheMenuOpenUntilAnItemIsTapped() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    #expect(menu.lift() == nil)
+    #expect(menu.isOpen)
+    menu.touchDown(over: .settings)
+    #expect(menu.highlight == .settings)
+    #expect(menu.lift() == .settings)
+    #expect(!menu.isOpen)
+}
+
+@Test func aTapOutsideTheOpenMenuCollapsesIt() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    _ = menu.lift()
+    menu.touchDown(over: nil)
+    #expect(!menu.isOpen)
+}
+
+@Test func holdAndSlideHighlightsWhatTheFingerIsOverAndReleaseSelectsIt() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    menu.move(to: CGPoint(x: 30, y: 120), over: .power)
+    #expect(menu.highlight == .power)
+    menu.move(to: CGPoint(x: 30, y: 280), over: .settings)
+    #expect(menu.highlight == .settings)
+    #expect(menu.lift() == .settings)
+    #expect(!menu.isOpen)
+}
+
+@Test func slidingOffTheMenuAndReleasingSelectsNothing() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    menu.move(to: CGPoint(x: 30, y: 280), over: .settings)
+    menu.move(to: CGPoint(x: 300, y: 280), over: nil)
+    #expect(menu.highlight == nil)
+    #expect(menu.lift() == nil)
+    #expect(menu.isOpen)
+}
+
+@Test func theStateButtonKeepsTheMenuOpenToShowTheNewState() {
+    var menu = HoldMenu()
+    menu.open(at: origin)
+    menu.move(to: CGPoint(x: 30, y: 120), over: .power)
+    #expect(menu.lift() == .power)
+    #expect(menu.isOpen)
+    #expect(menu.highlight == nil)
+    menu.touchDown(over: .power)
+    #expect(menu.lift() == .power)
+    #expect(menu.isOpen)
+}
+
+@Test func aPressBecomesAHoldAfterFourHundredMilliseconds() {
+    var press = Press(at: origin, t: 10)
+    #expect(press.tick(10.39) == nil)
+    #expect(press.move(to: CGPoint(x: 36, y: 204), t: 10.2) == nil)
+    #expect(press.tick(10.4) == .hold)
+    #expect(press.tick(10.5) == nil)
+    #expect(press.move(to: CGPoint(x: 90, y: 200), t: 10.6) == nil)
+}
+
+@Test func aPressThatMovesFirstIsADragAndNeverAHold() {
+    var press = Press(at: origin, t: 10)
+    #expect(press.move(to: CGPoint(x: 45, y: 200), t: 10.1) == .drag)
+    #expect(press.tick(10.5) == nil)
+    #expect(press.kind == .drag)
+}
+
+@Test func draggingOutMovesTheCursorOnlyOverThePadAndPastesOnLift() {
+    var drag = DragOut(itemID: "a", at: CGPoint(x: 30, y: 200))
+    #expect(drag.move(to: CGPoint(x: 40, y: 200), overPad: false, t: 1) == nil)
+    #expect(drag.move(to: CGPoint(x: 70, y: 190), overPad: true, t: 2)
+        == .move(dx: 30, dy: -10, t: 2))
+    #expect(drag.move(to: CGPoint(x: 75, y: 195), overPad: true, t: 3)
+        == .move(dx: 5, dy: 5, t: 3))
+    #expect(drag.lift(overPad: true) == .paste(itemID: "a"))
+    #expect(drag.lift(overPad: false) == nil)
+}
