@@ -86,34 +86,30 @@ private struct MacList: View {
     let choose: (DiscoveredMac) -> Void
 
     var body: some View {
-        // shortcut: polls `link.macs`, which AppModel does not mirror as observable state; drop the
-        // timeline once it does.
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let macs = model.link.macs.filter(\.pairingOpen)
-            VStack(spacing: 10) {
-                if macs.isEmpty {
-                    Text("Open Phice on your Mac to see it here")
-                        .font(.system(size: 17))
-                        .foregroundStyle(Palette.mute)
-                }
-                ForEach(macs) { mac in
-                    Button { choose(mac) } label: {
-                        HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 5).fill(Palette.well)
-                                .frame(width: 20, height: 20)
-                            Text(mac.name).font(.system(size: 19))
-                            Spacer()
-                        }
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 16)
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.line))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+        let macs = model.macs.filter(\.pairingOpen)
+        VStack(spacing: 10) {
+            if macs.isEmpty {
+                Text("Open Phice on your Mac to see it here")
+                    .font(.system(size: 17))
+                    .foregroundStyle(Palette.mute)
             }
-            .padding(.top, 24)
+            ForEach(macs) { mac in
+                Button { choose(mac) } label: {
+                    HStack(spacing: 12) {
+                        RoundedRectangle(cornerRadius: 5).fill(Palette.well)
+                            .frame(width: 20, height: 20)
+                        Text(mac.name).font(.system(size: 19))
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.line))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(.top, 24)
     }
 }
 

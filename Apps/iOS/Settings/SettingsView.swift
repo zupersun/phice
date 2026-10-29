@@ -143,14 +143,10 @@ struct SettingsView: View {
 }
 
 extension GlowColor {
-    /// What each preset looks like on the swatch. The pad draws the glow itself.
+    /// The swatch shows exactly the colour the pad's glow uses.
     var swatch: Color {
-        switch self {
-        case .warmWhite: Color(red: 1, green: 0.965, blue: 0.902)
-        case .coolWhite: Color(red: 0.918, green: 0.953, blue: 1)
-        case .blue: Color(red: 0.561, green: 0.776, blue: 1)
-        case .green: Color(red: 0.6, green: 0.94, blue: 0.7)
-        }
+        Color(red: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255,
+              blue: Double(hex & 0xFF) / 255)
     }
 
     var name: String {

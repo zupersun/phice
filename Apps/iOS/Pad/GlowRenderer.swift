@@ -2,15 +2,6 @@ import PhiceCore
 import QuartzCore
 
 extension GlowColor {
-    var hex: Int {
-        switch self {
-        case .warmWhite: 0xFFF6E6
-        case .coolWhite: 0xEAF2FF
-        case .blue: 0x0A84FF
-        case .green: 0x30D158
-        }
-    }
-
     func cgColor(alpha: Double) -> CGColor {
         CGColor(srgbRed: Double(hex >> 16 & 0xFF) / 255, green: Double(hex >> 8 & 0xFF) / 255,
                 blue: Double(hex & 0xFF) / 255, alpha: min(max(alpha, 0), 1))

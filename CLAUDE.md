@@ -24,6 +24,10 @@ xcodebuild -project Apps/Phice.xcodeproj -scheme PhiceiOS -derivedDataPath .buil
 ./scripts/deploy-web.sh                       # the old hosted page, until it is retired
 ```
 
+After a merge that changes `Sources/`, Xcode can keep building against a stale PhiceKit and
+report members that plainly exist as missing ("has no member 'tuning'"): add `clean` before
+`build`/`test`. After a merge that adds app files, run `xcodegen generate` again.
+
 On the iPhone (paired as "Jasper's iPhone"; cable once, then Developer Mode, then Wi-Fi works):
 
 ```bash
