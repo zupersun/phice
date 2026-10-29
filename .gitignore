@@ -35,3 +35,10 @@ packaging/AppIcon.iconset/
 *.rvf
 *.rvf.lock
 ruvector.db
+
+# Swift and Xcode; the app projects are generated from Apps/project.yml
+.build/
+.swiftpm/
+Apps/*.xcodeproj/
+DerivedData/
+*.xcuserstate

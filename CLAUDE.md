@@ -1,350 +1,130 @@
 # Phice
 
-Use an iPhone as a Wii-remote-style air mouse for macOS. A hosted web page pairs the phone
-with a background Mac app by a six-character code; the phone streams orientation and touch
-at 60 Hz over a WebRTC data channel; the Mac decides everything and drives the cursor.
+Turn an iPhone into a MacBook-style trackpad. A native Swift iPhone app recognises the gestures
+and talks **peer-to-peer** to a tiny Swift agent on the Mac, which applies Apple's own pointer
+curves and posts the events. No server between them. Every setting lives on the phone; the Mac
+agent is meant to be forgotten.
 
-**There is no iOS app and there must not be one.** The phone client is a plain web page —
-no framework, no build step, no Apple Developer account.
+- Design (approved mockups, including the animated swallow):
+  https://claude.ai/artifact/ABsR71QBPUtLGgDbPhjzhn
+- Build plan, decisions and phases: `~/.claude/plans/i-want-to-build-shimmering-pudding.md`
+- The Python air mouse this replaces is archived on branch `python-air-mouse` (tag
+  `v0.2.1-python`), to be built on later. `web/` stays until the Swift version ships: Vercel
+  deploys the hosted page from it.
 
 ## Commands
 
 ```bash
-uv run pytest -q          # full suite (must stay green)
-uv run ruff check .       # lint (must stay clean)
-uv run phice install      # (re)install + restart the login agent
-uv run phice uninstall    # remove it
-uv run phice paths        # where config lives
-uv run phice grant        # ask macOS for Accessibility (from the agent, not the shell)
-./scripts/deploy-web.sh   # deploy web/ and prove the live app.js matches the repo
+swift test                                    # PhiceCore + PhiceNet (must stay green)
+cd Apps && xcodegen generate                  # regenerate Phice.xcodeproj (gitignored)
+xcodebuild -project Apps/Phice.xcodeproj -scheme PhiceMac -derivedDataPath .build/xcode \
+  CODE_SIGNING_ALLOWED=NO build               # dev builds unsigned: signing prompts for the keychain
+xcodebuild -project Apps/Phice.xcodeproj -scheme PhiceiOS -derivedDataPath .build/xcode \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
+./scripts/deploy-web.sh                       # the old hosted page, until it is retired
 ```
 
-Exercise the whole system without a phone. The fake phone reads the code off the Mac's
-debug hook and pairs through the same letterbox a real phone uses, so the hosted service
-must be reachable:
+On the iPhone (paired as "Jasper's iPhone"; cable once, then Developer Mode, then Wi-Fi works):
 
 ```bash
-uv run phice --config-dir /tmp/e2e --http-port 18080 run --backend fake --headless &
-curl -s "http://127.0.0.1:18080/debug/enable?v=1"   # pairing is off until asked for
-uv run python tools/fake_phone.py --pattern sweep --check --http-port 18080
+xcodebuild -project Apps/Phice.xcodeproj -scheme PhiceiOS -derivedDataPath .build/xcode \
+  -destination 'id=00008150-000C0D6A3EE3401C' -allowProvisioningUpdates build
+xcrun devicectl device install app --device 00008150-000C0D6A3EE3401C \
+  .build/xcode/Build/Products/Debug-iphoneos/PhiceiOS.app
+xcrun devicectl device copy from --device 00008150-000C0D6A3EE3401C --domain-type appDataContainer \
+  --domain-identifier com.phice.ios --source Documents/probe.csv --destination /tmp/probe.csv
 ```
 
-Without that middle line the Mac never publishes an offer and every pattern fails with
-"the Mac is not offering a pairing code" — the gate doing its job, not a broken transport.
-
-Patterns: `still roll sweep square click doubleclick rightclick drag chord scroll rest`.
-All eleven must pass before shipping. Drop `--backend fake` to drive the real cursor.
-`tests/test_rtc.py` exercises the same transport with two in-process peers and no network.
-
-`tools/replay.py <session.jsonl> --compare gain_x_px_per_deg=60` replays a recording
-offline and prints path statistics — the tuning loop, and a language-independent
-golden-master suite if the engine is ever ported.
-
-## Diagnosing "it doesn't work"
-
-Check this first. It answers, in one look, which layer is broken:
-
-```bash
-curl -s http://127.0.0.1:8080/debug/cursor | python3 -m json.tool
-```
-
-```json
-{"connected": true, "phase": "on", "accessibility": false, ...}
-```
-
-| Reading | Meaning |
-|---|---|
-| `connected: false` | No session. Either the code was never entered, or the offer and answer never met: an expired code, or two networks with no relay between them (`/api/ice` on the letterbox reports `relay: false` and why). |
-| `connected: true, phase: "off"` | Connected, pointer not armed. Press any button. |
-| `phase: "on", accessibility: false` | Everything works except the macOS permission. |
-| `phase: "on", accessibility: true`, cursor frozen | A real engine bug. Now it is worth reading code. |
-| `rtc.frames` climbing, `sensor_hz: 0` | Buttons arrive, motion does not. The phone was refused sensor access; it reports what iOS answered in `phone connected: ... (caps: ...)`. |
-| `rtc.bad` climbing | The page and `protocol.py` disagree. `rtc.last_error` names the field. |
-| `code_expires_in` falling, `offer_ready: true` | Normal. When it reaches 0 the Mac renews the offer under the same code; the panel shows "Renewing…" for the few seconds that takes. |
-| `pairing_error` set | The letterbox cannot be reached. While no phone is connected the panel says so, and the menu bar does too unless it is still asking for Accessibility; once one connects they go quiet on purpose, because the Mac no longer needs the pairing service. It clears on the next successful publish. |
-| `scroll_reversed: true` | A scroll reverser (Scroll Reverser, Mos, LinearMouse...) is negating the Mac's own scroll events as it would a mouse's, and the backend is compensating; the strip still scrolls the way `scroll_natural` says. Scrolling backwards with this `false` and `scroll_watch: "off"` means the tap could not be created, so the reverser goes unnoticed: see constraint 16. |
-| `enabled: false` | Phice is off (red). It mints no code, publishes no offer, and never polls the pairing letterbox, so a phone cannot connect and an idle Mac costs no Vercel requests. The normal startup state. Turn it on from the menu bar ("Phice on") or the panel's Turn on button; see constraint 17. |
-
-The pointer switching itself off a second after it is armed is the packet timeout doing
-its job, not a bug: no packets are arriving.
-
-`phice grant` asks macOS for Accessibility **from the running agent**, which is what
-makes it list the right binary. Prompting from a terminal would add the terminal
-instead. A granted permission only takes effect after the agent restarts
-(`phice install`).
-
-A phone stuck on "Connecting…" and a phone showing an unstyled pad are different
-failures. The first means the data channel never opened (see `connected` above).
-The second means it opened and the theme did not arrive whole; the Mac's log has
-the phone's own report of what it received, sent back over the control channel.
-
-## macOS integration
-
-The shipped artefact is `dist/Phice.app`, built by `./packaging/build.sh`.
-
-- **Packaged resources come from `paths.resource_dir()`**, which returns `sys._MEIPASS`
-  when frozen. `__file__` does not work inside a bundle. `build.sh` proves this by
-  running the built binary against a temp config dir rather than checking that files
-  exist at a guessed path — PyInstaller's macOS layout has moved between versions, and
-  a path check passed a bundle that was missing `defaults/assets/` and crashed on first
-  launch.
-- **The Accessibility grant keys on the designated requirement, not the bundle id alone.**
-  Signed with the self-signed identity it is
-  `identifier "com.phice.app" and certificate root H"..."` — stable across rebuilds,
-  verified by building twice and diffing. Ad-hoc signed it is a bare cdhash that changes
-  every build, so each rebuild silently drops the permission while the stale entry still
-  shows Phice switched on. Never change `CFBundleIdentifier`, and **never lose the
-  certificate**: `./packaging/create-signing-identity.sh` creates it, and once shipped
-  every user's grant is bound to it. Back it up with
-  `security export -k login.keychain-db -t identities -f pkcs12 -o phice-id.p12`.
-- **This is not a Developer ID.** Downloaded copies still hit Gatekeeper
-  ("unidentified developer"); on macOS 15+ users must use System Settings ›
-  Privacy & Security › **Open Anyway**, since right-click → Open no longer works. Only
-  a paid Developer ID plus notarization removes that. Signing fixes updates, not first
-  launch.
-- **The launch agent runs the bundle executable directly when frozen.** `-m phice` would
-  be passed to the app as an argument, not understood as a module. `--config-dir` is a
-  top-level argparse option and must precede `run`; `tests/test_cli_agent.py` feeds the
-  generated argv through the real parser, because asserting its *shape* let a
-  regression through that exits with `SystemExit(2)` and no menu bar icon.
-- **`accessibility` gates nothing** — it is only reported to the phone, so the cursor can
-  move while the status says otherwise. The runtime polls it in `_status_loop`; do not
-  move that back to the menu bar, which may never appear.
-- **The control panel is a WKWebView, not native widgets**, so its design lives in
-  `panel.css` in the config folder (and its How to use card's drawings in `howto.css`
-  beside it) and the user can restyle it exactly like the phone's theme. It loads `http://127.0.0.1:<port>/panel`, which App Transport Security blocks
-  unless the bundle declares `NSAllowsLocalNetworking` -- the only symptom is a blank
-  window. It opens at every launch because the pairing code changes each launch.
-- **The menu bar icon may be unreachable, and no code can fix it.** macOS adds new status
-  items to the left of existing ones; on a notched Mac with a full menu bar they land
-  behind the notch, where they cannot be seen or clicked. Measured on a real display: the
-  dead zone was x=646-825 and the item rendered at x=691-729, with every third-party item
-  overflowing into it. Rewriting `NSStatusItem Preferred Position` to 860, 1200 and 1430
-  moved it not at all; the preference is ignored. That is why the bundle sets no
-  `LSUIElement` and Phice takes a Dock tile, and why the debug hook reports the full
-  status. Never rely on the menu bar as the only way in or the only way to see state.
-- **Do not toggle the activation policy per window.** Going accessory while the panel is
-  closed and regular while it is open looks tidier and is unshippable: AppKit drops a
-  window ordering issued around the switch, so reopening brings the app forward with no
-  window, two or three times in four. Deferring the ordering by a run-loop turn made it
-  flaky rather than correct. One fixed policy from launch is the only version that
-  behaves.
-- **The bundle is arm64-only.** uv's CPython builds are per-arch, so `universal2` is not
-  available; `build.sh` prints the architecture it produced.
+Xcode never needs to be open. The simulator cannot test real multi-touch, contact radius,
+haptics or peer-to-peer Wi-Fi; those are verified on the phone, and recorded sessions
+(`PhoneToMac.record`) replayed through `swift run phice-replay` make each round reproducible.
 
 ## Architecture
 
-Dependency order, and nothing may point backwards:
-
 ```
-orientation  filters  protocol  icons  panel_layout  panel_howto  calibrate  window  qr   (no deps)
-paths        <- icons
-templates    <- icons panel_layout panel_howto
-config       <- paths
-status       <- paths
-engine       <- config cursor_backend filters orientation protocol
-rtc          <- engine paths protocol
-signaling    <- rtc
-control      <- templates
-runtime      <- calibrate config control engine paths qr rtc signaling status window
-menubar cli  <- runtime status
+Sources/PhiceCore/   pure: Foundation only, no I/O, no UIKit/AppKit/Network, time passed in
+  Protocol/          Touch, TouchFrame, PadEvent, PhoneToMac, MacToPhone, ClipItem, FrameCodec
+  Gestures/          Recogniser: touches -> PadEvents and per-touch verdicts (runs on the phone)
+  Pointer/           Apple's acceleration curves, scroll curves, momentum
+  Settings/          TrackpadSettings: the Mac's own trackpad settings
+  Driver/            MacDriver: PadEvents -> EventPoster calls (runs on the Mac); FakePoster
+Sources/PhiceNet/    Network.framework: Bonjour + peer-to-peer, pairing, PSK, framing; Loopback fake
+Apps/iOS/            SwiftUI app: pad, glow, pill, menu, clipboard column, settings, onboarding
+Apps/Mac/            agent: setup window, login item, CGEvent poster, pasteboard, settings reader
+tools/               phice-replay, fake-phone, trackpad-probe (SwiftPM executables)
 ```
 
-- `engine.py` is **pure**: a clock and a cursor backend are injected, so every behaviour is
-  unit-testable with no sleeping, no real time and no real cursor. Keep it that way — no I/O.
-- `protocol.py` is the **only** place inbound data is validated. Downstream code may assume
-  a `SensorPacket` is sane.
-- All visual design lives in `defaults/theme.css` and `defaults/layout.json`. `web/app.js`
-  sets no colour, size, font or label — it renders whatever `layout.json` describes. Never
-  hardcode appearance in JS.
+Nothing points backwards: PhiceCore <- PhiceNet <- apps.
 
-  When the page needs to drive an animation, it publishes a **number** as a CSS custom
-  property and lets the theme decide what that means. The scroll strip is the pattern to
-  copy: `app.js` sets `--scroll-pos` (0..1, where the finger is along the strip) and
-  `theme.css` turns it into the thumb's position, size, colour and easing. Adding a
-  `transform` or a colour to the JS would break the contract.
-
-Editing `defaults/` does **not** change a running install: `Paths.ensure()` deliberately
-never overwrites user-edited files. Copy to `~/Library/Application Support/Phice/` as well,
-or tell the user to run `phice reset-ui`.
+- **Gestures are recognised on the phone.** Tap and force timing must not see Wi-Fi jitter, and
+  the glow, haptics and the swallow need answers instantly. The phone sends meaning, not touches.
+- **The Mac applies the curves and posts.** It owns the user's settings and Apple's curves
+  (`HIDAccelCurves`, `HIDScrollAccelCurves` from ioreg), applies them to phone-timestamped deltas,
+  and runs scroll momentum locally after `scrollEnded` so momentum never stutters on the network.
+- **Inbound data is validated in two places only:** `FrameDecoder` (size, shape) and `MacDriver`
+  (clamps every number before it reaches a CGEvent). Downstream code may assume both ran.
+- **The contracts are `Sources/PhiceCore/Protocol/*`, `Driver/EventPoster.swift`,
+  `Gestures/Recogniser.swift`'s public surface and `Sources/PhiceNet/Link.swift`.** Several
+  people build against them at once; change them only as a coordinated change.
+- **Touches that begin on the pill never reach the recogniser.** The pill's view owns them
+  (hold menu, drag-out to paste).
 
 ## Constraints that are not negotiable
 
-These were each discovered the hard way. Changing them re-breaks the product.
+Carried over from the Python version, where each was learned the hard way, plus new ones.
 
-1. **A periodic engine tick is mandatory.** Pending clicks, the recenter hold and the packet
-   timeout are all time-based. Without it a phone that stops sending mid-press leaves a
-   mouse button held down forever.
-2. **Motion references must update while the cursor is frozen.** Both `_prev_f` (relative)
-   and `_anchor` (absolute) update *before* the frozen check. Skip it and releasing a clutch
-   snaps the cursor by however far you turned while holding it.
-3. **A button absent from a packet is skipped, not released.** The page sends every layout
-   button every packet, so absence means "does not exist yet", typically right after a
-   layout change. Treating it as a release fires phantom events.
-4. **Adopt button counters silently on first sighting.** After a reconnect the page's
-   counters keep climbing; diffing against zero replays every press ever registered.
-5. **Record a session marker for `hello`, not the raw frame**, and only once per
-   connection. `replay.py` resets the engine on each marker; the page says hello again
-   whenever its capabilities change, and a marker there would reset a replay mid-stream.
-6. **Never dispatch to the asyncio loop unguarded.** The menu bar outlives the runtime
-   thread; use `Runtime._dispatch`, which discards the coroutine if the loop is closed.
-7. **Do not block the asyncio thread in tests.** `asyncio.to_thread` blocking HTTP calls or
-   the server cannot answer and the test times out.
-8. **The page's own chrome must not live in the stylesheet the Mac replaces.**
-   `web/app/index.html` has two: `#theme`, overwritten wholesale by the pushed theme, and
-   `#shell`, which the page owns. They were one, so the first theme push deleted the rule
-   that displays the Start button -- motion access could then never be granted and the
-   phone streamed nothing, while the pad rendered perfectly.
-9. **The transport must push engine state back.** The phone draws its LED, its recenter
-   bar and every reaction from `state` messages. `RTCTransport` wires `engine.on_change`
-   the moment the control channel opens; it once shipped without that, and each button
-   worked and looked dead.
-10. **A fresh session takes the validated layout from the runtime, not `layout.json`.**
-    `RTCTransport` is built per session; reading the file gave a phone that reconnected
-    after switching to one-handed the two-handed layout back.
-11. **`RTCTransport.close()` must be safe to interrupt.** aiortc's `close()` creates its
-    internal "closed" future first and resolves it last, so a cancellation landing
-    mid-close leaves that future pending forever and every later `close()` on the same
-    peer connection deadlocks. `asyncio.shield` keeps the cleanup running while the
-    cancellation still reaches the caller. Symptom: the test suite hangs at random, in
-    whichever test happens to cancel the signaling loop at the wrong moment.
-12. **The scroll strip is a rate control, not a displacement one.** Speed comes from the
-    finger's distance from the centre, so holding still off-centre keeps scrolling. Running
-    displacement scrolling alongside it doubles the input and feels choppy, which is why
-    `scroll_gain` ships at 0.
-13. **`requestPermission()` resolves to "denied" without throwing**, and both prompts must
-    be *started* inside the user gesture -- awaiting the first puts the second outside it.
-    Check the returned value, and then check that events actually arrive: a listener that
-    is attached but never fires is indistinguishable from a working one.
-14. **The control server binds 127.0.0.1 and nothing else.** Nothing on it is for the
-    phone. It once listened on every interface because the phone had to fetch a
-    certificate from it; that reason is gone.
-15. **The wait for an answer ends on a wall clock, stamped after the publish returns.** `time.monotonic`
-    is `mach_absolute_time`, which stops while the Mac sleeps; the letterbox's clock does
-    not. Without the wall-clock check a wake showed a dead code for up to five minutes.
-    The stamp the wait counts from is taken *after* the publish returns, so by the time
-    it fires the letterbox has already dropped the offer: an old offer that is still
-    fetchable gets answered, and that answer fails on the new peer connection, whereas a
-    missing offer is simply retried. The monotonic bound of lifetime plus one second is
-    only a backstop for a wall clock that steps backwards.
-16. **Posted scroll events are not subject to Natural scrolling, but they are subject to scroll
-    reversers.** macOS applies the Natural setting to real devices in the HID layer and leaves
-    posted events alone: flipping the stored preference, the toggle apps' private call and the
-    window server's own flag changed nothing about a posted event. Scroll Reverser and its kind
-    negate every scroll event they take for a mouse, and a posted event looks like a mouse, so
-    the pointer scrolled backwards on exactly the Macs whose owners had fixed their mouse.
-    `QuartzCursor` therefore tags each scroll event it posts and watches it come out of a
-    listen-only tap behind every reverser; when the sign has flipped it pre-flips the next
-    ones. One step after a reverser starts or stops goes the wrong way, and nothing else does;
-    Scroll Reverser takes a continuous event for the trackpad's when two or more fingers
-    touched the trackpad within the last fifth of a second, so a hand set down mid-scroll
-    counts as the reverser stopping.
-    Do not replace this with reading `com.apple.swipescrolldirection`: that setting has nothing
-    to do with it, and `scroll_natural` means what it says either way.
-17. **Pairing is on demand, gated by the on/off switch, and the Mac starts off.** The old loop
-    published an offer and polled `/api/answer` once a second forever, so an always-on Mac spent
-    ~86k Vercel requests a day doing nothing and blew the free tier in about a week. Now the
-    publish/poll loop parks on `Pairing.gate`; it runs only while green (`status.enabled`), so an
-    idle Mac touches the letterbox not at all. `set_enabled` drives engine and gate together --
-    one switch, red by default (`Status.enabled=False` plus `engine.set_enabled(False)` in
-    `Runtime.__init__`; the gate's `asyncio.Event` starts clear). The gate is toggled on the loop
-    thread via `_dispatch(pairing.set_active(...))`, so **`_main` must set `self._loop` as its
-    first line** -- `run --headless` goes straight through `asyncio.run` and would otherwise leave
-    it `None`, the dispatch is dropped, and green never publishes (every fake-phone check then
-    fails with "the Mac is not offering a pairing code"). Going red cancels the poll in flight
-    with `disabled=True` so the loop parks rather than republishing, the same tell `rotate` uses
-    for a new code. The engine default stays enabled so the pure-engine tests need no runtime.
+1. **Silence releases the mouse.** After `MacDriver.silenceTimeout` (0.5 s) without any message,
+   heartbeats included, a held button is released and momentum stops. Without it a phone that
+   vanishes mid-drag leaves a mouse button held down forever. The phone heartbeats at 10 Hz.
+2. **Posted scroll events are subject to scroll reversers, not to Natural scrolling.** macOS
+   applies Natural only to real devices; Scroll Reverser, Mos and LinearMouse negate any event
+   that looks like a mouse's, posted ones included. The poster tags each scroll event it posts,
+   watches it come out of a listen-only tap behind every reverser, and pre-flips the next ones
+   when the sign has flipped. Port it from `src/phice/cursor_backend.py` on `python-air-mouse`.
+   Do not replace it with reading `com.apple.swipescrolldirection`.
+3. **Never change `com.phice.app` and never lose the "Phice Self Signed" certificate.** macOS
+   keys the Accessibility grant to the designated requirement (identifier + certificate root);
+   ad-hoc signing makes it a cdhash that changes every build and silently drops the grant.
+   Back it up: `security export -k login.keychain-db -t identities -f pkcs12 -o phice-id.p12`.
+   Moving to a Developer ID later costs every user one re-grant, once.
+4. **The menu bar may be unreachable.** On a notched Mac with a full menu bar new status items
+   land behind the notch and cannot be seen or clicked (measured). The agent has no Dock tile
+   and no menu bar item; launching it again opens its window. Never make the menu bar the only
+   way in.
+5. **One activation policy from launch.** Toggling accessory/regular per window drops window
+   orderings two or three times in four. `LSUIElement` stays fixed.
+6. **Ask for event-posting access from the agent itself** (`CGRequestPostEventAccess`), never from
+   a terminal, or macOS lists the terminal. A new grant takes effect after the agent relaunches.
+7. **The Allow click is the pairing security boundary.** The Mac advertises that it accepts a new
+   phone only while its setup window is open; first contact is a key agreement the user approves
+   on the Mac; every later connection is TLS-PSK. No unauthenticated message ever reaches
+   `MacDriver`.
+8. **Nothing user-visible on the clipboard leaks.** Items marked `org.nspasteboard.ConcealedType`
+   or `TransientType` are never shown, sent to the phone, or written to disk.
 
-## Why the page is hosted
+## Working in parallel
 
-Safari exposes motion sensors only on a secure page, and a secure page cannot open an
-insecure connection back to a Mac on the LAN. Serving the page from the Mac therefore
-meant a certificate the phone trusted: a self-signed CA installed as a profile, or one
-issued for a Tailscale name. Both shipped and both were removed on 2026-09-22. The profile
-took six steps on the phone and a network that allowed client-to-client traffic, which
-university and corporate Wi-Fi usually do not; the tailnet needed an account on both
-devices. Neither reached a phone on cellular from a Mac behind a campus firewall.
+- Worktrees live in `.worktrees/<branch>` (gitignored). Each piece of work owns its paths and
+  commits only to its own branch; the lead merges into `trackpad`.
+- `Apps/project.yml` uses whole folders as sources, so adding files never touches the project.
+  Change `project.yml` or `Package.swift` only through the lead.
+- Other sessions may commit to the main checkout while you work: re-read before editing.
 
-The hosted page needs none of that. WebRTC authenticates the peers by DTLS fingerprint, so
-the only secret is the six-character code, and the relay covers the case where neither
-device can be reached from outside. The cost is that pairing depends on the letterbox
-being up; the pointer itself does not, once the channel is open. Do not add a second way
-in: the two clients drifted last time, and every phone bug had to be fixed twice.
+## External services
 
-## External services and what they cost
-
-Everything Phice depends on beyond the Mac itself, what it costs, and how to get
-out of it. Check this before assuming a service is free or disposable.
-
-| Service | Plan | What breaks without it |
+| Service | Plan | Status |
 |---|---|---|
-| **GitHub** | free | nothing at runtime |
-| **Vercel** | Hobby tier is free but **non-commercial** | the phone page and pairing |
-| **Redis Cloud** (via Vercel marketplace) | free tier | pairing; the pointer keeps working once connected |
-| **Cloudflare Realtime TURN** | **removed 2026-10-16** | nothing — the relay is gone; see below |
-| Apple Developer | **not used** | — downloads show "unidentified developer" |
-
-**Vercel requests are driven by pairing, which is on demand.** The letterbox functions
-(`/api/offer`, `/api/answer`, `/api/ice`) count against Vercel's edge/CDN-request quota, and
-nothing is cached (`Cache-Control: no-store`). The Mac polls `/api/answer` about once a second
-while waiting for a phone, but only while switched on (green); it starts off and parks silently
-otherwise, so an idle Mac costs zero requests. Before this, the always-on loop polled 24/7 and
-spent ~86k requests a day, which exhausted the free tier in about a week. See constraint 17.
-During an active session the Mac talks peer-to-peer and does not poll the letterbox at all.
-
-### Nothing is metered any more, and that was deliberate
-
-**The phone and the Mac must be on the same network.** Removed on 2026-10-16 with the
-Cloudflare TURN key; the free tier was never the problem.
-
-The reasoning, so nobody re-adds it casually. A relay is required whenever the two
-devices are on different networks behind NAT — a phone on cellular and a Mac on a
-campus network can each reach outward and neither can be reached, and measured on a
-real pair, every non-relayed candidate failed. It cost ~132 MB per hour of pointing,
-or ~7,600 hours inside the 1000 GB free tier, which no single user would ever reach.
-
-What made it untenable was the shape of the risk, not the size of it:
-
-- **Cloudflare offers no spend cap for Realtime.** An earlier version of this file
-  said to set one. There isn't one — past 1000 GB it simply bills at $0.05/GB. Do not
-  reinstate that instruction.
-- `/api/ice` has to be unauthenticated: the Mac needs a relay before it has a pairing
-  code and the page before it has anything at all. A public endpoint minting six-hour
-  relay credentials, drawn on an account with a card on it and no ceiling, is an
-  open-ended liability for a tool that is given away.
-
-It is rate-limited to 30 credentials per IP per hour as defence in depth, but a limit
-on *minting* does not bound the traffic each credential carries. Only the absent key
-does that.
-
-**Anyone who needs a relay can still have one** by putting their own credentials in
-`ice_servers` (see docs/configuration.md). That is the supported path, and it costs
-the project nothing.
-
-### If it is ever restored
-
-1. Cloudflare dashboard → **Realtime → TURN Server** → create a key.
-2. Vercel → project → **Environment Variables** → set `TURN_KEY_ID` and
-   `TURN_API_TOKEN`, then redeploy.
-
-Nothing else changes: `/api/ice` mints again the moment both are present. Without
-them it degrades honestly rather than breaking — it keeps answering with STUN only,
-reports `relay: false` with a reason, and the Mac logs that it will connect on a
-shared network and nowhere else.
+| GitHub | free | the repo |
+| Vercel + Redis Cloud | free tiers (Vercel Hobby is non-commercial) | the old hosted page; retire once the Swift version ships |
+| Apple Developer Program | $99/yr | needed for TestFlight, the App Store and notarizing the Mac agent; not yet enrolled |
 
 ## Conventions
 
-- Worktrees for plan execution live in `.worktrees/<branch>` (gitignored).
-
 - Follow the user's global CLAUDE.md: no `Co-Authored-By` trailer unless
   `.claude/settings.json` sets `attribution.commit`.
-- Files under 500 lines; line length 104. `engine.py` is the deliberate exception at
-  ~560: it is one state machine, and every cut through it (buttons from phases, motion
-  from freezing) needs so many callbacks back into the engine that the result is longer
-  and harder to follow than the file it replaced. Splitting the most load-bearing code
-  in the project to satisfy a line count is a bad trade. Everything else obeys the rule.
+- Swift 6 language mode, strict concurrency. Tests use Swift Testing (`import Testing`).
+- Files under 500 lines; line length 104. One state machine may exceed it if every cut through it
+  would need callbacks back into itself; say so at the top of the file.
 - Write the failing test first, watch it fail, then implement.
+- Tests assert behaviour, not implementation.
 - Prefer editing existing files; do not add documentation files unless asked.
-- Tests assert behaviour, not implementation. When a test fails after a deliberate
-  behaviour change, decide whether the test encodes the old contract and pin it explicitly
-  (see `mapping="relative"` in `test_edge_clamp_and_edge_drag`) rather than loosening it.

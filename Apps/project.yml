@@ -1,0 +1,79 @@
+# Generates Phice.xcodeproj (gitignored): cd Apps && xcodegen generate
+# Sources are whole folders, so adding a Swift file never touches the project.
+name: Phice
+options:
+  bundleIdPrefix: com.phice
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  PhiceKit:
+    path: ..
+targets:
+  PhiceiOS:
+    type: application
+    platform: iOS
+    sources: [iOS]
+    dependencies:
+      - package: PhiceKit
+        product: PhiceCore
+      - package: PhiceKit
+        product: PhiceNet
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Phice
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        CADisableMinimumFrameDurationOnPhone: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: Phice talks directly to your Mac, over your Wi-Fi or straight from phone to Mac.
+        NSBonjourServices: [_phice._tcp]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.phice.ios
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_TEAM: QFJ97TXFBT
+        CODE_SIGN_STYLE: Automatic
+  PhiceMac:
+    type: application
+    platform: macOS
+    sources: [Mac]
+    dependencies:
+      - package: PhiceKit
+        product: PhiceCore
+      - package: PhiceKit
+        product: PhiceNet
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Phice
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSLocalNetworkUsageDescription: Phice listens for your iPhone on your Wi-Fi and over peer-to-peer Wi-Fi.
+        NSBonjourServices: [_phice._tcp]
+    settings:
+      base:
+        # Never change: macOS keys the Accessibility grant to this identifier and certificate.
+        PRODUCT_BUNDLE_IDENTIFIER: com.phice.app
+        PRODUCT_NAME: Phice
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: Phice Self Signed
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: YES
