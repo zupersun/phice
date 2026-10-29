@@ -175,3 +175,21 @@ private func flick(_ driver: MacDriver, speed: Double = 1500, from t: Double = 0
     driver.send(.move(dx: 2, dy: 0, t: 1), now: 1)
     #expect(poster.calls.count == 3, "a new connection is not left frozen")
 }
+
+@Test func scrollSpeedPicksTheScrollCurve() {
+    func firstScroll(_ speed: Double?) -> Double {
+        let poster = FakePoster()
+        let driver = speed.map {
+            MacDriver(poster: poster, settings: TrackpadSettings(), curves: ThisMac.pointer,
+                      scrollCurves: ThisMac.scroll, scrollSpeed: $0)
+        } ?? MacDriver(poster: poster, settings: TrackpadSettings(), curves: ThisMac.pointer,
+                       scrollCurves: ThisMac.scroll)
+        driver.send(.scroll(dx: 0, dy: 16, phase: .began, t: 0))
+        return scrolls(poster)[0].dy
+    }
+    var macDefault = ScrollAcceleration(curves: ThisMac.scroll, speed: 0.3125)
+    #expect(close(firstScroll(nil), macDefault.apply(dx: 0, dy: 16, dt: nil).dy))
+    #expect(firstScroll(1.5) > 2 * firstScroll(nil))
+    #expect(firstScroll(.nan) == firstScroll(nil), "a bad speed falls back to the default")
+    #expect(firstScroll(40) == firstScroll(3), "clamped to the slider's range")
+}
