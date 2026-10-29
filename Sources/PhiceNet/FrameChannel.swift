@@ -7,8 +7,9 @@ struct LinkTiming {
     /// Without inbound data for this long, the Mac drops the phone.
     var deadAfter = Duration.seconds(2)
     var unreachableAfter = Duration.seconds(5)
-    /// A connection not ready by then is given up on.
-    var handshake = Duration.seconds(5)
+    /// A connection not ready by then is given up on. A cold Bonjour connection, racing every
+    /// path at once, took 3.5 s to become ready (measured).
+    var handshake = Duration.seconds(10)
     var firstRetry = Duration.milliseconds(100)
     var maxRetry = Duration.seconds(2)
 }
