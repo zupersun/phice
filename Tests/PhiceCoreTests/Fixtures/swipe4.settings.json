@@ -1,4 +1,5 @@
 {
+  "appExpose" : null,
   "dragLock" : false,
   "launchpad" : true,
   "lookUpForceClick" : true,
@@ -7,6 +8,7 @@
   "naturalScrolling" : true,
   "notificationCenter" : true,
   "pinchZoom" : true,
+  "scrollSpeed" : 0.3125,
   "secondaryClick" : "twoFingers",
   "showDesktop" : true,
   "smartZoom" : true,
@@ -14,5 +16,5 @@
   "swipeSpaces" : 4,
   "tapToClick" : true,
   "threeFingerDrag" : false,
-  "trackingSpeed" : 1
+  "trackingSpeed" : 0.6875
 }
