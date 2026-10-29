@@ -117,6 +117,7 @@ import Testing
     try? await Task.sleep(for: .milliseconds(300))
     #expect(rig.phone.state == .searching)
     #expect(rig.hellos == 1)
+    #expect(rig.macChanges == ["Test iPhone", nil])
 }
 
 @MainActor @Test func aPairedMacOutOfSightIsUnreachableUntilSeen() async {
@@ -128,4 +129,26 @@ import Testing
 
     rig.showMac()
     #expect(await eventually { rig.phone.state == .connected })
+}
+
+@MainActor @Test func theMacAnnouncesEveryChangeOfConnectedDeviceAndPairing() async {
+    let rig = Rig()
+    let (first, second) = ((UUID().uuidString, randomKey()), (UUID().uuidString, randomKey()))
+    rig.macStore.setKey(first.1, for: first.0)
+    rig.macStore.setKey(second.1, for: second.0)
+    rig.mac.pairingOpen = true
+    rig.mac.pairingOpen = false
+    #expect(rig.macChanges == [nil, nil])
+    #expect(await rig.start())
+
+    let a = RawClient(port: rig.mac.port!, identity: first.0, key: first.1)
+    a.send(.hello(deviceName: "Phone", appVersion: "1"))
+    #expect(await eventually { rig.mac.connectedDevice == "Phone" })
+    // The same name again: the app still has to hear that a new connection replaced the old one.
+    let b = RawClient(port: rig.mac.port!, identity: second.0, key: second.1)
+    b.send(.hello(deviceName: "Phone", appVersion: "1"))
+    #expect(await eventually { a.ended && rig.macChanges.count == 5 })
+    b.connection.cancel()
+    #expect(await eventually { rig.mac.connectedDevice == nil })
+    #expect(rig.macChanges == [nil, nil, "Phone", nil, "Phone", nil])
 }

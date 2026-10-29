@@ -33,12 +33,15 @@ func randomKey() -> Data {
     var atMac: [PhoneToMac] = []
     var atPhone: [MacToPhone] = []
     var requests: [String] = []
+    /// `connectedDevice` at each of the Mac's `onChange` calls.
+    var macChanges: [String?] = []
 
     init() {
         mac = NetworkMacLink(macName: "Test Mac", keyStore: macStore, timing: .fast, advertises: false)
         phone = NetworkPhoneLink(deviceName: "Test iPhone", keyStore: phoneStore, timing: .fast,
                                  browses: false)
         mac.onMessage = { [unowned self] in atMac.append($0) }
+        mac.onChange = { [unowned self] in macChanges.append(mac.connectedDevice) }
         phone.onMessage = { [unowned self] in atPhone.append($0) }
     }
 

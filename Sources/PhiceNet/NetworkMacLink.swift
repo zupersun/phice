@@ -12,6 +12,7 @@ import PhiceCore
             guard pairingOpen != oldValue else { return }
             if !pairingOpen { refusePending() }
             advertise()
+            onChange?()
         }
     }
     public private(set) var connectedDevice: String? {
@@ -158,8 +159,10 @@ import PhiceCore
                 self?.handshake($0, on: connection)
             })
         } else {
-            // One phone at a time: the newest authenticated connection wins.
+            // One phone at a time: the newest authenticated connection wins. Passing through nil
+            // tells the app a new connection began, even when it brings the same device name.
             session?.close()
+            connectedDevice = nil
             session = FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
                 self?.received($0, on: connection)
             }
