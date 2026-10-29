@@ -40,23 +40,23 @@ import Testing
 
     let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map(String.init)
     #expect(lines == [
-        #"{"call":"move","dx":1.5,"dy":-2}"#,
-        #"{"call":"moveTo","dragging":"left","x":10,"y":20}"#,
-        #"{"button":"left","call":"button","clicks":2,"down":true}"#,
-        #"{"call":"scroll","dx":0,"dy":3.25,"phase":"changed"}"#,
-        #"{"call":"scroll","dx":0,"dy":0,"momentum":"end"}"#,
-        #"{"call":"shortcut","shortcut":"missionControl"}"#,
-        #"{"call":"forceClick"}"#,
-        #"{"action":"copy","call":"perform"}"#,
-        #"{"action":"shortcut","call":"perform","name":"Resize"}"#,
-        #"{"call":"paste","itemID":"abc"}"#,
+        #"{"move":{"dx":1.5,"dy":-2}}"#,
+        #"{"moveTo":{"dragging":"left","x":10,"y":20}}"#,
+        #"{"button":{"_0":"left","clicks":2,"down":true}}"#,
+        #"{"scroll":{"dx":0,"dy":3.25,"phase":"changed"}}"#,
+        #"{"scroll":{"dx":0,"dy":0,"momentum":"end"}}"#,
+        #"{"shortcut":{"_0":"missionControl"}}"#,
+        #"{"forceClick":{}}"#,
+        #"{"perform":{"_0":{"copy":{}}}}"#,
+        #"{"perform":{"_0":{"shortcut":{"name":"Resize"}}}}"#,
+        #"{"paste":{"itemID":"abc"}}"#,
     ])
 }
 
-@Test func theLoggedLinesRoundTripThroughTheMirror() throws {
-    let call = FakePoster.Call.scroll(dx: -0.1, dy: 7.0 / 3, phase: .began, momentum: nil)
-    let line = try PosterCall(call).line()
-    #expect(try JSONDecoder().decode(PosterCall.self, from: line) == PosterCall(call))
+// A live run must diff line for line against `phice-replay --driver`, which starts at the origin too.
+@Test func theFakeCursorStartsAtTheOrigin() {
+    let poster = LoggingPoster(log: tempDirectory().appendingPathComponent("calls.jsonl"))
+    #expect(poster.cursor == (0, 0))
 }
 
 @Test func theLogKeepsTheCursorAndAppendsAcrossLaunches() throws {
