@@ -104,3 +104,17 @@ private func read(_ overrides: [String: Any] = [:], global: [String: Any] = [:],
     let s = TrackpadSettingsReader.current()
     #expect((0...3).contains(s.trackingSpeed))
 }
+
+@Test func theLiveSpeedFillsInForAnUnsetPreference() {
+    let scaling = "com.apple.trackpad.scaling"
+    func speed(_ global: [String: Any], live: Double?) -> Double? {
+        TrackpadSettingsReader.withLiveSpeed(global, live: live)[scaling] as? Double
+    }
+    #expect(speed([:], live: 0.6875) == 0.6875)
+    #expect(speed([scaling: 2.0], live: 0.6875) == 2)
+    #expect(speed([:], live: nil) == nil)
+}
+
+@Test func theSystemReportsALiveTrackpadSpeed() {
+    if let live = TrackpadSettingsReader.liveSpeed() { #expect((0...3).contains(live)) }
+}

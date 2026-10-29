@@ -1,4 +1,5 @@
 import Foundation
+import IOKit
 import PhiceCore
 
 /// The Mac's own trackpad settings, from the preference domains System Settings writes. A key the
@@ -17,7 +18,35 @@ enum TrackpadSettingsReader {
         let dockKey = "showAppExposeGestureEnabled"
         let dockValue = CFPreferencesCopyAppValue(dockKey as CFString, "com.apple.dock" as CFString)
         let dock = dockValue.map { [dockKey: $0] } ?? [:]
-        return settings(trackpad: pad.isEmpty ? domain(bluetooth) : pad, global: global, dock: dock)
+        return settings(trackpad: pad.isEmpty ? domain(bluetooth) : pad,
+                        global: withLiveSpeed(global, live: liveSpeed()), dock: dock)
+    }
+
+    /// The tracking speed the system is applying right now. A Mac whose owner never touched the
+    /// slider has no `com.apple.trackpad.scaling`, and its default is not `TrackpadSettings`'s.
+    static func liveSpeed() -> Double? {
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOHIDEventService"),
+                                           &iterator) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(iterator) }
+        // The system pushes the same speed to every HID service; 16.16 fixed point.
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            defer { IOObjectRelease(service) }
+            let properties = IORegistryEntryCreateCFProperty(
+                service, "HIDEventServiceProperties" as CFString, kCFAllocatorDefault, 0)
+            let parameters = properties?.takeRetainedValue() as? [String: Any]
+            if let fixed = parameters?["HIDTrackpadAcceleration"] as? NSNumber {
+                return fixed.doubleValue / 65536
+            }
+        }
+        return nil
+    }
+
+    /// An explicit preference wins; the live speed only stands in for an unset one.
+    static func withLiveSpeed(_ global: [String: Any], live: Double?) -> [String: Any] {
+        let key = "com.apple.trackpad.scaling"
+        guard global[key] == nil, let live else { return global }
+        return global.merging([key: live]) { $1 }
     }
 
     /// Values arrive as Int, Bool or Double depending on who wrote them, so everything goes
