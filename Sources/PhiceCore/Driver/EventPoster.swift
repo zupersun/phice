@@ -9,6 +9,9 @@ public protocol EventPoster: AnyObject {
     func move(dx: Double, dy: Double, dragging: MouseButton?)
     func moveTo(x: Double, y: Double, dragging: MouseButton?)
     func button(_ button: MouseButton, down: Bool, clicks: Int)
+    /// Pixels in CGEvent's convention (positive `dy` scrolls toward the top, positive `dx` toward the
+    /// left), posted as given: `MacDriver` owns the scroll direction, the poster never flips it
+    /// except to undo a scroll reverser (CLAUDE.md constraint 2).
     func scroll(dx: Double, dy: Double, phase: ScrollPhase?, momentum: MomentumPhase?)
     func shortcut(_ shortcut: Shortcut)
     /// Look Up at the cursor, or Quick Look when Finder is frontmost.

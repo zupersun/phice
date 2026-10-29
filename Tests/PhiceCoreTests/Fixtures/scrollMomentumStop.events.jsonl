@@ -1,0 +1,15 @@
+{"scroll":{"dx":0,"dy":12,"phase":"began","t":0.016666666666666666}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.025}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.03333333333333333}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.041666666666666664}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.05}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.058333333333333334}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.06666666666666667}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.075}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.08333333333333333}}
+{"scroll":{"dx":0,"dy":12,"phase":"changed","t":0.09166666666666666}}
+{"scroll":{"dx":0,"dy":0,"phase":"ended","t":0.1}}
+{"scrollEnded":{"vx":0,"vy":1239.9999999999998}}
+{"momentumStop":{}}
+{"button":{"_0":"left","clicks":1,"down":true}}
+{"button":{"_0":"left","clicks":1,"down":false}}

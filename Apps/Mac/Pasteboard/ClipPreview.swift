@@ -1,0 +1,100 @@
+import Foundation
+import ImageIO
+import PhiceCore
+import UniformTypeIdentifiers
+
+/// What the phone is shown for a pasteboard snapshot, and whether it may be shown at all.
+/// A snapshot is a list of pasteboard items, each a map from type identifier to its bytes.
+enum ClipPreview {
+    struct Summary {
+        var kind: ClipItem.Kind
+        var preview: String
+        var thumbnail: Data?
+    }
+
+    /// Constraint 8: items carrying either marker are never shown, sent or written.
+    static let privateMarkers: Set<String> = [
+        "org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
+    ]
+
+    static let snippetLength = 200
+    static let thumbnailSize = 128
+
+    static func isConcealed(_ items: [[String: Data]]) -> Bool {
+        items.contains { !privateMarkers.isDisjoint(with: $0.keys) }
+    }
+
+    /// nil when there is nothing in the snapshot.
+    static func summary(of items: [[String: Data]]) -> Summary? {
+        let items = items.filter { !$0.isEmpty }
+        guard let first = items.first else { return nil }
+
+        let files = items.compactMap { $0["public.file-url"].flatMap(fileName) }
+        if let name = files.first {
+            let more = files.count > 1 ? " and \(files.count - 1) more" : ""
+            return Summary(kind: .file, preview: name + more)
+        }
+        let words = plainText(first)
+        // Apps add an image of a text selection; only an item with no text of its own is a picture.
+        if words == nil, let thumbnail = imageThumbnail(first) {
+            return Summary(kind: .image, preview: "Image", thumbnail: thumbnail)
+        }
+        let declared = first["public.url"].flatMap { String(data: $0, encoding: .utf8) }
+        if let url = declared ?? words.flatMap(webAddress) {
+            return Summary(kind: .link, preview: url)
+        }
+        if let words { return Summary(kind: .text, preview: String(words.prefix(snippetLength))) }
+        return Summary(kind: .text, preview: "Item")
+    }
+
+    private static func fileName(_ data: Data) -> String? {
+        guard let text = String(data: data, encoding: .utf8), let url = URL(string: text),
+              url.isFileURL else { return nil }
+        return url.lastPathComponent
+    }
+
+    /// Whitespace collapsed, so a multi-line selection reads as one line.
+    private static func plainText(_ item: [String: Data]) -> String? {
+        for type in ["public.utf8-plain-text", "public.plain-text", "NSStringPboardType"] {
+            guard let data = item[type], let text = String(data: data, encoding: .utf8)
+            else { continue }
+            let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if !line.isEmpty { return line }
+        }
+        return nil
+    }
+
+    private static func webAddress(_ text: String) -> String? {
+        guard !text.contains(" "), let url = URL(string: text), url.host != nil,
+              ["http", "https"].contains(url.scheme) else { return nil }
+        return text
+    }
+
+    private static func imageThumbnail(_ item: [String: Data]) -> Data? {
+        for (type, data) in item where UTType(type)?.conforms(to: .image) == true {
+            if let png = thumbnail(of: data) { return png }
+        }
+        return nil
+    }
+
+    /// PNG bytes of the image, scaled down to fit `thumbnailSize` and never up.
+    private static func thumbnail(of data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: thumbnailSize,
+        ]
+        guard var image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        if let full = CGImageSourceCreateImageAtIndex(source, 0, nil),
+           max(full.width, full.height) <= thumbnailSize {
+            image = full
+        }
+        let out = NSMutableData()
+        let png = UTType.png.identifier as CFString
+        guard let sink = CGImageDestinationCreateWithData(out, png, 1, nil) else { return nil }
+        CGImageDestinationAddImage(sink, image, nil)
+        return CGImageDestinationFinalize(sink) ? out as Data : nil
+    }
+}

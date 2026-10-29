@@ -34,6 +34,8 @@ public enum PhoneToMac: Codable, Sendable, Equatable {
     case record(Bool)
     /// Raw touches, sent only while recording.
     case frames([TouchFrame])
+    /// The user chose Forget this Mac: the Mac deletes this phone's key, so it must pair again.
+    case forget
 }
 
 public enum MacToPhone: Codable, Sendable, Equatable {
@@ -45,4 +47,6 @@ public enum MacToPhone: Codable, Sendable, Equatable {
     case shortcuts([String])
     /// Whether the last drop changed the pasteboard; false plays the error haptic.
     case dropResult(ok: Bool)
+    /// Sent by the link itself, so the phone can tell a silent Mac from a dead connection.
+    case heartbeat
 }

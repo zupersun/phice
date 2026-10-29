@@ -88,6 +88,8 @@ struct Appearance: Codable, Equatable {
         case let .dropResult(ok):
             lastDropOK = ok
             dropResults += 1
+        case .heartbeat:
+            break
         }
     }
 }
