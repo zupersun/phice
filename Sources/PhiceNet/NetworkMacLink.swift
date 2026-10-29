@@ -28,7 +28,7 @@ import PhiceCore
     private let advertises: Bool
     private var listener: NWListener?
     private var retiring: NWListener?
-    private var whenListening: (() -> Void)?
+    private var whenListening: [() -> Void] = []
     /// Kept across relistens, so a phone reconnecting finds the new listener where the old one was.
     private(set) var port: NWEndpoint.Port?
     /// Phones the running listener holds keys for.
@@ -81,8 +81,9 @@ import PhiceCore
                 switch state {
                 case .ready:
                     self.port = listener.port
-                    self.whenListening?()
-                    self.whenListening = nil
+                    let waiting = self.whenListening
+                    self.whenListening = []
+                    waiting.forEach { $0() }
                 case .failed:
                     self.listener = nil
                     listener.cancel()
@@ -105,8 +106,9 @@ import PhiceCore
     /// A listener's keys are fixed when it starts, so a new key needs a new listener. Connections
     /// already accepted carry on. The new one starts once the old one's socket is closed: until then
     /// the port is in use (measured: EADDRINUSE in about half the runs).
-    private func relisten(then done: @escaping () -> Void) {
-        whenListening = done
+    private func relisten(then done: @escaping () -> Void = {}) {
+        whenListening.append(done)
+        guard retiring == nil else { return }  // the listener about to start reads the keys afresh
         guard let old = listener else { return listen() }
         listener = nil
         retiring = old
@@ -163,16 +165,28 @@ import PhiceCore
             // tells the app a new connection began, even when it brings the same device name.
             session?.close()
             connectedDevice = nil
-            session = FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
-                self?.received($0, on: connection)
+            let session = FrameChannel<PhoneToMac>(connection, deadAfter: timing.deadAfter) {
+                [weak self] in
+                self?.received($0, on: connection, from: claim.identity)
             }
+            session.beat(MacToPhone.heartbeat, every: timing.heartbeat)
+            self.session = session
         }
     }
 
-    private func received(_ message: PhoneToMac, on connection: NWConnection) {
-        guard session?.connection === connection else { return }
-        if case .hello(let deviceName, _) = message { connectedDevice = deviceName }
-        onMessage?(message)
+    private func received(_ message: PhoneToMac, on connection: NWConnection, from phoneID: String) {
+        guard let session, session.connection === connection else { return }
+        switch message {
+        case .forget:
+            store.setKey(nil, for: phoneID)
+            session.close()
+            relisten()
+        case .hello(let deviceName, _):
+            connectedDevice = deviceName
+            onMessage?(message)
+        default:
+            onMessage?(message)
+        }
     }
 
     private func closed(_ connection: NWConnection) {

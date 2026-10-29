@@ -100,6 +100,8 @@ import Testing
     #expect(rig.mac.connectedDevice == "Test iPhone")
     #expect(rig.hellos == 1)
     #expect(rig.atMac.filter { $0 == .heartbeat }.count >= 10)
+    // The Mac's heartbeats kept the phone's own deadline at bay, and never reached the app.
+    #expect(rig.atPhone.isEmpty)
 }
 
 @MainActor @Test func forgetDropsTheKeyAndTheConnection() async {
@@ -109,15 +111,22 @@ import Testing
     rig.showMac()
     #expect(await eventually { rig.mac.connectedDevice == "Test iPhone" })
 
+    let phoneID = rig.phoneStore.localID
+    let oldKey = rig.macStore.key(for: phoneID)!
+
     rig.phone.forget()
     #expect(rig.phone.state == .searching)
     #expect(rig.phoneStore.peers.isEmpty)
     #expect(rig.phone.macs.map(\.paired) == [false])
-    #expect(await eventually { rig.mac.connectedDevice == nil })
+    #expect(await eventually { rig.mac.connectedDevice == nil && rig.macStore.peers.isEmpty })
+    #expect(!rig.atMac.contains(.forget))
     try? await Task.sleep(for: .milliseconds(300))
     #expect(rig.phone.state == .searching)
     #expect(rig.hellos == 1)
     #expect(rig.macChanges == ["Test iPhone", nil])
+    // The Mac's listener no longer holds the key either.
+    let stale = RawClient(port: rig.mac.port!, identity: phoneID, key: oldKey)
+    #expect(await eventually { stale.refused })
 }
 
 @MainActor @Test func aPairedMacOutOfSightIsUnreachableUntilSeen() async {
@@ -151,4 +160,22 @@ import Testing
     b.connection.cancel()
     #expect(await eventually { rig.mac.connectedDevice == nil })
     #expect(rig.macChanges == [nil, nil, "Phone", nil, "Phone", nil])
+}
+
+@MainActor @Test func aSilentMacIsDroppedAtTheDeadlineAndTriedAgain() async {
+    let store = InMemoryKeyStore()
+    let macID = UUID().uuidString
+    let key = randomKey()
+    store.setKey(key, for: macID)
+    let silent = SilentMac(phoneID: store.localID, key: key)
+    #expect(await eventually { silent.port != nil })
+    let phone = NetworkPhoneLink(deviceName: "Test iPhone", keyStore: store, timing: .fast,
+                                 browses: false)
+    phone.start()
+    phone.see([Sighting(id: macID, name: "Hung Mac", pairingOpen: false,
+                        endpoint: .hostPort(host: "127.0.0.1", port: silent.port!))])
+
+    #expect(await eventually { phone.state == .connected })
+    #expect(await eventually { silent.ready.count >= 2 })
+    if silent.ready.count >= 2 { #expect(silent.ready[1] - silent.ready[0] >= .milliseconds(400)) }
 }

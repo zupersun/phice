@@ -22,6 +22,7 @@ struct LinkTiming {
     private var lastInbound = ContinuousClock.now
     private var open = true
     private var watchdog: Task<Void, Never>?
+    private var heartbeat: Task<Void, Never>?
     private let deliver: @MainActor (Inbound) -> Void
 
     init(_ connection: NWConnection, deadAfter: Duration?,
@@ -53,10 +54,31 @@ struct LinkTiming {
         })
     }
 
+    /// Sends `message` every `interval` until closed, so the peer can tell quiet from gone.
+    func beat<Message: Encodable & Sendable>(_ message: Message, every interval: Duration) {
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard let self, self.open, !Task.isCancelled else { return }
+                self.send(message)
+            }
+        }
+    }
+
+    /// Sends `value`, then closes once it is on its way; cancelling first could drop it.
+    func finish(with value: some Encodable) {
+        guard open, let frame = try? FrameCodec.encode(value) else { return close() }
+        heartbeat?.cancel()
+        connection.send(content: frame, completion: .contentProcessed { _ in
+            MainActor.assumeIsolated { self.close() }
+        })
+    }
+
     func close() {
         guard open else { return }
         open = false
         watchdog?.cancel()
+        heartbeat?.cancel()
         connection.cancel()
     }
 

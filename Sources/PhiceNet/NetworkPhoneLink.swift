@@ -48,7 +48,6 @@ extension Sighting {
     private var link: NWConnection?
     private var session: FrameChannel<MacToPhone>?
     private var pairing: Attempt?
-    private var heartbeat: Task<Void, Never>?
     private var retry: Task<Void, Never>?
     private var unseen: Task<Void, Never>?
     private var failures = 0
@@ -111,9 +110,13 @@ extension Sighting {
         session?.send(message)
     }
 
-    /// Removes the key. The Mac drops the phone when the connection closes; it keeps its own copy of
-    /// the key until the phone pairs again (PhoneToMac has no way to tell it otherwise).
+    /// Removes the key here and, if connected, tells the Mac to remove its copy too.
     public func forget() {
+        if let session {
+            self.session = nil
+            link = nil
+            session.finish(with: PhoneToMac.forget)
+        }
         hangUp()
         if let attempt = pairing {
             pairing = nil
@@ -211,22 +214,14 @@ extension Sighting {
 
     private func connected(_ connection: NWConnection) {
         failures = 0
-        // No dead-after here: the Mac sends nothing periodic (MacToPhone has no heartbeat), so the
-        // phone relies on TCP giving up on unacknowledged heartbeats (`connectionDropTime`).
-        let session = FrameChannel<MacToPhone>(connection, deadAfter: nil) { [weak self] in
+        let session = FrameChannel<MacToPhone>(connection, deadAfter: timing.deadAfter) { [weak self] in
+            guard self?.link === connection, $0 != .heartbeat else { return }
             self?.onMessage?($0)
         }
         self.session = session
-        // Both before `state`: nothing the app sends on `.connected` may overtake the hello, and a
-        // `forget()` from that callback must find the heartbeat to cancel.
+        // Before `state`, so nothing the app sends on `.connected` can overtake the hello.
         session.send(PhoneToMac.hello(deviceName: deviceName, appVersion: Self.appVersion))
-        heartbeat = Task { [weak self, timing] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: timing.heartbeat)
-                guard let self, !Task.isCancelled else { return }
-                self.session?.send(PhoneToMac.heartbeat)
-            }
-        }
+        session.beat(PhoneToMac.heartbeat, every: timing.heartbeat)
         state = .connected
     }
 
@@ -250,8 +245,6 @@ extension Sighting {
         session?.close()
         session = nil
         connection?.cancel()
-        heartbeat?.cancel()
-        heartbeat = nil
         retry?.cancel()
         retry = nil
     }

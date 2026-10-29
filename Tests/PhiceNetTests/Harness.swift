@@ -113,3 +113,29 @@ func randomKey() -> Data {
         }
     }
 }
+
+/// A TLS-PSK server that lets one phone in and then says nothing, like a Mac that has hung.
+@MainActor final class SilentMac {
+    private let listener: NWListener
+    private var connections: [NWConnection] = []
+    private(set) var port: NWEndpoint.Port?
+    /// When each connection became ready.
+    private(set) var ready: [ContinuousClock.Instant] = []
+
+    init(phoneID: String, key: Data) {
+        listener = try! NWListener(using: Pairing.parameters(keys: [(phoneID, key)]))
+        listener.newConnectionHandler = { [weak self] connection in
+            MainActor.assumeIsolated {
+                self?.connections.append(connection)
+                connection.stateUpdateHandler = { [weak self] state in
+                    if case .ready = state { MainActor.assumeIsolated { self?.ready.append(.now) } }
+                }
+                connection.start(queue: .main)
+            }
+        }
+        listener.stateUpdateHandler = { [weak self, listener] state in
+            if case .ready = state { MainActor.assumeIsolated { self?.port = listener.port } }
+        }
+        listener.start(queue: .main)
+    }
+}
