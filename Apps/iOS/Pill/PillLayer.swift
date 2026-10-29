@@ -83,7 +83,6 @@ struct PillLayer: View {
         .onAppear { model.restoreSaved() }
         .sensoryFeedback(.selection, trigger: menu.highlight) { $1 != nil }
         .sensoryFeedback(.impact(weight: .light), trigger: holds)
-        .sensoryFeedback(.impact(weight: .light), trigger: model.grab?.inZone ?? false) { !$0 && $1 }
         .sensoryFeedback(.success, trigger: merges)
         .sensoryFeedback(.error, trigger: errors)
     }
