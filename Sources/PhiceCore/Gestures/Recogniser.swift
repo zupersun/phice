@@ -1,3 +1,5 @@
+import Foundation
+
 /// Which edge of the pad the pill sits on. The drop zone is the fifth of the pad on that side.
 public enum Side: String, Codable, Sendable {
     case left, right
@@ -77,8 +79,8 @@ public struct Recogniser: Sendable {
                 continue
             }
             let was = (x: track.x, y: track.y, status: track.status)
-            track.follow(touch, at: t, tuning: tuning)
-            judge(&track, at: t, out: &out)
+            track.follow(touch, tuning: tuning)
+            judge(&track, at: t)
             switch (was.status, track.status) {
             case (.live, .live):
                 sum.x += track.x - was.x
@@ -92,7 +94,7 @@ public struct Recogniser: Sendable {
                 if track.status == .live {
                     lifted.append((touch.id, touch.phase == .cancelled))
                 } else if track.status == .waiting, mode == .idle, touch.phase == .ended {
-                    // A quick tap by a wide finger, lifted before it could be judged.
+                    // A quick tap by a wide finger, lifted before it could be judged a hand.
                     track.status = .live
                     landed.append(touch.id)
                     lifted.append((touch.id, false))
@@ -102,7 +104,7 @@ public struct Recogniser: Sendable {
         }
         for id in landed { out += land(id, at: t) }
         if movers > 0 { out += travel(sum.x / movers, sum.y / movers, at: t) }
-        out += pressure()
+        out += pressure(at: t)
         for lift in lifted { out += self.lift(lift.id, at: t, cancelled: lift.cancelled) }
         for touch in frame.touches where touch.phase == .ended || touch.phase == .cancelled {
             tracks[touch.id] = nil
@@ -111,7 +113,7 @@ public struct Recogniser: Sendable {
         return out
     }
 
-    /// Time-based transitions: tap timeouts, tap-to-drag grace, force press settling.
+    /// Time-based transitions: tap-to-drag hold, drag lock, baselines, firm holds, resting hands.
     public mutating func tick(now: Double) -> [PadEvent] {
         let out = advance(to: now)
         publish()
@@ -122,12 +124,15 @@ public struct Recogniser: Sendable {
 
     mutating func advance(to now: Double) -> [PadEvent] {
         var out: [PadEvent] = []
-        for id in tracks.keys.sorted() where tracks[id]?.status == .waiting {
+        for id in tracks.keys.sorted() {
             guard var track = tracks[id] else { continue }
-            judge(&track, at: now, out: &out)
+            let was = track.status
+            judge(&track, at: now)
             tracks[id] = track
-            if track.status == .live { out += land(id, at: now) }
+            if was == .waiting, track.status == .live { out += land(id, at: now) }
+            if was == .live, track.status == .rejected { out += lift(id, at: now, cancelled: true) }
         }
+        out += pressure(at: now)
         if mode == .pending, session.tapDrag, session.live.count == 1,
            now - session.start >= tuning.dragHold {
             out += grabByTap()
@@ -141,56 +146,71 @@ public struct Recogniser: Sendable {
 
     // MARK: Fingers
 
-    /// A new finger: a palm is rejected outright; a wide one, or one gripping an edge, waits.
+    /// Contact size in whole steps of the device's quantum.
+    func steps(_ radius: Double) -> Int {
+        let quantum = tuning.force.quantum
+        return quantum > 0 ? Int((radius / quantum).rounded()) : 0
+    }
+
+    /// A new finger: a palm is rejected outright, one at a resting hand's size waits to be judged.
     func admit(_ touch: Touch, at t: Double) -> Track {
-        let force = tuning.force, margin = tuning.edgeMargin
-        let nearEdge = touch.x < margin || touch.y < margin
-            || touch.x > geometry.width - margin || touch.y > geometry.height - margin
-        let wide = touch.radius >= force.wideRadius
-        let status: Track.Status = touch.radius >= force.palmRadius ? .rejected
-            : wide || (nearEdge && touch.radius >= force.edgeWideRadius) ? .waiting : .live
-        return Track(touch, at: t, status: status, landedWide: wide)
+        let force = tuning.force, size = steps(touch.radius)
+        let status: Track.Status = size >= force.palmSteps ? .rejected
+            : size >= force.restingSteps ? .waiting : .live
+        return Track(touch, at: t, status: status)
     }
 
-    /// Rejects a palm at any moment, and settles a waiting touch: moving makes it a finger,
-    /// relaxing clearly after landing wide is a force press, staying wide and still is a hand.
-    mutating func judge(_ track: inout Track, at t: Double, out: inout [PadEvent]) {
-        let force = tuning.force
-        if track.status != .rejected, track.radius >= force.palmRadius { track.reject() }
-        guard track.status == .waiting else { return }
-        if track.moved {
+    /// Reads the resting size once the touch-down ramp is over, rejects a palm at once and a
+    /// resting hand once it has stayed wide and still, and lets a waiting touch in once it moves
+    /// or shrinks to a finger's size. A touch that has force-clicked is a finger pressing, not a hand.
+    mutating func judge(_ track: inout Track, at t: Double) {
+        let force = tuning.force, size = steps(track.radius)
+        if track.baseline == nil, t - track.startT >= force.baselineDelay {
+            track.baseline = size
+            track.baseX = track.x
+            track.baseY = track.y
+        }
+        if size < force.restingSteps {
+            track.wideSince = nil
+        } else if track.wideSince == nil
+                    || hypot(track.x - track.wideX, track.y - track.wideY) > force.stillDistance {
+            track.wideSince = t
+            track.wideX = track.x
+            track.wideY = track.y
+        }
+        guard track.status != .rejected else { return }
+        let resting = track.verdict != .force
+            && track.wideSince.map { t - $0 >= force.restingHold } == true
+        if size >= force.palmSteps || resting {
+            track.reject()
+        } else if track.status == .waiting, track.moved || size < force.restingSteps {
             track.status = .live
-        } else if track.landedWide, track.radius <= track.widest * force.relaxRatio {
-            track.status = .live
-            // Only a lone finger force-presses.
-            if settings.lookUpForceClick, mode == .idle {
-                track.verdict = .force
-                track.armed = false
-                out.append(.forceClick)
-            }
-        } else if t - track.startT >= force.settle {
-            let wide = track.landedWide ? force.wideRadius : force.edgeWideRadius
-            if track.radius >= wide { track.reject() } else { track.status = .live }
         }
     }
 
-    /// A lone finger pressing harder: a force click on the rise, once, re-armed by easing back.
-    mutating func pressure() -> [PadEvent] {
-        guard settings.lookUpForceClick, session.live.count == 1, mode == .pending || mode == .pointing,
-              let id = session.live.first, var track = tracks[id], let rest = track.rest
+    /// A lone, still finger pressing: it rose a step past rest to `forceSteps`, or it landed there
+    /// and held. Fires once, re-armed by returning to rest; never during a move or scroll.
+    mutating func pressure(at t: Double) -> [PadEvent] {
+        guard settings.lookUpForceClick, session.live.count == 1, mode == .pending,
+              let id = session.live.first, var track = tracks[id], let baseline = track.baseline
         else { return [] }
-        let force = tuning.force
-        var out: [PadEvent] = []
-        if track.armed, track.radius >= rest * force.riseRatio {
-            track.armed = false
-            track.verdict = .force
-            session.tap = false
-            out.append(.forceClick)
-        } else if !track.armed, track.radius <= rest * force.rearmRatio {
-            track.armed = true
+        let force = tuning.force, size = steps(track.radius)
+        let firm = baseline >= force.forceSteps
+        if !track.armed, !firm, size <= baseline { track.armed = true }
+        let still = hypot(track.x - track.baseX, track.y - track.baseY) < force.stillDistance
+        // Four steps and up is a hand's size, judged as one, not a press.
+        let target = max(baseline + (firm ? 0 : 1), force.forceSteps)
+        let held = !firm || t - track.startT >= force.firmHold
+        let pressed = size >= target && size < force.restingSteps && held
+        guard track.armed, still, pressed else {
+            tracks[id] = track
+            return []
         }
+        track.armed = false
+        track.verdict = .force
         tracks[id] = track
-        return out
+        session.tap = false
+        return [.forceClick]
     }
 
     /// A finger gone without a proper lift: it vanished from the frames, or its id began again.

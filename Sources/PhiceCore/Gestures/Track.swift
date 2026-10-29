@@ -5,7 +5,7 @@ struct Track: Sendable {
     enum Status: Sendable {
         /// Counted in gestures.
         case live
-        /// Landed wide or gripping an edge; left out until it moves, relaxes or settles.
+        /// Landed at a resting hand's size; left out until it moves, shrinks or settles.
         case waiting
         /// A palm or a resting hand: left out until it lifts.
         case rejected
@@ -18,15 +18,16 @@ struct Track: Sendable {
     /// Strayed past the slop since landing, so it is not part of a tap.
     var moved = false
     var status: Status
-    let landedWide: Bool
-    var widest: Double
-    /// Resting radius, the mean of the first moments after landing; force press reads against it.
-    var rest: Double?
-    var restSum: Double, restCount = 1
+    /// Contact size at rest, in steps, read once the touch-down ramp is over; and where it was then.
+    var baseline: Int?
+    var baseX = 0.0, baseY = 0.0
     var armed = true
+    /// Since when it has been at a resting hand's size and still, and where.
+    var wideSince: Double?
+    var wideX = 0.0, wideY = 0.0
     var verdict = TouchVerdict.live
 
-    init(_ touch: Touch, at t: Double, status: Status, landedWide: Bool) {
+    init(_ touch: Touch, at t: Double, status: Status) {
         startX = touch.x
         startY = touch.y
         startT = t
@@ -36,29 +37,17 @@ struct Track: Sendable {
         refX = touch.x
         refY = touch.y
         self.status = status
-        self.landedWide = landedWide
-        widest = touch.radius
-        restSum = touch.radius
         if status == .rejected { verdict = .rejected }
     }
 
     var travel: Double { hypot(x - refX, y - refY) }
 
-    mutating func follow(_ touch: Touch, at t: Double, tuning: GestureTuning) {
+    mutating func follow(_ touch: Touch, tuning: GestureTuning) {
         x = touch.x
         y = touch.y
         if hypot(x - startX, y - startY) > tuning.slop { moved = true }
-        // A lift frame's radius is the finger leaving, not pressing.
-        guard touch.phase != .ended, touch.phase != .cancelled else { return }
-        radius = touch.radius
-        widest = max(widest, radius)
-        guard rest == nil else { return }
-        if t - startT <= tuning.force.baselineWindow {
-            restSum += radius
-            restCount += 1
-        } else {
-            rest = restSum / Double(restCount)
-        }
+        // A lift reports radius 0: the finger leaving, not shrinking.
+        if touch.phase != .ended, touch.phase != .cancelled { radius = touch.radius }
     }
 
     mutating func reject() {
