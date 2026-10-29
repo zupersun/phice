@@ -19,8 +19,8 @@ import Testing
     func forget() {}
 }
 
-private func sample(_ phase: Touch.Phase, t: Double) -> TouchSample {
-    TouchSample(key: 1, x: t * 100, y: 0, radius: 10, phase: phase, t: t)
+private func sample(_ phase: Touch.Phase, t: Double, tolerance: Double = 0) -> TouchSample {
+    TouchSample(key: 1, x: t * 100, y: 0, radius: 10, phase: phase, t: t, tolerance: tolerance)
 }
 
 @MainActor @Test func whileRecordingRawFramesGoToTheMacAboutEveryTenthOfASecond() {
@@ -68,4 +68,21 @@ private func sample(_ phase: Touch.Phase, t: Double) -> TouchSample {
     #expect(loop.live.count == 1)
     loop.touches([sample(.ended, t: 1.1)])
     #expect(loop.live.isEmpty)
+}
+
+@MainActor @Test func theFirstLandingWithATolerancePicksTheRadiusQuantum() {
+    // majorRadius moves in steps of twice its tolerance; this phone's steps may not be the default's.
+    let loop = PadLoop(model: AppModel(link: KeptLink()))
+    let quantum = { loop.recogniser.tuning.force.quantum }
+    let measured = quantum()
+    loop.touches([sample(.began, t: 1, tolerance: 0)])
+    loop.touches([sample(.ended, t: 1.1, tolerance: 5)])
+    loop.touches([sample(.began, t: 2, tolerance: .nan)])
+    loop.touches([sample(.ended, t: 2.1, tolerance: .infinity)])
+    #expect(quantum() == measured)
+    loop.touches([sample(.began, t: 3, tolerance: 7.5)])
+    #expect(quantum() == 15)
+    loop.touches([sample(.ended, t: 3.1, tolerance: 7.5)])
+    loop.touches([sample(.began, t: 4, tolerance: 9)])
+    #expect(quantum() == 15)
 }

@@ -86,7 +86,8 @@ final class PadTouchView: UIView {
                 let point = sample.location(in: self)
                 samples.append(TouchSample(key: key, x: point.x, y: point.y,
                                            radius: sample.majorRadius,
-                                           phase: Touch.Phase(sample.phase), t: sample.timestamp))
+                                           phase: Touch.Phase(sample.phase), t: sample.timestamp,
+                                           tolerance: sample.majorRadiusTolerance))
             }
         }
         lastTouch = ProcessInfo.processInfo.systemUptime
