@@ -293,6 +293,8 @@ extension Recogniser {
     // MARK: Taps
 
     /// A tap has lifted, with no added latency: click now, and count it toward the next.
+    /// `tapToClick` is not consulted: a phone has no button to press, so the pad keeps tap to click
+    /// on, and a Mac that has it off must not leave the phone unable to click.
     mutating func tap(at t: Double) -> [PadEvent] {
         let fingers = session.most, p = session.origin
         let previous = lastTap.flatMap { tap in
@@ -302,18 +304,24 @@ extension Recogniser {
         lastTap = nil
         switch fingers {
         case 1 where inCorner(p):
-            return settings.tapToClick ? click(.right, 1) : []
+            return click(.right, 1)
         case 1:
             let clicks = (previous?.clicks ?? 0) + 1
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 1, clicks: clicks)
-            return settings.tapToClick ? click(.left, clicks) : []
+            return click(.left, clicks)
         case 2 where settings.smartZoom && previous != nil:
+            secondaryAt = nil
             smartZoomed.toggle()
             return [.shortcut(smartZoomed ? .zoomIn : .zoomReset)]
         case 2:
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 2, clicks: 1)
-            let secondary = settings.tapToClick && settings.secondaryClick == .twoFingers
-            return secondary ? click(.right, 1) : []
+            guard settings.secondaryClick == .twoFingers else { return [] }
+            // With smart zoom on, a second tap may yet claim this one: hold the click back.
+            if settings.smartZoom {
+                secondaryAt = t
+                return []
+            }
+            return click(.right, 1)
         case 3:
             // Look Up by three-finger tap, when the Mac has it there instead of on force click.
             return settings.lookUpForceClick ? [] : [.forceClick]
