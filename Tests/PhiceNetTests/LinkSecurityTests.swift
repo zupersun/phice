@@ -117,3 +117,26 @@ func aBadFrameDropsTheConnection(frame: Data) async {
     #expect(store.key(for: "peer") == nil)
     #expect(store.peers.isEmpty)
 }
+
+/// Network.framework can race one connection over several paths and drop the losers, so the Mac may
+/// see a second authenticated connection that never speaks. It must not replace the phone.
+@MainActor @Test func aSilentDuplicateDoesNotReplaceThePhone() async {
+    let rig = Rig()
+    let phoneID = UUID().uuidString
+    let key = randomKey()
+    rig.macStore.setKey(key, for: phoneID)
+    #expect(await rig.start())
+
+    let phone = RawClient(port: rig.mac.port!, identity: phoneID, key: key)
+    phone.send(.hello(deviceName: "Phone", appVersion: "1"))
+    #expect(await eventually { rig.mac.connectedDevice == "Phone" })
+    let duplicate = RawClient(port: rig.mac.port!, identity: phoneID, key: key)
+    #expect(await eventually { duplicate.ready })
+    for _ in 0 ..< 10 {  // past the duplicate's deadline, the phone heartbeating throughout
+        phone.send(.heartbeat)
+        try? await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(duplicate.ended)
+    #expect(!phone.ended)
+    #expect(rig.macChanges == ["Phone"])
+}

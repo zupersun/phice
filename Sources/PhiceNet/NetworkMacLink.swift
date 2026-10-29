@@ -36,6 +36,8 @@ import PhiceCore
     /// The identity each handshake in flight offered, as TLS reported it to `admit`.
     private var claimed: [ObjectIdentifier: (metadata: sec_protocol_metadata_t, identity: String)] = [:]
     private var session: FrameChannel<PhoneToMac>?
+    /// Authenticated, but yet to say anything.
+    private var newcomers: [FrameChannel<PhoneToMac>] = []
     private var pairings: [FrameChannel<Handshake>] = []
     /// The one request the user is being asked about.
     private var pending: FrameChannel<Handshake>?
@@ -161,21 +163,19 @@ import PhiceCore
                 self?.handshake($0, on: connection)
             })
         } else {
-            // One phone at a time: the newest authenticated connection wins. Passing through nil
-            // tells the app a new connection began, even when it brings the same device name.
-            session?.close()
-            connectedDevice = nil
-            let session = FrameChannel<PhoneToMac>(connection, deadAfter: timing.deadAfter) {
-                [weak self] in
+            newcomers.append(FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
                 self?.received($0, on: connection, from: claim.identity)
-            }
-            session.beat(MacToPhone.heartbeat, every: timing.heartbeat)
-            self.session = session
+            })
         }
     }
 
     private func received(_ message: PhoneToMac, on connection: NWConnection, from phoneID: String) {
-        guard let session, session.connection === connection else { return }
+        if session?.connection !== connection {
+            let index = newcomers.firstIndex { $0.connection === connection }
+            guard let index else { return }
+            take(newcomers.remove(at: index))
+        }
+        guard let session else { return }
         switch message {
         case .forget:
             store.setKey(nil, for: phoneID)
@@ -189,6 +189,16 @@ import PhiceCore
         }
     }
 
+    /// One phone at a time: a new authenticated connection takes over on its first message. A
+    /// duplicate the phone raced over another path and dropped never speaks, so it never wins.
+    private func take(_ channel: FrameChannel<PhoneToMac>) {
+        session?.close()
+        // Passing through nil tells the app a new connection began, even with the same device name.
+        connectedDevice = nil
+        channel.beat(MacToPhone.heartbeat, every: timing.heartbeat)
+        session = channel
+    }
+
     private func closed(_ connection: NWConnection) {
         if session?.connection === connection {
             session = nil
@@ -196,6 +206,7 @@ import PhiceCore
         }
         if pending?.connection === connection { pending = nil }
         pairings.removeAll { $0.connection === connection }
+        newcomers.removeAll { $0.connection === connection }
     }
 
     // MARK: Pairing
