@@ -3,7 +3,7 @@
 ///
 /// Every number from the phone is validated here before it reaches a CGEvent: non-finite values
 /// drop the event, deltas are clamped to `maxDelta`, intervals to `0...maxInterval`, click counts to
-/// 1...3 and the tracking speed to Apple's 0...3.
+/// 1...3 and the tracking and scroll speeds to Apple's 0...3.
 ///
 /// Scroll deltas are posted in CGEvent's convention: positive `dy` scrolls toward the top (the
 /// content moves down, as a mouse wheel rolled away from you does) and positive `dx` toward the
@@ -42,8 +42,9 @@ public final class MacDriver {
     private var momentumBegun = false
     private var lastMomentumTick = 0.0
 
-    public init(poster: EventPoster, settings: TrackpadSettings,
-                curves: [AccelCurve], scrollCurves: [AccelCurve]) {
+    /// `settings.scrollSpeed` (`HIDTrackpadScrollAcceleration`, 0...3) picks the scroll curve.
+    public init(poster: EventPoster, settings: TrackpadSettings, curves: [AccelCurve],
+                scrollCurves: [AccelCurve]) {
         self.poster = poster
         self.curves = curves
         self.scrollCurves = scrollCurves
