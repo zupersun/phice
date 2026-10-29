@@ -2,6 +2,7 @@
 
 /// A scripted hand on an iPhone-sized landscape pad. Time runs in 120 Hz slots; each slot is either
 /// a frame carrying every finger, as the pad sends them, or, while nothing changes, a bare tick.
+/// Contact sizes behave as the iPhone 17 measured: whole steps of 12.139 pt, and 0 on lifting.
 struct Pad {
     var r: Recogniser
     private(set) var slot = 0
@@ -26,12 +27,12 @@ struct Pad {
 
     // MARK: Fingers
 
-    mutating func land(_ id: UInt16, _ x: Double, _ y: Double, r radius: Double = 20) {
+    mutating func land(_ id: UInt16, _ x: Double, _ y: Double, r radius: Double = steps(2)) {
         land([(id, x, y)], r: radius)
     }
 
     /// One frame: these fingers begin, the others stay put.
-    mutating func land(_ new: [(UInt16, Double, Double)], r radius: Double = 20) {
+    mutating func land(_ new: [(UInt16, Double, Double)], r radius: Double = steps(2)) {
         let now = Double(slot + 1) / 120
         frame { touches in
             touches += new.map {
@@ -40,22 +41,27 @@ struct Pad {
         }
     }
 
-    /// Over `count` frames each named finger travels its offset; the others stay still.
-    mutating func move(_ offsets: [UInt16: (Double, Double)], frames count: Int = 6) {
-        for _ in 0 ..< count {
+    /// Over `count` frames each named finger travels its offset; the others stay still. With
+    /// `radius`, the moving fingers' contact jumps to it halfway: a finger flattening as it slides.
+    mutating func move(_ offsets: [UInt16: (Double, Double)], frames count: Int = 6,
+                       radius: Double? = nil) {
+        for k in 0 ..< count {
             frame { touches in
                 for i in touches.indices {
                     guard let d = offsets[touches[i].id] else { continue }
                     touches[i].x += d.0 / Double(count)
                     touches[i].y += d.1 / Double(count)
+                    if let radius, k >= count / 2 { touches[i].radius = radius }
                     touches[i].phase = .moved
                 }
             }
         }
     }
 
-    mutating func move(_ ids: [UInt16], _ dx: Double, _ dy: Double, frames: Int = 6) {
-        move(Dictionary(uniqueKeysWithValues: ids.map { ($0, (dx, dy)) }), frames: frames)
+    mutating func move(_ ids: [UInt16], _ dx: Double, _ dy: Double, frames: Int = 6,
+                       radius: Double? = nil) {
+        let offsets = Dictionary(uniqueKeysWithValues: ids.map { ($0, (dx, dy)) })
+        move(offsets, frames: frames, radius: radius)
     }
 
     /// The named fingers spread from (s > 1) or close on (s < 1) their centre.
@@ -67,15 +73,12 @@ struct Pad {
         move(Dictionary(uniqueKeysWithValues: offsets), frames: frames)
     }
 
-    /// The contact area changes in place, as pressing harder or easing off does.
-    mutating func press(_ id: UInt16, to radius: Double, frames count: Int = 3) {
-        guard let from = down.first(where: { $0.id == id })?.radius else { return }
-        for k in 1 ... count {
-            frame { touches in
-                for i in touches.indices where touches[i].id == id {
-                    touches[i].radius = from + (radius - from) * Double(k) / Double(count)
-                    touches[i].phase = .moved
-                }
+    /// The contact area jumps a step in place, as pressing harder or easing off does.
+    mutating func press(_ id: UInt16, to radius: Double) {
+        frame { touches in
+            for i in touches.indices where touches[i].id == id {
+                touches[i].radius = radius
+                touches[i].phase = .moved
             }
         }
     }
@@ -147,7 +150,10 @@ struct Pad {
 
     private mutating func end(_ ids: [UInt16], as phase: Touch.Phase) {
         frame { touches in
-            for i in touches.indices where ids.contains(touches[i].id) { touches[i].phase = phase }
+            for i in touches.indices where ids.contains(touches[i].id) {
+                touches[i].phase = phase
+                touches[i].radius = 0
+            }
         }
     }
 
@@ -174,6 +180,9 @@ let press = PadEvent.button(.left, down: true, clicks: 1)
 let release = PadEvent.button(.left, down: false, clicks: 1)
 
 func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
+
+/// A contact size the iPhone 17 can report: whole steps of 12.139 pt.
+func steps(_ n: Double) -> Double { n * 12.139 }
 
 func isAction(_ event: PadEvent) -> Bool {
     switch event {

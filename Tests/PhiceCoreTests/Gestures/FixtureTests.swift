@@ -10,7 +10,9 @@ import Testing
 ///     PHICE_WRITE_FIXTURES=1 swift test --filter writeFixtures
 enum Fixture: String, CaseIterable, Sendable {
     case tap, doubleTap, twoFingerTap, cornerClick, tapDrag, threeFingerDrag, scrollMomentumStop
-    case swipe3, swipe4, pinch, forcePress, landsWideForce, restingThumb, copyDrop, copyCancel
+    case swipe3, swipe4, pinch, restingThumb, copyDrop, copyCancel
+    // Contact-size shapes measured on an iPhone 17.
+    case rampTap, restThenPress, firmTap, firmHold, thumbRoll, movingRise
 
     var settings: TrackpadSettings {
         var s = TrackpadSettings()
@@ -36,8 +38,11 @@ enum Fixture: String, CaseIterable, Sendable {
         case .swipe3: [.shortcut(.spaceRight), .shortcut(.missionControl)]
         case .swipe4: [.shortcut(.spaceLeft), .shortcut(.missionControl)]
         case .pinch: [.shortcut(.zoomIn), .shortcut(.zoomIn), .shortcut(.zoomOut)]
-        case .forcePress, .landsWideForce: [.forceClick]
         case .restingThumb: click()
+        case .rampTap, .firmTap: click()
+        case .restThenPress, .firmHold: [.forceClick]
+        case .thumbRoll: click()
+        case .movingRise: []
         case .copyDrop: click() + [press, .freeze(true), .drop(.copy)]
         case .copyCancel: click() + [press, .freeze(true), .freeze(false), release]
         }
@@ -98,24 +103,49 @@ enum Fixture: String, CaseIterable, Sendable {
             pad.land([(1, 300, 200), (2, 500, 200)])
             pad.scale([1, 2], by: 0.6, frames: 12)
             pad.lift(1, 2)
-        case .forcePress:
-            pad.land(1, 400, 200, r: 20)
-            pad.hold(0.06)
-            pad.press(1, to: 31)
-            pad.hold(0.1)
-            pad.press(1, to: 20)
-            pad.lift(1)
-        case .landsWideForce:
-            pad.land(1, 400, 200, r: 45)
-            pad.hold(0.05)
-            pad.press(1, to: 31)
-            pad.hold(0.1)
-            pad.lift(1)
         case .restingThumb:
-            pad.land(1, 300, 340, r: 45)
+            pad.land(1, 300, 340, r: steps(4))
             pad.hold(0.25)
             pad.tap(500, 150)
             pad.hold(0.1)
+            pad.lift(1)
+        case .rampTap:
+            pad.land(1, 400, 200, r: steps(1))
+            pad.hold(0.03)
+            pad.press(1, to: steps(2))
+            pad.hold(0.06)
+            pad.lift(1)
+        case .restThenPress:
+            pad.land(1, 400, 200, r: steps(1))
+            pad.hold(0.02)
+            pad.press(1, to: steps(2))
+            pad.hold(0.38)
+            pad.press(1, to: steps(3))
+            pad.hold(0.5)
+            pad.lift(1)
+        case .firmTap:
+            pad.land(1, 400, 200, r: steps(3))
+            pad.hold(0.1)
+            pad.lift(1)
+        case .firmHold:
+            pad.land(1, 400, 200, r: steps(3))
+            pad.hold(0.4)
+            pad.lift(1)
+        case .thumbRoll:
+            pad.land(1, 300, 340)
+            pad.hold(0.08)
+            pad.press(1, to: steps(4))
+            pad.hold(0.05)
+            pad.press(1, to: steps(5))
+            pad.hold(0.05)
+            pad.press(1, to: steps(6))
+            pad.hold(0.1)
+            pad.tap(500, 150)
+            pad.lift(1)
+        case .movingRise:
+            pad.land(1, 500, 200, r: steps(1))
+            pad.move([1], 80, 10, frames: 12, radius: steps(3))
+            pad.hold(0.4)
             pad.lift(1)
         case .copyDrop, .copyCancel:
             pad.tap()
