@@ -19,7 +19,7 @@ extension MacDriver {
 
 /// What Apple's curve makes of one move, for comparing against what the driver posted.
 private func accelerated(_ dx: Double, _ dy: Double, dt: Double,
-                         speed: Double = 1) -> (Double, Double) {
+                         speed: Double = TrackpadSettings().trackingSpeed) -> (Double, Double) {
     var accel = PointerAcceleration(curves: ThisMac.pointer, trackingSpeed: speed)
     let out = accel.apply(dx: dx, dy: dy, dt: dt)
     return (out.dx, out.dy)
@@ -79,7 +79,7 @@ private func onlyMove(_ poster: FakePoster) -> (dx: Double, dy: Double, dragging
     guard case let .move(unchanged, _, _) = poster.calls[1],
           case let .move(capped, _, _) = poster.calls[2]
     else { Issue.record("expected three moves"); return }
-    #expect(close(unchanged, accelerated(10, 0, dt: 1.0 / 120, speed: 1).0))
+    #expect(close(unchanged, accelerated(10, 0, dt: 1.0 / 120).0))
     #expect(close(capped, accelerated(10, 0, dt: 1.0 / 120, speed: 3).0))
 }
 

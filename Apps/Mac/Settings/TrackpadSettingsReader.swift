@@ -18,13 +18,20 @@ enum TrackpadSettingsReader {
         let dockKey = "showAppExposeGestureEnabled"
         let dockValue = CFPreferencesCopyAppValue(dockKey as CFString, "com.apple.dock" as CFString)
         let dock = dockValue.map { [dockKey: $0] } ?? [:]
-        return settings(trackpad: pad.isEmpty ? domain(bluetooth) : pad,
-                        global: withLiveSpeed(global, live: liveSpeed()), dock: dock)
+        var s = settings(trackpad: pad.isEmpty ? domain(bluetooth) : pad,
+                         global: withLiveSpeed(global, live: liveSpeed()), dock: dock)
+        if let scroll = liveParameter("HIDTrackpadScrollAcceleration") {
+            s.scrollSpeed = min(max(scroll, 0), 3)
+        }
+        return s
     }
 
     /// The tracking speed the system is applying right now. A Mac whose owner never touched the
-    /// slider has no `com.apple.trackpad.scaling`, and its default is not `TrackpadSettings`'s.
-    static func liveSpeed() -> Double? {
+    /// slider has no `com.apple.trackpad.scaling`.
+    static func liveSpeed() -> Double? { liveParameter("HIDTrackpadAcceleration") }
+
+    /// One of the speeds the system pushes to every HID service, as a 0...3 value.
+    static func liveParameter(_ key: String) -> Double? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOHIDEventService"),
                                            &iterator) == KERN_SUCCESS else { return nil }
@@ -35,7 +42,7 @@ enum TrackpadSettingsReader {
             let properties = IORegistryEntryCreateCFProperty(
                 service, "HIDEventServiceProperties" as CFString, kCFAllocatorDefault, 0)
             let parameters = properties?.takeRetainedValue() as? [String: Any]
-            if let fixed = parameters?["HIDTrackpadAcceleration"] as? NSNumber {
+            if let fixed = parameters?[key] as? NSNumber {
                 return fixed.doubleValue / 65536
             }
         }

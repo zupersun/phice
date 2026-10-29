@@ -23,6 +23,7 @@ public final class MacDriver {
 
     private let poster: EventPoster
     private let curves: [AccelCurve]
+    private let scrollCurves: [AccelCurve]
     private var settings: TrackpadSettings
     private var pointer: PointerAcceleration
     private var scroller: ScrollAcceleration
@@ -45,10 +46,13 @@ public final class MacDriver {
                 curves: [AccelCurve], scrollCurves: [AccelCurve]) {
         self.poster = poster
         self.curves = curves
+        self.scrollCurves = scrollCurves
         self.settings = settings
-        self.settings.trackingSpeed = Self.trackingSpeed(settings.trackingSpeed, else: 1)
+        let defaults = TrackpadSettings()
+        self.settings.trackingSpeed = Self.speed(settings.trackingSpeed, else: defaults.trackingSpeed)
+        self.settings.scrollSpeed = Self.speed(settings.scrollSpeed, else: defaults.scrollSpeed)
         pointer = PointerAcceleration(curves: curves, trackingSpeed: self.settings.trackingSpeed)
-        scroller = ScrollAcceleration(curves: scrollCurves)
+        scroller = ScrollAcceleration(curves: scrollCurves, speed: self.settings.scrollSpeed)
     }
 
     /// Returns any replies for the phone (`dropResult`).
@@ -174,9 +178,13 @@ public final class MacDriver {
 
     private func apply(_ new: TrackpadSettings) {
         var new = new
-        new.trackingSpeed = Self.trackingSpeed(new.trackingSpeed, else: settings.trackingSpeed)
+        new.trackingSpeed = Self.speed(new.trackingSpeed, else: settings.trackingSpeed)
+        new.scrollSpeed = Self.speed(new.scrollSpeed, else: settings.scrollSpeed)
         if new.trackingSpeed != settings.trackingSpeed {
             pointer = PointerAcceleration(curves: curves, trackingSpeed: new.trackingSpeed)
+        }
+        if new.scrollSpeed != settings.scrollSpeed {
+            scroller = ScrollAcceleration(curves: scrollCurves, speed: new.scrollSpeed)
         }
         if !new.momentumScroll { stopMomentum() }
         settings = new
@@ -189,7 +197,7 @@ public final class MacDriver {
 
     private static func interval(_ dt: Double) -> Double { min(max(dt, 0), maxInterval) }
 
-    private static func trackingSpeed(_ speed: Double, else fallback: Double) -> Double {
+    private static func speed(_ speed: Double, else fallback: Double) -> Double {
         speed.isFinite ? min(max(speed, 0), 3) : fallback
     }
 }

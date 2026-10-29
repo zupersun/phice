@@ -14,8 +14,11 @@ public enum SwipePages: String, Codable, Sendable {
 /// `com.apple.AppleMultitouchTrackpad`, `com.apple.trackpad.scaling` and
 /// `com.apple.swipescrolldirection`. Defaults are macOS's. A nil gesture is switched off.
 public struct TrackpadSettings: Codable, Sendable, Equatable {
-    /// `com.apple.trackpad.scaling`, 0...3.
-    public var trackingSpeed = 1.0
+    /// `com.apple.trackpad.scaling`, 0...3. The default is what macOS applies when the slider was
+    /// never moved (`HIDTrackpadAcceleration` 45056 / 65536).
+    public var trackingSpeed = 0.6875
+    /// The trackpad's scrolling speed, 0...3 (`HIDTrackpadScrollAcceleration`; default 20480 / 65536).
+    public var scrollSpeed = 0.3125
     public var tapToClick = true
     public var dragLock = false
     public var threeFingerDrag = false
