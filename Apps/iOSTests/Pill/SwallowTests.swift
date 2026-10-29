@@ -46,7 +46,8 @@ private func frame(_ s: Swallow, _ t: Double, live: CGPoint? = nil, distance: Do
     let grown = frame(s, 0.35, live: fingers, distance: 400)
     #expect(grown.bead == fingers)
     #expect(abs(grown.beadRadius - 16 * Swallow.appear.step(0.35)) < 1e-9)
-    let peak = (1 ... 60).map { frame(s, Double($0) / 100, live: fingers, distance: 400).beadRadius }.max()!
+    let radii = (1 ... 60).map { frame(s, Double($0) / 100, live: fingers, distance: 400).beadRadius }
+    let peak = radii.max()!
     #expect(peak > 16.5)
     #expect(abs(frame(s, 2, live: fingers, distance: 400).beadRadius - 16) < 0.05)
 }
