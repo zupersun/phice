@@ -55,6 +55,8 @@ public struct Recogniser: Sendable {
     var lockedSince: Double?
     var scrollEndedAt: Double?
     var smartZoomed = false
+    /// When a two-finger tap's right click was held back for a possible smart zoom.
+    var secondaryAt: Double?
 
     public init(settings: TrackpadSettings, geometry: PadGeometry) {
         self.settings = settings
@@ -63,7 +65,7 @@ public struct Recogniser: Sendable {
 
     public mutating func feed(_ frame: TouchFrame) -> [PadEvent] {
         let t = frame.t
-        var out = advance(to: t)
+        var out = heldSecondary(before: [], at: t) + advance(to: t)
         let present = Set(frame.touches.map(\.id))
         for id in tracks.keys.sorted() where !present.contains(id) { out += forget(id, at: t) }
 
@@ -110,14 +112,23 @@ public struct Recogniser: Sendable {
             tracks[touch.id] = nil
         }
         publish()
-        return out
+        return heldSecondary(before: out, at: t)
     }
 
     /// Time-based transitions: tap-to-drag hold, drag lock, baselines, firm holds, resting hands.
     public mutating func tick(now: Double) -> [PadEvent] {
         let out = advance(to: now)
         publish()
-        return out
+        return heldSecondary(before: out, at: now)
+    }
+
+    /// A two-finger tap's right click waits while a second tap could still make it a smart zoom,
+    /// but goes out ahead of anything else that happens, so it lands where the tap was.
+    mutating func heldSecondary(before out: [PadEvent], at t: Double) -> [PadEvent] {
+        guard let since = secondaryAt, !out.isEmpty || t - since > tuning.doubleClickInterval
+        else { return out }
+        secondaryAt = nil
+        return click(.right, 1) + out
     }
 
     // MARK: Time
