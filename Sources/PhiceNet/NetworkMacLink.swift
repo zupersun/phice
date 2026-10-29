@@ -12,6 +12,7 @@ import PhiceCore
             guard pairingOpen != oldValue else { return }
             if !pairingOpen { refusePending() }
             advertise()
+            onChange?()
         }
     }
     public private(set) var connectedDevice: String? {
@@ -27,7 +28,7 @@ import PhiceCore
     private let advertises: Bool
     private var listener: NWListener?
     private var retiring: NWListener?
-    private var whenListening: (() -> Void)?
+    private var whenListening: [() -> Void] = []
     /// Kept across relistens, so a phone reconnecting finds the new listener where the old one was.
     private(set) var port: NWEndpoint.Port?
     /// Phones the running listener holds keys for.
@@ -35,6 +36,8 @@ import PhiceCore
     /// The identity each handshake in flight offered, as TLS reported it to `admit`.
     private var claimed: [ObjectIdentifier: (metadata: sec_protocol_metadata_t, identity: String)] = [:]
     private var session: FrameChannel<PhoneToMac>?
+    /// Authenticated, but yet to say anything.
+    private var newcomers: [FrameChannel<PhoneToMac>] = []
     private var pairings: [FrameChannel<Handshake>] = []
     /// The one request the user is being asked about.
     private var pending: FrameChannel<Handshake>?
@@ -80,8 +83,9 @@ import PhiceCore
                 switch state {
                 case .ready:
                     self.port = listener.port
-                    self.whenListening?()
-                    self.whenListening = nil
+                    let waiting = self.whenListening
+                    self.whenListening = []
+                    waiting.forEach { $0() }
                 case .failed:
                     self.listener = nil
                     listener.cancel()
@@ -104,8 +108,9 @@ import PhiceCore
     /// A listener's keys are fixed when it starts, so a new key needs a new listener. Connections
     /// already accepted carry on. The new one starts once the old one's socket is closed: until then
     /// the port is in use (measured: EADDRINUSE in about half the runs).
-    private func relisten(then done: @escaping () -> Void) {
-        whenListening = done
+    private func relisten(then done: @escaping () -> Void = {}) {
+        whenListening.append(done)
+        guard retiring == nil else { return }  // the listener about to start reads the keys afresh
         guard let old = listener else { return listen() }
         listener = nil
         retiring = old
@@ -158,18 +163,40 @@ import PhiceCore
                 self?.handshake($0, on: connection)
             })
         } else {
-            // One phone at a time: the newest authenticated connection wins.
-            session?.close()
-            session = FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
-                self?.received($0, on: connection)
-            }
+            newcomers.append(FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
+                self?.received($0, on: connection, from: claim.identity)
+            })
         }
     }
 
-    private func received(_ message: PhoneToMac, on connection: NWConnection) {
-        guard session?.connection === connection else { return }
-        if case .hello(let deviceName, _) = message { connectedDevice = deviceName }
-        onMessage?(message)
+    private func received(_ message: PhoneToMac, on connection: NWConnection, from phoneID: String) {
+        if session?.connection !== connection {
+            let index = newcomers.firstIndex { $0.connection === connection }
+            guard let index else { return }
+            take(newcomers.remove(at: index))
+        }
+        guard let session else { return }
+        switch message {
+        case .forget:
+            store.setKey(nil, for: phoneID)
+            session.close()
+            relisten()
+        case .hello(let deviceName, _):
+            connectedDevice = deviceName
+            onMessage?(message)
+        default:
+            onMessage?(message)
+        }
+    }
+
+    /// One phone at a time: a new authenticated connection takes over on its first message. A
+    /// duplicate the phone raced over another path and dropped never speaks, so it never wins.
+    private func take(_ channel: FrameChannel<PhoneToMac>) {
+        session?.close()
+        // Passing through nil tells the app a new connection began, even with the same device name.
+        connectedDevice = nil
+        channel.beat(MacToPhone.heartbeat, every: timing.heartbeat)
+        session = channel
     }
 
     private func closed(_ connection: NWConnection) {
@@ -179,6 +206,7 @@ import PhiceCore
         }
         if pending?.connection === connection { pending = nil }
         pairings.removeAll { $0.connection === connection }
+        newcomers.removeAll { $0.connection === connection }
     }
 
     // MARK: Pairing

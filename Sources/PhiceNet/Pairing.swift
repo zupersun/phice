@@ -84,9 +84,6 @@ enum Pairing {
         }
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
-        // The phone's heartbeat always has data in flight, so a Mac that vanishes stops ACKing and
-        // the phone drops the connection ~2 s into retransmitting.
-        tcp.connectionDropTime = 2
         let parameters = NWParameters(tls: tls, tcp: tcp)
         parameters.includePeerToPeer = true
         // The Mac relistens on the same port after each pairing.

@@ -33,12 +33,15 @@ func randomKey() -> Data {
     var atMac: [PhoneToMac] = []
     var atPhone: [MacToPhone] = []
     var requests: [String] = []
+    /// `connectedDevice` at each of the Mac's `onChange` calls.
+    var macChanges: [String?] = []
 
     init() {
         mac = NetworkMacLink(macName: "Test Mac", keyStore: macStore, timing: .fast, advertises: false)
         phone = NetworkPhoneLink(deviceName: "Test iPhone", keyStore: phoneStore, timing: .fast,
                                  browses: false)
         mac.onMessage = { [unowned self] in atMac.append($0) }
+        mac.onChange = { [unowned self] in macChanges.append(mac.connectedDevice) }
         phone.onMessage = { [unowned self] in atPhone.append($0) }
     }
 
@@ -108,5 +111,31 @@ func randomKey() -> Data {
                 if done || err != nil { self?.ended = true } else { self?.receive() }
             }
         }
+    }
+}
+
+/// A TLS-PSK server that lets one phone in and then says nothing, like a Mac that has hung.
+@MainActor final class SilentMac {
+    private let listener: NWListener
+    private var connections: [NWConnection] = []
+    private(set) var port: NWEndpoint.Port?
+    /// When each connection became ready.
+    private(set) var ready: [ContinuousClock.Instant] = []
+
+    init(phoneID: String, key: Data) {
+        listener = try! NWListener(using: Pairing.parameters(keys: [(phoneID, key)]))
+        listener.newConnectionHandler = { [weak self] connection in
+            MainActor.assumeIsolated {
+                self?.connections.append(connection)
+                connection.stateUpdateHandler = { [weak self] state in
+                    if case .ready = state { MainActor.assumeIsolated { self?.ready.append(.now) } }
+                }
+                connection.start(queue: .main)
+            }
+        }
+        listener.stateUpdateHandler = { [weak self, listener] state in
+            if case .ready = state { MainActor.assumeIsolated { self?.port = listener.port } }
+        }
+        listener.start(queue: .main)
     }
 }
