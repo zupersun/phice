@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PhiceCore
 
@@ -25,4 +26,31 @@ import Testing
         }
     }
     #expect(scrolled(at: 3) > scrolled(at: 0.3125))
+}
+
+@Test func settingsFromAnOlderOrNewerAppDecodeWithDefaultsForWhatIsMissing() throws {
+    // The phone (App Store) and the Mac agent (download) update separately, so a settings message
+    // may lack a field the receiver knows about, or carry one it does not.
+    let json = Data(#"{"tapToClick":false,"swipeSpaces":4,"someFutureSetting":1}"#.utf8)
+    let settings = try JSONDecoder().decode(TrackpadSettings.self, from: json)
+    #expect(settings.tapToClick == false)
+    #expect(settings.swipeSpaces == .four)
+    #expect(settings.scrollSpeed == TrackpadSettings().scrollSpeed)
+    #expect(settings.missionControl == TrackpadSettings().missionControl)
+}
+
+@Test func settingsRoundTrip() throws {
+    var settings = TrackpadSettings()
+    settings.appExpose = .four
+    settings.swipeSpaces = nil
+    let back = try JSONDecoder().decode(TrackpadSettings.self, from: JSONEncoder().encode(settings))
+    #expect(back == settings)
+}
+
+@Test func aSwitchedOffGestureStaysOffAcrossTheWire() throws {
+    var settings = TrackpadSettings()
+    settings.missionControl = nil
+    let json = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
+    #expect(json.contains(#""missionControl":null"#))
+    #expect(try JSONDecoder().decode(TrackpadSettings.self, from: Data(json.utf8)).missionControl == nil)
 }
