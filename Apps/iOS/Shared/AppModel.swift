@@ -43,6 +43,15 @@ struct Appearance: Codable, Equatable {
     /// Which edge the pill is on right now; follows the device-bottom edge through rotation.
     var pillSide = Side.left
 
+    // What is on screen, written by the pill, onboarding and settings
+    var showOnboarding = !UserDefaults.standard.bool(forKey: "onboarded")
+    var showSettings = false
+    var menuOpen = false
+    /// Width of the open clipboard column in points; the pad gives up that much on the pill's side.
+    var columnWidth = 0.0
+    /// While true the pad also streams raw touches, which the Mac writes to a JSONL recording.
+    var recording = false { didSet { if recording != oldValue { link.send(.record(recording)) } } }
+
     // The clipboard, as the Mac reports it
     private(set) var pill: ClipItem?
     private(set) var clipboard: [ClipItem] = []
