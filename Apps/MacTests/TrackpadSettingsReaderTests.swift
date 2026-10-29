@@ -118,3 +118,23 @@ private func read(_ overrides: [String: Any] = [:], global: [String: Any] = [:],
 @Test func theSystemReportsALiveTrackpadSpeed() {
     if let live = TrackpadSettingsReader.liveSpeed() { #expect((0...3).contains(live)) }
 }
+
+// HIDParameters as this Mac reports them: 16.16 fixed point.
+@Test func fixedPointSpeedsDecodeToTheSliderValues() {
+    let properties: [String: Any] = [
+        "HIDTrackpadAcceleration": 45056, "HIDTrackpadScrollAcceleration": 20480,
+    ]
+    #expect(TrackpadSettingsReader.speed("HIDTrackpadAcceleration", in: properties) == 0.6875)
+    #expect(TrackpadSettingsReader.speed("HIDTrackpadScrollAcceleration", in: properties) == 0.3125)
+    #expect(TrackpadSettingsReader.speed("HIDTrackpadAcceleration", in: [:]) == nil)
+}
+
+@Test func anUnsetScalingKeyReadsAsTheLiveTrackingSpeed() {
+    let global = TrackpadSettingsReader.withLiveSpeed([:], live: 45056.0 / 65536)
+    let s = TrackpadSettingsReader.settings(trackpad: [:], global: global, dock: [:])
+    #expect(s.trackingSpeed == 0.6875)
+}
+
+@Test func theLiveScrollSpeedIsReadable() {
+    if let speed = TrackpadSettingsReader.scrollSpeed() { #expect((0...3).contains(speed)) }
+}

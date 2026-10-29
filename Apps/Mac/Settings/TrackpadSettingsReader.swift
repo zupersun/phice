@@ -24,20 +24,28 @@ enum TrackpadSettingsReader {
 
     /// The tracking speed the system is applying right now. A Mac whose owner never touched the
     /// slider has no `com.apple.trackpad.scaling`, and its default is not `TrackpadSettings`'s.
-    static func liveSpeed() -> Double? {
+    static func liveSpeed() -> Double? { liveValue("HIDTrackpadAcceleration") }
+
+    /// The two-finger scroll speed in use, on the same 0...3 scale.
+    static func scrollSpeed() -> Double? { liveValue("HIDTrackpadScrollAcceleration") }
+
+    /// 16.16 fixed point, as the registry stores it: 45056 is 0.6875.
+    static func speed(_ key: String, in properties: [String: Any]) -> Double? {
+        (properties[key] as? NSNumber).map { $0.doubleValue / 65536 }
+    }
+
+    private static func liveValue(_ key: String) -> Double? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOHIDEventService"),
                                            &iterator) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(iterator) }
-        // The system pushes the same speed to every HID service; 16.16 fixed point.
+        // The system pushes the same speeds to every HID service.
         while case let service = IOIteratorNext(iterator), service != 0 {
             defer { IOObjectRelease(service) }
             let properties = IORegistryEntryCreateCFProperty(
                 service, "HIDEventServiceProperties" as CFString, kCFAllocatorDefault, 0)
             let parameters = properties?.takeRetainedValue() as? [String: Any]
-            if let fixed = parameters?["HIDTrackpadAcceleration"] as? NSNumber {
-                return fixed.doubleValue / 65536
-            }
+            if let found = parameters.flatMap({ speed(key, in: $0) }) { return found }
         }
         return nil
     }
