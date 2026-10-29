@@ -20,7 +20,7 @@ enum TrackpadSettingsReader {
         let dock = dockValue.map { [dockKey: $0] } ?? [:]
         var s = settings(trackpad: pad.isEmpty ? domain(bluetooth) : pad,
                          global: withLiveSpeed(global, live: liveSpeed()), dock: dock)
-        if let scroll = liveParameter("HIDTrackpadScrollAcceleration") {
+        if let scroll = scrollSpeed() {
             s.scrollSpeed = min(max(scroll, 0), 3)
         }
         return s
@@ -28,23 +28,28 @@ enum TrackpadSettingsReader {
 
     /// The tracking speed the system is applying right now. A Mac whose owner never touched the
     /// slider has no `com.apple.trackpad.scaling`.
-    static func liveSpeed() -> Double? { liveParameter("HIDTrackpadAcceleration") }
+    static func liveSpeed() -> Double? { liveValue("HIDTrackpadAcceleration") }
 
-    /// One of the speeds the system pushes to every HID service, as a 0...3 value.
-    static func liveParameter(_ key: String) -> Double? {
+    /// The two-finger scroll speed in use, on the same 0...3 scale.
+    static func scrollSpeed() -> Double? { liveValue("HIDTrackpadScrollAcceleration") }
+
+    /// 16.16 fixed point, as the registry stores it: 45056 is 0.6875.
+    static func speed(_ key: String, in properties: [String: Any]) -> Double? {
+        (properties[key] as? NSNumber).map { $0.doubleValue / 65536 }
+    }
+
+    private static func liveValue(_ key: String) -> Double? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOHIDEventService"),
                                            &iterator) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(iterator) }
-        // The system pushes the same speed to every HID service; 16.16 fixed point.
+        // The system pushes the same speeds to every HID service.
         while case let service = IOIteratorNext(iterator), service != 0 {
             defer { IOObjectRelease(service) }
             let properties = IORegistryEntryCreateCFProperty(
                 service, "HIDEventServiceProperties" as CFString, kCFAllocatorDefault, 0)
             let parameters = properties?.takeRetainedValue() as? [String: Any]
-            if let fixed = parameters?[key] as? NSNumber {
-                return fixed.doubleValue / 65536
-            }
+            if let found = parameters.flatMap({ speed(key, in: $0) }) { return found }
         }
         return nil
     }
