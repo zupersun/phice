@@ -55,10 +55,15 @@ let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .u
 let store = FileKeyStore(url: support.appending(path: "Phice-fake-phone/keys.json"))
 let link = NetworkPhoneLink(deviceName: options["--name"] ?? "Fake iPhone", keyStore: store)
 var asked: Set<String> = []
+var lastState = link.state
 link.onMessage = { print("mac: \($0)") }
 link.onChange = {
-    // Pair only when holding no key; with one, the link reconnects to that Mac by itself.
-    guard store.peers.isEmpty, link.state == .searching,
+    if link.state != lastState {
+        lastState = link.state
+        print("fake-phone: \(link.state)")
+    }
+    // A Mac it holds a key for is reconnected to by the link itself; pair only when none is in sight.
+    guard [.searching, .unreachable].contains(link.state), !link.macs.contains(where: \.paired),
           let mac = link.macs.first(where: { $0.pairingOpen && !asked.contains($0.id) }) else { return }
     asked.insert(mac.id)
     print("fake-phone: asking \(mac.name) to pair; click Allow there")
@@ -77,6 +82,8 @@ while link.state != .connected {
     try await Task.sleep(for: .milliseconds(20))
 }
 print("fake-phone: connected; playing \(frames.count) frames of \(fixture)")
+// What the phone app does too: the Mac's driver follows the settings the phone recognises with.
+link.send(.settings(settings))
 
 // MARK: Play
 
