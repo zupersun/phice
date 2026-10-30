@@ -44,9 +44,7 @@ public enum PadEvent: Codable, Sendable, Equatable {
     case paste(itemID: String)
 }
 
-/// How the recogniser read one finger; it drives the glow and the haptics. A press goes
-/// `live → pressed` (the button is down), a deep press `pressed → force`, and back to `live`, or
-/// gone on lifting, when the button comes up.
+/// How the recogniser read one finger; it drives the glow.
 public enum TouchVerdict: String, Codable, Sendable {
     case live, pressed, force, rejected
 }
