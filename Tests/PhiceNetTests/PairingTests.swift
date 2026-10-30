@@ -28,9 +28,9 @@ import Testing
     #expect(rig.phoneStore.peers.isEmpty)
 }
 
-/// A request whose phone leaves is withdrawn at once, so the alert goes; answering it does nothing,
-/// and the next request, from anyone, arrives as a new one.
-@MainActor @Test func aVanishedRequestIsWithdrawn() async {
+/// A request whose phone leaves is withdrawn at once and closes the window, so nobody can step in
+/// after it; answering it does nothing, and pairing again takes the window reopened.
+@MainActor @Test func aVanishedRequestIsWithdrawnAndClosesTheWindow() async {
     let rig = Rig()
     rig.mac.pairingOpen = true
     #expect(await rig.start())
@@ -41,16 +41,21 @@ import Testing
     #expect(await eventually { rig.events == ["request iPhone"] })
     gone.connection.cancel()  // the phone went to the background
     #expect(await eventually { rig.events == ["request iPhone", "withdrawn"] })
-    #expect(rig.mac.pairingOpen)
+    #expect(!rig.mac.pairingOpen)
 
+    let intruder = PairingClient(port: rig.mac.port!)
+    #expect(await eventually { intruder.refused })
+    rig.shown[0].respond(true)
+    try? await Task.sleep(for: .milliseconds(200))
+    #expect(rig.shown.count == 1)
+    #expect(rig.macStore.peers.isEmpty)
+
+    rig.mac.pairingOpen = true  // the user presses Pair New iPhone again
     let next = PairingClient(port: rig.mac.port!)
     #expect(await eventually { next.state == .ready })
     next.request(name: "iPhone")
     #expect(await eventually { rig.shown.count == 2 })
     #expect(rig.shown[0].id != rig.shown[1].id)
-    rig.shown[0].respond(true)
-    try? await Task.sleep(for: .milliseconds(200))
-    #expect(rig.macStore.peers.isEmpty)
     rig.shown[1].respond(true)
     #expect(await eventually { rig.macStore.peers == [next.phoneID] })
 }

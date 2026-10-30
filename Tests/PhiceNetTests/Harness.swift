@@ -168,6 +168,13 @@ func randomKey() -> Data {
     /// The Mac closed it.
     private(set) var ended = false
 
+    var refused: Bool {
+        switch state {
+        case .waiting, .failed: true
+        default: false
+        }
+    }
+
     init(port: NWEndpoint.Port, phoneID: String = UUID().uuidString) {
         self.phoneID = phoneID
         connection = NWConnection(host: "127.0.0.1", port: port,

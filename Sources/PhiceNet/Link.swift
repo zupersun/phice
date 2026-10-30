@@ -53,7 +53,8 @@ public struct PairedPhone: Sendable, Equatable, Identifiable {
 public enum PairingEvent: Sendable {
     /// Show Allow / Don't Allow.
     case request(PairingRequest)
-    /// The request on screen is gone (its phone left, or the window closed): dismiss the alert.
+    /// The request on screen is gone (its phone left, or the window closed): dismiss the alert. The
+    /// window is closed either way; pairing again takes Pair New iPhone again.
     case withdrawn
     /// Two devices asked at once: both were refused and the window closed.
     case conflict
@@ -76,7 +77,8 @@ public enum PairingEvent: Sendable {
 @MainActor public protocol MacLink: AnyObject {
     /// Whether a new phone may pair. The UI sets it true from "Pair New iPhone"; the link sets it
     /// back to false, firing `onChange`, after 60 s, after any answer (Allow or Don't Allow), on a
-    /// conflict, or when the UI sets it false. A request on screen when it closes is withdrawn.
+    /// conflict, when the asking phone leaves (`.withdrawn`), or when the UI sets it false. A request
+    /// on screen when it closes is withdrawn.
     var pairingOpen: Bool { get set }
     var connectedDevice: String? { get }
     /// Changes fire `onChange`.
