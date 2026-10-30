@@ -185,3 +185,14 @@ private func onlyMove(_ poster: FakePoster) -> (dx: Double, dy: Double, dragging
         + driver.handle(.frames([TouchFrame(t: 0, touches: [])]), now: 0)
     #expect(replies.isEmpty && poster.calls.isEmpty)
 }
+
+@Test func aNewPhoneClockDoesNotZeroTheFirstMove() {
+    let (driver, poster) = makeDriver()
+    driver.send(.move(dx: 1, dy: 0, t: 500))
+    // A rebooted or different phone says hello and starts its clock near zero.
+    _ = driver.handle(.hello(deviceName: "iPhone", appVersion: "2"), now: 1)
+    driver.send(.move(dx: 4, dy: 0, t: 2))
+    let expected = accelerated(4, 0, dt: MacDriver.maxInterval)
+    guard case let .move(dx, dy, _) = poster.calls.last else { Issue.record("no move"); return }
+    #expect(dx == expected.0 && dy == expected.1)
+}

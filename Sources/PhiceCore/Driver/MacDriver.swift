@@ -68,7 +68,11 @@ public final class MacDriver {
         case let .enabled(on):
             if !on { releaseAll(); stopMomentum() }
             enabled = on
-        case .hello, .heartbeat, .record, .frames, .forget:
+        case .hello:
+            // A new connection may bring a rebooted or different phone, whose clock starts over.
+            lastMove = nil
+            lastScroll = nil
+        case .heartbeat, .record, .frames, .forget:
             break
         }
         return []

@@ -60,7 +60,8 @@ import PhiceNet
         let directory = AppEnvironment.supportDirectory
         let clipboard = Clipboard(store: ClipStore(directory: directory))
         return AgentController(
-            link: LinkFactory.make(), poster: makePoster(options, clipboard: clipboard),
+            link: LinkFactory.make(autoAllow: options.autoAllow),
+            poster: makePoster(options, clipboard: clipboard),
             clipboard: clipboard, directory: directory,
             shortcuts: { await ShortcutsCLI.list() }, accessibility: { CGPreflightPostEventAccess() },
             clock: { ProcessInfo.processInfo.systemUptime }, autoAllow: options.autoAllow)

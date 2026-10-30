@@ -5,9 +5,8 @@
 #
 #   scripts/e2e.sh [fixture ...]        default: every fixture
 #
-# The agent is restarted for each fixture: its driver keeps the last move's phone timestamp across
-# connections, and every fixture's clock starts near zero, so a second fixture on the same agent
-# would start with a zero interval that an offline replay never sees.
+# The agent is restarted for each fixture, so each one starts from a fresh driver, as the offline
+# replay does. Under --auto-allow it keeps its pairing keys in memory, so every run pairs anew.
 # Momentum steps follow the Mac's clock, not the phone's, so lines with a momentum phase are left
 # out of the comparison. The first run may show a Local Network prompt; allow it and run again.
 set -uo pipefail
