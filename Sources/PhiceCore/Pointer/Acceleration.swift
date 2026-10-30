@@ -119,9 +119,16 @@ public struct PointerAcceleration: Sendable {
     /// Pad-point delta over `dt` seconds to screen points.
     public mutating func apply(dx: Double, dy: Double, dt: Double) -> (dx: Double, dy: Double) {
         let x = dx * Trackpad.countsPerPoint, y = dy * Trackpad.countsPerPoint
-        // Speed is counts per report; reports closer together than the trackpad's rate count as one.
-        let rate = dt > 0 ? Trackpad.reportInterval / max(dt, Trackpad.reportInterval) : 1
-        let velocity = max((x * x + y * y).squareRoot().rounded(.down) * rate, 1.0 / 65536)
+        let distance = (x * x + y * y).squareRoot()
+        // Speed is counts per trackpad report. Apple counts a report that comes early as a whole
+        // one, since its trackpad never reports faster than 120 Hz; the phone samples at 240 Hz,
+        // and read that way its steps got half the speed and a third less travel. So a shorter
+        // step counts as the fraction of a report it is, down to a quarter so a glitch cannot fake
+        // a flick.
+        let reports = dt > 0 ? max(dt, Trackpad.reportInterval / 4) / Trackpad.reportInterval : 1
+        let perReport = reports < 1
+            ? (distance / reports).rounded(.down) : distance.rounded(.down) / reports
+        let velocity = max(perReport, 1.0 / 65536)
         let gain = curve.multiplier(velocity) / velocity
         return (x * gain, y * gain)
     }

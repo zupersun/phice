@@ -5,30 +5,31 @@ import Testing
 // IOHIDPointerAccelerator and IOHIDScrollAccelerator, copied verbatim into a C++ harness and fed the
 // same input in trackpad counts (pad points x 400/153) at the trackpad's resolution and report rate.
 
-/// (dx, dy, dt) in pad points and seconds; the first nine at the trackpad's 120 Hz.
+/// (dx, dy, dt) in pad points and seconds; the first nine at the trackpad's 120 Hz. Steps closer
+/// together than a report are deliberately not Apple's; see the test after this one.
 private let moves: [(Double, Double, Double)] = [
     (0.3, 0.1, 1.0 / 120), (1, 0, 1.0 / 120), (2, -1.5, 1.0 / 120), (5, 3, 1.0 / 120),
     (12, -7, 1.0 / 120), (25, 10, 1.0 / 120), (60, 0, 1.0 / 120), (120, 80, 1.0 / 120),
-    (300, -200, 1.0 / 120), (10, 0, 1.0 / 60), (10, 0, 0.004), (10, 0, 0.05), (40, 0, 1.0 / 60),
+    (300, -200, 1.0 / 120), (10, 0, 1.0 / 60), (10, 0, 0.05), (40, 0, 1.0 / 60),
 ]
 
 /// Screen points out, x axis; y always keeps the input's direction.
 private let pointerGolden: [(speed: Double, x: [Double])] = [
     (0.6875, [0.18070747757140351, 0.74728353458592911, 2.0757325537576317, 8.4761805152163205,
               38.979132295629967, 124.49257093433242, 338.74968570896732, 516.0832148667597,
-              864.36431991555207, 15.487280783348174, 25.053796027245969, 9.166718503439677,
+              864.36431991555207, 15.487280783348174, 9.166718503439677,
               172.53980695839977]),
     (0.6, [0.18246331491364226, 0.7267520154636139, 1.9288167684494069, 7.5096339237182645,
            33.254015052797385, 104.97752957478184, 287.08576598163285, 439.50250413264354,
-           737.05978659897437, 13.821442016220727, 21.641428262106562, 8.6529210998713886,
+           737.05978659897437, 13.821442016220727, 8.6529210998713886,
            145.90532480271781]),
     (0, [0.18823529411764703, 0.62745098039215674, 1.2549019607843135, 3.1372549019607834,
          7.5294117647058814, 15.686274509803917, 36.914396873342483, 56.068431697408627,
-         93.829466611431684, 6.2745098039215677, 6.2745098039215677, 6.2745098039215677,
+         93.829466611431684, 6.2745098039215677, 6.2745098039215677,
          25.098039215686271]),
     (3, [0.18823699452865109, 1.3736571900424628, 5.7715631903120421, 31.920787187498178,
          180.77368836669476, 624.93932957947095, 1452.0108869259057, 2087.6888414521504,
-         3438.306068444158, 55.952418231226929, 108.40643336982724, 22.52535687916793,
+         3438.306068444158, 55.952418231226929, 22.52535687916793,
          847.86287940633247]),
 ]
 
@@ -41,6 +42,33 @@ func pointerMatchesIOHIDFamily(_ row: Int) {
         #expect(close(out.dx, want), "speed \(speed) move (\(dx), \(dy), \(dt))")
         #expect(close(out.dy, want * dy / dx), "speed \(speed) keeps direction")
     }
+}
+
+@Test func stepsFasterThanTheTrackpadsReportsKeepItsSpeed() {
+    // Apple counts a report that comes early as one whole report: its trackpad never reports faster
+    // than 120 Hz. The phone samples at 240 Hz, so its steps are the fractions of a report they are.
+    for speed in [0.6875, 2.0] {
+        var report = PointerAcceleration(curves: ThisMac.pointer, trackingSpeed: speed)
+        var halves = report, quarters = report
+        let whole = report.apply(dx: 12, dy: -7, dt: 1.0 / 120)
+        var half = (dx: 0.0, dy: 0.0), quarter = (dx: 0.0, dy: 0.0)
+        for _ in 0 ..< 2 {
+            let out = halves.apply(dx: 6, dy: -3.5, dt: 1.0 / 240)
+            half = (half.dx + out.dx, half.dy + out.dy)
+        }
+        for _ in 0 ..< 4 {
+            let out = quarters.apply(dx: 3, dy: -1.75, dt: 1.0 / 480)
+            quarter = (quarter.dx + out.dx, quarter.dy + out.dy)
+        }
+        #expect(close(half.dx, whole.dx) && close(half.dy, whole.dy), "speed \(speed), 240 Hz")
+        #expect(close(quarter.dx, whole.dx) && close(quarter.dy, whole.dy), "speed \(speed), 480 Hz")
+    }
+}
+
+@Test func aTimestampGlitchCannotFakeAFlick() {
+    var glitch = PointerAcceleration(curves: ThisMac.pointer, trackingSpeed: 0.6875)
+    var quarter = glitch
+    #expect(glitch.apply(dx: 3, dy: 0, dt: 1e-6).dx == quarter.apply(dx: 3, dy: 0, dt: 1.0 / 480).dx)
 }
 
 @Test func trackingSpeedAboveTheLastCurveUsesTheLastCurve() {
