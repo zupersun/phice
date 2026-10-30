@@ -78,8 +78,9 @@ struct SettingsView: View {
                 }
             }
             SliderRow(title: "Glow intensity", value: $model.appearance.glowIntensity, range: 0.3 ... 1)
+            // The pad runs at minimum screen brightness; below half the border is hard to find.
             SliderRow(title: "Border brightness", value: $model.appearance.borderBrightness,
-                      range: 0.2 ... 1)
+                      range: 0.5 ... 1)
         }
     }
 

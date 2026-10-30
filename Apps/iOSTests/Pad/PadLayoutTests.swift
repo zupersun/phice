@@ -72,6 +72,23 @@ private let screen = CGSize(width: 874, height: 402)
         }
     }
 
+    /// iOS's three-finger undo, redo and copy gestures cancel the app's touches as a third finger
+    /// lands, which killed every three- and four-finger gesture on the iPhone. The first responder's
+    /// configuration turns them off.
+    @Test func turnsOffTheThreeFingerEditingGestures() async throws {
+        let scene = try #require(app.connectedScenes.first as? UIWindowScene)
+        let onboarding = model.showOnboarding
+        defer { model.showOnboarding = onboarding }
+        model.showOnboarding = false
+        func pad(in view: UIView) -> PadTouchView? {
+            view as? PadTouchView ?? view.subviews.lazy.compactMap { pad(in: $0) }.first
+        }
+        try await until { scene.keyWindow.flatMap { pad(in: $0)?.isFirstResponder } == true }
+        let shown = try #require(scene.keyWindow.flatMap { pad(in: $0) })
+        #expect(shown.isFirstResponder)
+        #expect(shown.editingInteractionConfiguration == .none)
+    }
+
     private func until(_ done: () -> Bool) async throws {
         for _ in 0 ..< 500 where !done() { try await Task.sleep(for: .milliseconds(20)) }
     }

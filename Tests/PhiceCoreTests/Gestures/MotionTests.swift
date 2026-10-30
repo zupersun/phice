@@ -114,6 +114,32 @@ private let thumbAndThree: [(UInt16, Double, Double)] = [
     #expect(pad.events == [.shortcut(.spaceRight), .shortcut(.spaceLeft)])
 }
 
+/// Fingers landing one after another while the hand is already on its way, as real hands do.
+private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double, dy: Double) {
+    let ids = (1 ... fingers).map(UInt16.init)
+    let rate = (dx / 0.15, dy / 0.15)
+    for (i, id) in ids.enumerated() {
+        pad.land(id, 350 + Double(i) * 50, 200)
+        guard i < ids.count - 1 else { break }
+        let step = (rate.0 * gap, rate.1 * gap)
+        pad.move(Dictionary(uniqueKeysWithValues: ids[...i].map { ($0, step) }), frames: Int(gap * 120))
+    }
+    pad.move(ids, dx, dy, frames: 12)
+    ids.forEach { pad.lift($0) }
+}
+
+@Test func threeFingersLandingRaggedlyMidSwipeStillChangeSpace() {
+    var pad = Pad()
+    raggedSwipe(&pad, fingers: 3, gap: 0.06, dx: -120, dy: 0)
+    #expect(pad.actions == [.shortcut(.spaceRight)])
+}
+
+@Test func fourFingersLandingRaggedlyMidSwipeStillOpenMissionControl() {
+    var pad = Pad { $0.missionControl = [.four] }
+    raggedSwipe(&pad, fingers: 4, gap: 0.08, dx: 0, dy: -120)
+    #expect(pad.actions == [.shortcut(.missionControl)])
+}
+
 @Test func threeFingersUpOpenMissionControlAndDownOpensAppExposeOnlyIfSet() {
     var pad = Pad()
     pad.land(three)
@@ -125,15 +151,32 @@ private let thumbAndThree: [(UInt16, Double, Double)] = [
     pad.lift(1, 2, 3)
     #expect(pad.events == [.shortcut(.missionControl)])
 
-    var expose = Pad { $0.appExpose = .three }
+    var expose = Pad { $0.appExpose = [.three] }
     expose.land(three)
     expose.move([1, 2, 3], 0, 100, frames: 8)
     expose.lift(1, 2, 3)
     #expect(expose.events == [.shortcut(.appExpose)])
 }
 
+@Test func whenTheMacEnablesThreeAndFourFingersBothSwipe() {
+    // This Mac's own setting: both swipe keys at 2, as macOS ships.
+    var pad = Pad()
+    pad.land(three)
+    pad.move([1, 2, 3], -100, 0, frames: 8)
+    pad.lift(1, 2, 3)
+    pad.wait(0.6)
+    pad.land(four)
+    pad.move([1, 2, 3, 4], -100, 0, frames: 8)
+    pad.lift(1, 2, 3, 4)
+    pad.wait(0.6)
+    pad.land(four)
+    pad.move([1, 2, 3, 4], 0, -100, frames: 8)
+    pad.lift(1, 2, 3, 4)
+    #expect(pad.events == [.shortcut(.spaceRight), .shortcut(.spaceRight), .shortcut(.missionControl)])
+}
+
 @Test func fourFingerSwipesFollowTheMacsChoiceOfFingers() {
-    var pad = Pad { $0.swipeSpaces = .four; $0.missionControl = .four }
+    var pad = Pad { $0.swipeSpaces = [.four]; $0.missionControl = [.four] }
     pad.land(four)
     pad.move([1, 2, 3, 4], -100, 0, frames: 8)
     pad.lift(1, 2, 3, 4)
@@ -149,7 +192,7 @@ private let thumbAndThree: [(UInt16, Double, Double)] = [
 }
 
 @Test func threeFingerPageSwipesGoBackAndForwardWhenSpacesUseFour() {
-    var pad = Pad { $0.swipePages = .threeFingerSwipe; $0.swipeSpaces = .four }
+    var pad = Pad { $0.swipePages = .threeFingerSwipe; $0.swipeSpaces = [.four] }
     pad.land(three)
     pad.move([1, 2, 3], 100, 0, frames: 8)
     pad.lift(1, 2, 3)

@@ -11,8 +11,7 @@ extension Recogniser {
             if lockedSince != nil {
                 session.locked = true
                 lockedSince = nil
-            } else if let tap = lastTap, tap.fingers == 1,
-                      track.startT - tap.t <= tuning.doubleClickInterval {
+            } else if let tap = lastTap, tap.fingers == 1, track.startT - tap.t <= tuning.dragWindow {
                 session.tapDrag = true
             }
             mode = .pending
@@ -32,8 +31,8 @@ extension Recogniser {
         case .pointing, .swiping:
             mode = .pending
             resetRefs(at: t)
-        case .scrolling where t - session.start <= tuning.together:
-            // A late finger of the same hand: this was never a two-finger scroll.
+        case .scrolling where t - session.refT <= tuning.together:
+            // The hand is still landing, one finger after another: this was never a two-finger scroll.
             mode = .pending
             resetRefs(at: t)
             return [.scroll(dx: 0, dy: 0, phase: .ended, t: t)]
@@ -185,13 +184,12 @@ extension Recogniser {
         let (dx, dy) = session.acc
         let long = max(abs(dx), abs(dy)), short = min(abs(dx), abs(dy))
         guard long >= tuning.swipeDistance, long >= short * tuning.swipeDominance else { return [] }
-        mode = .done
-        let count = Fingers(rawValue: fingers)
+        guard let count = Fingers(rawValue: fingers) else { return [] }
         let pages = settings.swipePages == .threeFingerSwipe || settings.swipePages == .both
         let shortcut: Shortcut?
         if abs(dx) > abs(dy) {
             // Content follows the fingers: swiping left brings in what is to the right.
-            if settings.swipeSpaces == count {
+            if settings.swipeSpaces.contains(count) {
                 shortcut = dx < 0 ? .spaceRight : .spaceLeft
             } else if fingers == 3, pages {
                 shortcut = dx > 0 ? .back : .forward
@@ -199,11 +197,14 @@ extension Recogniser {
                 shortcut = nil
             }
         } else if dy < 0 {
-            shortcut = settings.missionControl == count ? .missionControl : nil
+            shortcut = settings.missionControl.contains(count) ? .missionControl : nil
         } else {
-            shortcut = settings.appExpose == count ? .appExpose : nil
+            shortcut = settings.appExpose.contains(count) ? .appExpose : nil
         }
-        return shortcut.map { [.shortcut($0)] } ?? []
+        // Nothing for this many fingers: stay open, so a finger still landing can make it one.
+        guard let shortcut else { return [] }
+        mode = .done
+        return [.shortcut(shortcut)]
     }
 
     // MARK: Lifting
@@ -310,18 +311,12 @@ extension Recogniser {
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 1, clicks: clicks)
             return click(.left, clicks)
         case 2 where settings.smartZoom && previous != nil:
-            secondaryAt = nil
             smartZoomed.toggle()
             return [.shortcut(smartZoomed ? .zoomIn : .zoomReset)]
         case 2:
+            // On lift, like the Mac's own: a smart zoom, if a second tap comes, follows the click.
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 2, clicks: 1)
-            guard settings.secondaryClick == .twoFingers else { return [] }
-            // With smart zoom on, a second tap may yet claim this one: hold the click back.
-            if settings.smartZoom {
-                secondaryAt = t
-                return []
-            }
-            return click(.right, 1)
+            return settings.secondaryClick == .twoFingers ? click(.right, 1) : []
         case 3:
             // Look Up by three-finger tap, when the Mac has it there instead of on force click.
             return settings.lookUpForceClick ? [] : [.forceClick]

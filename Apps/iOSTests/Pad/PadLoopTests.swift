@@ -54,14 +54,6 @@ private func sample(_ phase: Touch.Phase, t: Double, tolerance: Double = 0) -> T
     #expect(link.frames.map(\.count) == [1])
 }
 
-@MainActor @Test func touchingThePadMarksTheLastTouch() {
-    let model = AppModel(link: KeptLink())
-    let loop = PadLoop(model: model)
-    model.lastTouch = .distantPast
-    loop.touches([sample(.began, t: 1)])
-    #expect(model.lastTouch > .distantPast)
-}
-
 @MainActor @Test func thePadsLiveTouchesAreWhatIsDown() {
     let loop = PadLoop(model: AppModel(link: KeptLink()))
     loop.touches([sample(.began, t: 1)])

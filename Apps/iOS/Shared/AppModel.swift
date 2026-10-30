@@ -22,7 +22,7 @@ struct Appearance: Codable, Equatable {
     var glow = true
     var glowColor = GlowColor.warmWhite
     var glowIntensity = 1.0
-    var borderBrightness = 0.85
+    var borderBrightness = 1.0
 }
 
 /// State the pad and the pill share. The pad writes what the fingers are doing; the pill draws it;
@@ -50,8 +50,6 @@ struct Appearance: Codable, Equatable {
     // What the recogniser sees, written by the pad
     var verdicts: [UInt16: TouchVerdict] = [:]
     var grab: Grab?
-    /// When a finger last touched the pad or the pill; the pill's border dims 30 s after it.
-    var lastTouch = Date()
     /// Which edge the pill is on right now; follows the device-bottom edge through rotation.
     var pillSide = Side.left
 
