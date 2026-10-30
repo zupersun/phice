@@ -46,11 +46,24 @@ private let large = CGSize(width: 956, height: 440)
         let g = PillGeometry(screen: small, side: side)
         let centre = CGPoint(x: g.pill.midX, y: g.pill.midY)
         #expect(g.item(at: centre) == .clipboard)
-        #expect(g.item(at: CGPoint(x: centre.x, y: centre.y - 80)) == .power)
-        #expect(g.item(at: CGPoint(x: centre.x, y: centre.y + 80)) == .settings)
+        #expect(g.item(at: CGPoint(x: centre.x, y: centre.y - 60)) == .power)
+        #expect(g.item(at: CGPoint(x: centre.x, y: centre.y + 60)) == .settings)
         #expect(g.item(at: g.centre(of: .power)) == .power)
         #expect(g.item(at: CGPoint(x: small.width / 2, y: centre.y)) == nil)
         #expect(g.item(at: CGPoint(x: centre.x, y: 10)) == nil)
+    }
+}
+
+/// The menu is the pill grown along the edge: same thickness and inset, nothing reaches into the pad.
+@Test func theMenuGrowsOnlyAlongTheEdge() {
+    for side in [Side.left, .right] {
+        let g = PillGeometry(screen: small, side: side)
+        #expect(g.menu.width == g.pill.width)
+        #expect(g.menu.minX == g.pill.minX)
+        #expect(g.menu.midY == g.pill.midY)
+        #expect(g.menu.height > g.pill.height)
+        #expect(g.menu.height < small.height)
+        for item in MenuItem.allCases { #expect(g.menu.contains(g.centre(of: item))) }
     }
 }
 

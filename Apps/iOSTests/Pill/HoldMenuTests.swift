@@ -73,11 +73,12 @@ private let origin = CGPoint(x: 30, y: 200)
     #expect(menu.isOpen)
 }
 
-@Test func aPressBecomesAHoldAfterFourHundredMilliseconds() {
+/// As quick as a long press on the Dynamic Island: 0.4 s felt slow on the iPhone.
+@Test func aPressBecomesAHoldAfterAQuarterSecond() {
     var press = Press(at: origin, t: 10)
-    #expect(press.tick(10.39) == nil)
-    #expect(press.move(to: CGPoint(x: 36, y: 204), t: 10.2) == nil)
-    #expect(press.tick(10.4) == .hold)
+    #expect(press.tick(10.24) == nil)
+    #expect(press.move(to: CGPoint(x: 36, y: 204), t: 10.1) == nil)
+    #expect(press.tick(10.25) == .hold)
     #expect(press.tick(10.5) == nil)
     #expect(press.move(to: CGPoint(x: 90, y: 200), t: 10.6) == nil)
 }
