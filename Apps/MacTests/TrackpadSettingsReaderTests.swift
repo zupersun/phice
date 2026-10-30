@@ -74,22 +74,23 @@ private func read(_ overrides: [String: Any] = [:], global: [String: Any] = [:],
     #expect(read(global: none).swipePages == .off)
 }
 
-@Test func spacesUseThreeFingersThenFour() {
-    #expect(read().swipeSpaces == .three)
-    #expect(read(["TrackpadThreeFingerHorizSwipeGesture": 0]).swipeSpaces == .four)
+@Test func spacesUseEveryFingerCountTheMacEnables() {
+    #expect(read().swipeSpaces == [.three, .four])
+    #expect(read(["TrackpadThreeFingerHorizSwipeGesture": 0]).swipeSpaces == [.four])
+    #expect(read(["TrackpadFourFingerHorizSwipeGesture": 0]).swipeSpaces == [.three])
     #expect(read(["TrackpadThreeFingerHorizSwipeGesture": 0,
-                  "TrackpadFourFingerHorizSwipeGesture": 0]).swipeSpaces == nil)
+                  "TrackpadFourFingerHorizSwipeGesture": 0]).swipeSpaces == [])
 }
 
 @Test func appExposeNeedsTheDockKey() {
     let fourOnly: [String: Any] = ["TrackpadThreeFingerVertSwipeGesture": 0]
-    #expect(read().appExpose == nil)
-    #expect(read(dock: ["showAppExposeGestureEnabled": 1]).appExpose == .three)
+    #expect(read().appExpose == [])
+    #expect(read(dock: ["showAppExposeGestureEnabled": 1]).appExpose == [.three, .four])
     let s = read(fourOnly, dock: ["showAppExposeGestureEnabled": true])
-    #expect(s.appExpose == .four)
-    #expect(s.missionControl == .four)
+    #expect(s.appExpose == [.four])
+    #expect(s.missionControl == [.four])
     #expect(read(["TrackpadThreeFingerVertSwipeGesture": 0,
-                  "TrackpadFourFingerVertSwipeGesture": 0]).missionControl == nil)
+                  "TrackpadFourFingerVertSwipeGesture": 0]).missionControl == [])
 }
 
 @Test func edgeSwipeAndPinchesMapToTheirFeatures() {

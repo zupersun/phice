@@ -2,7 +2,7 @@ public enum SecondaryClick: String, Codable, Sendable {
     case twoFingers, bottomRight, bottomLeft, off
 }
 
-public enum Fingers: Int, Codable, Sendable {
+public enum Fingers: Int, Codable, Sendable, Hashable {
     case three = 3, four = 4
 }
 
@@ -12,7 +12,7 @@ public enum SwipePages: String, Codable, Sendable {
 
 /// The Mac's own trackpad settings (System Settings › Trackpad), read from
 /// `com.apple.AppleMultitouchTrackpad`, `com.apple.trackpad.scaling` and
-/// `com.apple.swipescrolldirection`. Defaults are macOS's. A nil gesture is switched off.
+/// `com.apple.swipescrolldirection`. Defaults are macOS's. A swipe with no finger counts is off.
 public struct TrackpadSettings: Codable, Sendable, Equatable {
     /// `com.apple.trackpad.scaling`, 0...3. The default is what macOS applies when the slider was
     /// never moved (`HIDTrackpadAcceleration` 45056 / 65536).
@@ -30,9 +30,11 @@ public struct TrackpadSettings: Codable, Sendable, Equatable {
     /// Force click opens Look Up; off when the Mac uses a three-finger tap for it instead.
     public var lookUpForceClick = true
     public var swipePages = SwipePages.twoFingerScroll
-    public var swipeSpaces: Fingers? = .three
-    public var missionControl: Fingers? = .three
-    public var appExpose: Fingers? = nil
+    /// The finger counts each swipe answers to: macOS keeps a switch for three and one for four,
+    /// and ships with both on.
+    public var swipeSpaces: Set<Fingers> = [.three, .four]
+    public var missionControl: Set<Fingers> = [.three, .four]
+    public var appExpose: Set<Fingers> = []
     public var notificationCenter = true
     public var launchpad = true
     public var showDesktop = true
@@ -42,8 +44,8 @@ public struct TrackpadSettings: Codable, Sendable, Equatable {
 
 /// The phone (App Store) and the Mac agent (download) update separately, so a settings message may
 /// lack a field the receiver knows or carry one it doesn't: missing keys keep their defaults and
-/// unknown ones are ignored. A switched-off gesture is written as null, never left out, so it
-/// cannot come back as the default.
+/// unknown ones are ignored. A switched-off swipe is written as an empty list, never left out, so
+/// it cannot come back as the default.
 extension TrackpadSettings {
     enum CodingKeys: String, CodingKey {
         case trackingSpeed, scrollSpeed, tapToClick, dragLock, threeFingerDrag, secondaryClick
@@ -69,9 +71,18 @@ extension TrackpadSettings {
         try read(.smartZoom, &smartZoom)
         try read(.lookUpForceClick, &lookUpForceClick)
         try read(.swipePages, &swipePages)
-        try read(.swipeSpaces, &swipeSpaces)
-        try read(.missionControl, &missionControl)
-        try read(.appExpose, &appExpose)
+        // Each swipe once held one finger count or null; overrides the phone saved then still load.
+        func fingers(_ key: CodingKeys, _ value: inout Set<Fingers>) throws {
+            guard c.contains(key) else { return }
+            if let counts = try? c.decode(Set<Fingers>.self, forKey: key) {
+                value = counts
+            } else {
+                value = try c.decode(Fingers?.self, forKey: key).map { [$0] } ?? []
+            }
+        }
+        try fingers(.swipeSpaces, &swipeSpaces)
+        try fingers(.missionControl, &missionControl)
+        try fingers(.appExpose, &appExpose)
         try read(.notificationCenter, &notificationCenter)
         try read(.launchpad, &launchpad)
         try read(.showDesktop, &showDesktop)
@@ -91,9 +102,11 @@ extension TrackpadSettings {
         try c.encode(smartZoom, forKey: .smartZoom)
         try c.encode(lookUpForceClick, forKey: .lookUpForceClick)
         try c.encode(swipePages, forKey: .swipePages)
-        try c.encode(swipeSpaces, forKey: .swipeSpaces)
-        try c.encode(missionControl, forKey: .missionControl)
-        try c.encode(appExpose, forKey: .appExpose)
+        // Sorted: a set's order changes from run to run, and the same settings should read the same.
+        func sorted(_ counts: Set<Fingers>) -> [Fingers] { counts.sorted { $0.rawValue < $1.rawValue } }
+        try c.encode(sorted(swipeSpaces), forKey: .swipeSpaces)
+        try c.encode(sorted(missionControl), forKey: .missionControl)
+        try c.encode(sorted(appExpose), forKey: .appExpose)
         try c.encode(notificationCenter, forKey: .notificationCenter)
         try c.encode(launchpad, forKey: .launchpad)
         try c.encode(showDesktop, forKey: .showDesktop)

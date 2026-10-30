@@ -18,8 +18,11 @@ enum Fixture: String, CaseIterable, Sendable {
         var s = TrackpadSettings()
         switch self {
         case .cornerClick: s.secondaryClick = .bottomRight
-        case .threeFingerDrag: s.threeFingerDrag = true; s.swipeSpaces = .four; s.missionControl = .four
-        case .swipe4: s.swipeSpaces = .four; s.missionControl = .four
+        case .threeFingerDrag:
+            s.threeFingerDrag = true
+            s.swipeSpaces = [.four]
+            s.missionControl = [.four]
+        case .swipe4: s.swipeSpaces = [.four]; s.missionControl = [.four]
         default: break
         }
         return s

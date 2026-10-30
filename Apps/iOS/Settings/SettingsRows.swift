@@ -125,9 +125,10 @@ struct TrackpadSection: View {
     }
 
     private func fingers(_ title: String,
-                         _ key: WritableKeyPath<TrackpadSettings, Fingers?>) -> some View {
+                         _ key: WritableKeyPath<TrackpadSettings, Set<Fingers>>) -> some View {
         ChoiceRow(title: title, selection: setting(key), options: [
-            (.three, "Three fingers"), (.four, "Four fingers"), (nil, "Off"),
+            ([.three], "Three fingers"), ([.four], "Four fingers"),
+            ([.three, .four], "Three or four"), ([], "Off"),
         ])
     }
 
