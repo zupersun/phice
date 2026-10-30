@@ -51,6 +51,63 @@ import Testing
     #expect(pad.events == [.forceClick, .forceClick])
 }
 
+@Test func aFingerThatPointedAndThenRestsCanForceClick() {
+    // Move onto the word, stop, press: as on a MacBook, without lifting first.
+    var pad = Pad()
+    pad.land(1, 400, 200)
+    pad.move([1], 60, 0)
+    pad.hold(0.15)
+    pad.press(1, to: steps(3))
+    #expect(pad.actions == [.forceClick])
+    #expect(pad.r.verdicts[1] == .force)
+}
+
+@Test func aSlowGlideThatFlattensIsNotAPress() {
+    var pad = Pad()
+    pad.land(1, 400, 200)
+    pad.hold(0.1)
+    pad.move([1], 60, 0, frames: 120, radius: steps(3))
+    pad.lift(1)
+    #expect(pad.actions.isEmpty)
+}
+
+@Test func easingOffAStepReArmsWithoutLifting() {
+    // The probe's shape: resting at 1 step, pressed to 3, eased back to 2 while still down.
+    var pad = Pad()
+    pad.land(1, 400, 200, r: steps(1))
+    pad.hold(0.1)
+    pad.press(1, to: steps(3))
+    pad.hold(0.2)
+    pad.press(1, to: steps(2))
+    pad.hold(0.1)
+    pad.press(1, to: steps(3))
+    #expect(pad.events == [.forceClick, .forceClick])
+}
+
+@Test func aFirmLandingReArmsAfterEasingOff() {
+    var pad = Pad()
+    pad.land(1, 400, 200, r: steps(3))
+    pad.hold(0.3)
+    #expect(pad.events == [.forceClick])
+    pad.press(1, to: steps(2))
+    pad.hold(0.1)
+    pad.press(1, to: steps(3))
+    #expect(pad.events == [.forceClick, .forceClick])
+}
+
+@Test func movingOnAndRestingAgainReArms() {
+    var pad = Pad()
+    pad.land(1, 400, 200)
+    pad.hold(0.1)
+    pad.press(1, to: steps(3))
+    pad.move([1], 40, 0)
+    pad.hold(0.15)
+    pad.press(1, to: steps(2))
+    pad.hold(0.1)
+    pad.press(1, to: steps(3))
+    #expect(pad.actions == [.forceClick, .forceClick])
+}
+
 @Test func risingOnlyToTwoStepsIsNotAPress() {
     var pad = Pad()
     pad.land(1, 400, 200, r: steps(1))

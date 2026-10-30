@@ -114,6 +114,32 @@ private let thumbAndThree: [(UInt16, Double, Double)] = [
     #expect(pad.events == [.shortcut(.spaceRight), .shortcut(.spaceLeft)])
 }
 
+/// Fingers landing one after another while the hand is already on its way, as real hands do.
+private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double, dy: Double) {
+    let ids = (1 ... fingers).map(UInt16.init)
+    let rate = (dx / 0.15, dy / 0.15)
+    for (i, id) in ids.enumerated() {
+        pad.land(id, 350 + Double(i) * 50, 200)
+        guard i < ids.count - 1 else { break }
+        let step = (rate.0 * gap, rate.1 * gap)
+        pad.move(Dictionary(uniqueKeysWithValues: ids[...i].map { ($0, step) }), frames: Int(gap * 120))
+    }
+    pad.move(ids, dx, dy, frames: 12)
+    ids.forEach { pad.lift($0) }
+}
+
+@Test func threeFingersLandingRaggedlyMidSwipeStillChangeSpace() {
+    var pad = Pad()
+    raggedSwipe(&pad, fingers: 3, gap: 0.06, dx: -120, dy: 0)
+    #expect(pad.actions == [.shortcut(.spaceRight)])
+}
+
+@Test func fourFingersLandingRaggedlyMidSwipeStillOpenMissionControl() {
+    var pad = Pad { $0.missionControl = .four }
+    raggedSwipe(&pad, fingers: 4, gap: 0.08, dx: 0, dy: -120)
+    #expect(pad.actions == [.shortcut(.missionControl)])
+}
+
 @Test func threeFingersUpOpenMissionControlAndDownOpensAppExposeOnlyIfSet() {
     var pad = Pad()
     pad.land(three)

@@ -8,12 +8,15 @@ public struct GestureTuning: Sendable, Equatable {
     /// Taps this close in time and on the pad count up into double and triple clicks (macOS: 0.5 s).
     public var doubleClickInterval = 0.5
     public var doubleClickDistance = 40.0
-    /// Tap-to-drag: a touch soon after a tap that holds this long without moving grabs.
+    /// Tap-to-drag arms only for a touch landing this soon after a tap lifts: a double tap, not a
+    /// click followed by the next stroke. Apple documents no value; this is libinput's tap timeout.
+    public var dragWindow = 0.18
+    /// An armed touch that holds this long without moving grabs.
     public var dragHold = 0.15
     /// Drag lock lets go by itself after this long with no finger down.
     public var dragLockTimeout = 3.0
     /// Fingers landing within this of each other landed as one hand: three-finger drag needs it,
-    /// and a third finger this late still turns a two-finger scroll into a three-finger gesture.
+    /// and a finger this soon after the one before still turns a young scroll into a swipe.
     public var together = 0.1
     /// The copy gesture's second finger lands at least this long after the held one.
     public var grabDelay = 0.15
@@ -49,14 +52,18 @@ public struct ForceTuning: Sendable, Equatable {
     /// Points per step: 12.139 on an iPhone 17. On other devices the pad sets it to
     /// `2 × majorRadiusTolerance`.
     public var quantum = 12.139
-    /// The resting size is read this long after landing, once the touch-down ramp is over.
+    /// The resting size is read once a finger has stayed put this long: after landing, past the
+    /// touch-down ramp, or after pointing, once it stops on its target.
     public var baselineDelay = 0.08
+    /// A pointing finger drifting less than this over `baselineDelay` has stopped.
+    public var restJitter = 3.0
     /// A force press reaches at least this many steps, and at least one more than at rest.
     public var forceSteps = 3
     /// A touch already at `forceSteps` when its baseline is read, still there this long after landing,
     /// pressed hard from the start. One that lifts sooner was a firm tap.
     public var firmHold = 0.25
-    /// Farther than this from where it rested and the touch is moving, not pressing.
+    /// Farther than this from where it rested and the touch is moving, not pressing; it needs a new
+    /// rest before it can press again.
     public var stillDistance = 10.0
     /// This many steps held still for `restingHold` is a resting hand. A firm finger is one step less.
     public var restingSteps = 4

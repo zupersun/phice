@@ -100,6 +100,27 @@ import Testing
     #expect(near(pad.travel.dx, 40))
 }
 
+@Test func aTouchLandingWellAfterAClickMovesTheCursorRatherThanDragging() {
+    // Click a button, then put the finger down to move on: that is pointing, not a drag.
+    var pad = Pad()
+    pad.tap()
+    pad.wait(0.3)
+    pad.land(1, 400, 200)
+    pad.hold(0.2)
+    pad.move([1], 40, 0)
+    pad.lift(1)
+    #expect(pad.actions == click())
+    #expect(near(pad.travel.dx, 40))
+}
+
+@Test func aSecondTapWithinTheDoubleClickIntervalStillCountsTwo() {
+    var pad = Pad()
+    pad.tap()
+    pad.wait(0.3)
+    pad.tap()
+    #expect(pad.events == click(.left, 1) + click(.left, 2))
+}
+
 @Test func aTouchAfterTheDoubleTapIntervalJustMoves() {
     var pad = Pad()
     pad.tap()
@@ -163,11 +184,9 @@ import Testing
     #expect(pad.events == click() + click(.right))
 }
 
-@Test func twoFingerTapIsASecondaryClickOnceSmartZoomCanNoLongerClaimIt() {
+@Test func twoFingerTapRightClicksTheMomentItLiftsEvenWithSmartZoomOn() {
     var pad = Pad()
     pad.tap(fingers: 2)
-    #expect(pad.events.isEmpty)
-    pad.wait(0.6)
     #expect(pad.events == click(.right))
 
     var noZoom = Pad { $0.smartZoom = false }
@@ -183,23 +202,6 @@ import Testing
     pad.lift(1)
     pad.lift(2)
     #expect(pad.events == click(.right))
-}
-
-@Test func aWaitingSecondaryClickGoesOutBeforeAnythingElseTheFingersDo() {
-    // It must land where the tap was, not wherever the cursor moves next.
-    var pad = Pad()
-    pad.tap(fingers: 2)
-    pad.wait(0.1)
-    pad.land(1, 400, 200)
-    pad.move([1], 0, 40)
-    #expect(Array(pad.events.prefix(2)) == click(.right))
-    #expect(near(pad.travel.dy, 40))
-
-    var tapped = Pad()
-    tapped.tap(fingers: 2)
-    tapped.wait(0.1)
-    tapped.tap()
-    #expect(tapped.events == click(.right) + click())
 }
 
 @Test func cornerTapsAreSecondaryClicksWhenTheMacSaysSo() {
@@ -219,18 +221,18 @@ import Testing
     #expect(left.events == click(.right) + click())
 }
 
-@Test func twoFingerDoubleTapSmartZoomsInThenBackWithoutEverOpeningAMenu() {
+@Test func twoFingerDoubleTapSmartZoomsInThenBack() {
     var pad = Pad()
     pad.tap(fingers: 2)
     pad.wait(0.1)
     pad.tap(fingers: 2)
+    #expect(pad.events == click(.right) + [.shortcut(.zoomIn)])
     pad.wait(0.6)
-    #expect(pad.events == [.shortcut(.zoomIn)])
     pad.tap(fingers: 2)
     pad.wait(0.1)
     pad.tap(fingers: 2)
-    pad.wait(0.6)
-    #expect(pad.events == [.shortcut(.zoomIn), .shortcut(.zoomReset)])
+    let again = click(.right) + [.shortcut(.zoomReset)]
+    #expect(pad.events == click(.right) + [.shortcut(.zoomIn)] + again)
 }
 
 @Test func withoutSmartZoomATwoFingerDoubleTapIsTwoSecondaryClicks() {
