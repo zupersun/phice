@@ -122,15 +122,22 @@ public final class KeychainKeyStore: KeyStore {
         return items.compactMap { item -> KeyLabel? in
             guard let peer = item[kSecAttrAccount as String] as? String, peer != Self.localAccount
             else { return nil }
-            return KeyLabel(peer: peer, label: item[kSecAttrLabel as String] as? String ?? "",
+            return KeyLabel(peer: peer, label: label(of: item),
                             date: item[kSecAttrCreationDate as String] as? Date)
         }.sorted { $0.peer < $1.peer }
+    }
+
+    /// The legacy macOS keychain gives an item stored without a label its service's name instead
+    /// (keys from before labels existed); that is no label, not a phone named "com.phice.pairing".
+    private func label(of item: [String: Any]) -> String {
+        let label = item[kSecAttrLabel as String] as? String ?? ""
+        return label == service ? "" : label
     }
 
     public func entry(for peer: String) -> KeyEntry? {
         guard let item = Self.read(service, peer), let key = item[kSecValueData as String] as? Data
         else { return nil }
-        return KeyEntry(key: key, label: item[kSecAttrLabel as String] as? String ?? "",
+        return KeyEntry(key: key, label: label(of: item),
                         date: item[kSecAttrCreationDate as String] as? Date)
     }
 

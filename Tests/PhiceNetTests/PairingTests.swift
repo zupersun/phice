@@ -98,7 +98,62 @@ import Testing
     #expect(rig.macChanges.count == 2)
 }
 
-/// Only four pairing handshakes at a time, and a flood of them never disturbs a paired phone's own.
+/// An attacker who asks first and fills the other pairing slots, here with connections trickling an
+/// unfinished frame, must not keep the real phone out unseen: one asker more than the slots hold is a
+/// conflict, so nobody gets in, the attacker included.
+@MainActor @Test func fillingThePairingSlotsIsAConflictNotALockout() async {
+    let rig = Rig()
+    rig.mac.pairingOpen = true
+    #expect(await rig.start())
+
+    let attacker = PairingClient(port: rig.mac.port!)
+    #expect(await eventually { attacker.state == .ready })
+    attacker.request(name: "Test iPhone")
+    #expect(await eventually { rig.events == ["request Test iPhone"] })
+    let fillers = (1 ..< NetworkMacLink.pairingSlots).map { _ in PairingClient(port: rig.mac.port!) }
+    #expect(await eventually { fillers.allSatisfy { $0.state == .ready } })
+    fillers.forEach { $0.connection.send(content: Data([0, 0, 0, 100]), completion: .idempotent) }
+    let trickle = Task { @MainActor in
+        while !Task.isCancelled {
+            fillers.forEach { $0.connection.send(content: Data([0x20]), completion: .idempotent) }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+    defer { trickle.cancel() }
+
+    rig.showMac(pairingOpen: true)
+    rig.phone.pair(with: rig.phone.macs[0])  // the user's real phone asks too
+    #expect(await eventually { rig.events == ["request Test iPhone", "conflict"] })
+    #expect(!rig.mac.pairingOpen)
+    #expect(await eventually { attacker.answers == [.refuse] })
+    #expect(await eventually { fillers.allSatisfy(\.ended) })
+    rig.shown[0].respond(true)  // the only Allow the user saw
+    try? await Task.sleep(for: .milliseconds(200))
+    #expect(rig.macStore.peers.isEmpty)
+    #expect(rig.phoneStore.peers.isEmpty)
+}
+
+/// Handshakes that died (here a full set failing on a wrong key, as a phone's raced paths do) stop
+/// holding a slot once a live one would have finished, so the next asker is no crowd.
+@MainActor @Test func deadPairingHandshakesStopHoldingASlot() async {
+    let rig = Rig()
+    rig.mac.pairingOpen = true
+    #expect(await rig.start())
+    let dead = (0 ..< NetworkMacLink.pairingSlots).map { _ in
+        RawClient(port: rig.mac.port!, identity: Pairing.identity, key: randomKey())
+    }
+    #expect(await eventually { dead.allSatisfy(\.refused) })
+    try? await Task.sleep(for: .milliseconds(600))  // past the fast deadAfter since each was admitted
+
+    let phone = PairingClient(port: rig.mac.port!)
+    #expect(await eventually { phone.state == .ready })
+    phone.request(name: "iPhone")
+    #expect(await eventually { rig.events == ["request iPhone"] })
+    #expect(rig.mac.pairingOpen)
+}
+
+/// A few pairing handshakes at a time, the next is a conflict, and a flood of them never disturbs a
+/// paired phone's own.
 @MainActor @Test func aFloodOfPairingHandshakesCannotCrowdOutAPairedPhone() async {
     let rig = Rig()
     rig.seedKeys()
@@ -110,7 +165,9 @@ import Testing
     #expect(await eventually { rig.phone.state == .connected })
     #expect(await eventually { rig.mac.connectedDevice == "Test iPhone" })
     try? await Task.sleep(for: .milliseconds(300))  // every handshake settled
-    #expect(flood.filter { $0.state == .ready }.count <= 4)
+    #expect(flood.filter { $0.state == .ready }.count <= NetworkMacLink.pairingSlots)
+    #expect(rig.events == ["conflict"])
+    #expect(!rig.mac.pairingOpen)
 }
 
 /// A request never replaces a key the Mac already holds, so it cannot take over a paired phone.

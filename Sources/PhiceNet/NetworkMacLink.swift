@@ -29,8 +29,9 @@ import PhiceCore
     public var onMessage: (@MainActor (PhoneToMac) -> Void)?
 
     /// Pairing connections held at once, the one being asked about included. More than one lets a
-    /// second asker show up as a conflict instead of waiting, unseen, behind the first.
-    static let pairingSlots = 4
+    /// second asker show up as a conflict instead of waiting, unseen, behind the first; one more than
+    /// this is a conflict too. Room to spare: one phone racing its paths opened 7 (measured).
+    static let pairingSlots = 8
 
     private struct Claim {
         let metadata: sec_protocol_metadata_t
@@ -159,13 +160,23 @@ import PhiceCore
     }
 
     /// Claims expire rather than being flushed, so a flood of handshakes cannot evict a paired
-    /// phone's claim in flight; pairing ones are capped, other strangers fail at TLS.
+    /// phone's claim in flight; other strangers fail at TLS. A pairing handshake beyond the slots is
+    /// a conflict: refusing it at TLS would hide an asker (the user's phone, behind slots an attacker
+    /// filled), and nobody can tell which asker is which.
     private func admit(_ metadata: sec_protocol_metadata_t, _ identity: String) -> Bool {
         let now = ContinuousClock.now
         claimed = claimed.filter { now - $0.value.at < timing.handshake }
         if identity == Pairing.identity {
-            let inFlight = claimed.values.filter { $0.identity == Pairing.identity }.count
-            guard pairingOpen, pairings.count + inFlight < Self.pairingSlots else { return false }
+            guard pairingOpen else { return false }
+            // A dead handshake's claim cannot be found again (its metadata goes with it), so it stops
+            // holding a slot once a live one would have finished: a phone's own retries are no crowd.
+            let inFlight = claimed.values.filter {
+                $0.identity == Pairing.identity && now - $0.at < timing.deadAfter
+            }.count
+            guard pairings.count + inFlight < Self.pairingSlots else {
+                conflict()
+                return false
+            }
         } else {
             guard phones.contains(identity), claimed.count < 256 else { return false }
         }
@@ -291,7 +302,7 @@ import PhiceCore
         else { return channel.close() }
         if let pending {
             // The same phone asking twice is misbehaving; two phones asking is a conflict.
-            return pending === channel ? channel.close() : conflict(pending, channel)
+            return pending === channel ? channel.close() : conflict()
         }
         guard let onPairing else { return channel.close() }
         pending = channel
@@ -303,12 +314,13 @@ import PhiceCore
         }))
     }
 
-    /// Nobody can tell which of two askers is the user's phone, so neither gets in.
-    private func conflict(_ first: FrameChannel<Handshake>, _ second: FrameChannel<Handshake>) {
+    /// Nobody can tell which asker is the user's phone, so nobody gets in: every pairing connection
+    /// is refused and the window closes.
+    private func conflict() {
+        let askers = pairings
         pending = nil
-        pairings.removeAll { $0 === first || $0 === second }
-        first.finish(with: Handshake.refuse)
-        second.finish(with: Handshake.refuse)
+        pairings = []
+        askers.forEach { $0.finish(with: Handshake.refuse) }
         onPairing?(.conflict)
         pairingOpen = false
     }
