@@ -73,3 +73,18 @@ import Testing
     #expect(settings.missionControl == [])
     #expect(settings.appExpose == [.four])
 }
+
+@Test func overridesSavedWithTheRetiredLookUpSettingStillLoad() throws {
+    // The phone stored this key in its overrides until it was removed; the rest must still load.
+    let saved = #"{"tapToClick":false,"lookUpForceClick":false,"swipeSpaces":[4],"trackingSpeed":2}"#
+    let json = Data(saved.utf8)
+    let settings = try JSONDecoder().decode(TrackpadSettings.self, from: json)
+    #expect(settings.tapToClick == false)
+    #expect(settings.swipeSpaces == [.four])
+    #expect(settings.trackingSpeed == 2)
+}
+
+@Test func theRetiredLookUpSettingIsNoLongerWritten() throws {
+    let json = String(decoding: try JSONEncoder().encode(TrackpadSettings()), as: UTF8.self)
+    #expect(!json.contains("lookUpForceClick"))
+}

@@ -91,7 +91,6 @@ struct TrackpadSection: View {
                 (.twoFingers, "Two fingers"), (.bottomRight, "Bottom right corner"),
                 (.bottomLeft, "Bottom left corner"), (.off, "Off"),
             ])
-            ToggleRow(title: "Look up & data detectors", isOn: setting(\.lookUpForceClick))
             ToggleRow(title: "Natural scrolling", isOn: setting(\.naturalScrolling))
             ToggleRow(title: "Scroll with inertia", isOn: setting(\.momentumScroll))
             ToggleRow(title: "Zoom in or out", isOn: setting(\.pinchZoom))

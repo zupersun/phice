@@ -59,11 +59,6 @@ private func read(_ overrides: [String: Any] = [:], global: [String: Any] = [:],
     #expect(read(global: ["com.apple.trackpad.scaling": -1.0]).trackingSpeed == 0)
 }
 
-@Test func lookUpMovesToAThreeFingerTap() {
-    #expect(read().lookUpForceClick)
-    #expect(!read(["TrackpadThreeFingerTapGesture": 2]).lookUpForceClick)
-}
-
 @Test func pagesComeFromTheScrollKeyAndTheThreeFingerKey() {
     let two: [String: Any] = ["AppleEnableSwipeNavigateWithScrolls": 1]
     let none: [String: Any] = ["AppleEnableSwipeNavigateWithScrolls": 0]

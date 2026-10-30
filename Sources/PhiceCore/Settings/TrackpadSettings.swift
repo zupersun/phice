@@ -27,8 +27,6 @@ public struct TrackpadSettings: Codable, Sendable, Equatable {
     public var momentumScroll = true
     public var pinchZoom = true
     public var smartZoom = true
-    /// Force click opens Look Up; off when the Mac uses a three-finger tap for it instead.
-    public var lookUpForceClick = true
     public var swipePages = SwipePages.twoFingerScroll
     /// The finger counts each swipe answers to: macOS keeps a switch for three and one for four,
     /// and ships with both on.
@@ -49,7 +47,7 @@ public struct TrackpadSettings: Codable, Sendable, Equatable {
 extension TrackpadSettings {
     enum CodingKeys: String, CodingKey {
         case trackingSpeed, scrollSpeed, tapToClick, dragLock, threeFingerDrag, secondaryClick
-        case naturalScrolling, momentumScroll, pinchZoom, smartZoom, lookUpForceClick, swipePages
+        case naturalScrolling, momentumScroll, pinchZoom, smartZoom, swipePages
         case swipeSpaces, missionControl, appExpose, notificationCenter, launchpad, showDesktop
     }
 
@@ -69,7 +67,6 @@ extension TrackpadSettings {
         try read(.momentumScroll, &momentumScroll)
         try read(.pinchZoom, &pinchZoom)
         try read(.smartZoom, &smartZoom)
-        try read(.lookUpForceClick, &lookUpForceClick)
         try read(.swipePages, &swipePages)
         // Each swipe once held one finger count or null; overrides the phone saved then still load.
         func fingers(_ key: CodingKeys, _ value: inout Set<Fingers>) throws {
@@ -100,7 +97,6 @@ extension TrackpadSettings {
         try c.encode(momentumScroll, forKey: .momentumScroll)
         try c.encode(pinchZoom, forKey: .pinchZoom)
         try c.encode(smartZoom, forKey: .smartZoom)
-        try c.encode(lookUpForceClick, forKey: .lookUpForceClick)
         try c.encode(swipePages, forKey: .swipePages)
         // Sorted: a set's order changes from run to run, and the same settings should read the same.
         func sorted(_ counts: Set<Fingers>) -> [Fingers] { counts.sorted { $0.rawValue < $1.rawValue } }

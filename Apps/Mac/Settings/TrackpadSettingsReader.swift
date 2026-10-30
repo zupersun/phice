@@ -11,7 +11,7 @@ enum TrackpadSettingsReader {
     static func current() -> TrackpadSettings {
         let pad = domain(builtIn)
         let globals = ["com.apple.trackpad.scaling", "com.apple.swipescrolldirection",
-                       "com.apple.trackpad.forceClick", "AppleEnableSwipeNavigateWithScrolls"]
+                       "AppleEnableSwipeNavigateWithScrolls"]
         let global = globals.reduce(into: [String: Any]()) {
             $0[$1] = CFPreferencesCopyAppValue($1 as CFString, kCFPreferencesAnyApplication)
         }
@@ -96,10 +96,6 @@ enum TrackpadSettingsReader {
             s.secondaryClick = corner == 1 ? .bottomLeft : corner == 2 ? .bottomRight
                 : (twoFinger ?? 1) != 0 ? .twoFingers : .off
         }
-
-        // Look Up is a force click unless the Mac moved it to a three-finger tap or switched it off.
-        s.lookUpForceClick = int("TrackpadThreeFingerTapGesture") != 2
-            && (flag(global, "com.apple.trackpad.forceClick") ?? true)
 
         // 1 is "swipe between pages", 2 is "between full-screen apps".
         let twoPages = flag(global, "AppleEnableSwipeNavigateWithScrolls") ?? true
