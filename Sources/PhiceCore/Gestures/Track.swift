@@ -122,8 +122,11 @@ struct Session: Sendable {
     var trail: [(t: Double, x: Double, y: Double)] = []
 }
 
-/// A recent tap, for double clicks, tap-to-drag and smart zoom.
+/// A recent click, for double clicks, tap-to-drag and smart zoom.
 struct Tap: Sendable {
     var t, x, y: Double
     var fingers, clicks: Int
+    /// Made by tapping. A click made by pressing counts toward a double click but arms no
+    /// tap-to-drag: it is not a tap.
+    var tapped = true
 }

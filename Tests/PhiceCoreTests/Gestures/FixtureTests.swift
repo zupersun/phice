@@ -46,7 +46,7 @@ enum Fixture: String, CaseIterable, Sendable {
         case .restThenPress, .firmHold: [press, release]
         case .thumbRoll: click()
         case .movingRise: []
-        case .copyDrop: click() + [press, .freeze(true), .drop(.copy)]
+        case .copyDrop: click() + [press, .freeze(true), .drop(.copy), .freeze(false)]
         case .copyCancel: click() + [press, .freeze(true), .freeze(false), release]
         }
     }

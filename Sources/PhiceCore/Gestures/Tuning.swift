@@ -3,6 +3,9 @@
 public struct GestureTuning: Sendable, Equatable {
     /// A finger that strays farther than this from where it landed is moving, not tapping.
     public var slop = 8.0
+    /// Travel inside the slop goes out as at most this many samples, the older ones folded into the
+    /// first: they were slow anyway, and a finger creeping for minutes must not overflow a message.
+    public var heldSamples = 32
     /// A finger setting off from rest sends no frames before its first motion, so that motion is
     /// dated at most this long after the last one: a trackpad report, as the Mac's own pad sees it.
     public var restSample = 1.0 / 120

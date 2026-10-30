@@ -30,6 +30,20 @@ import Testing
                            .move(dx: 4, dy: 0, t: t[2]), .move(dx: 4, dy: 0, t: t[3])])
 }
 
+@Test func aLongCreepUnderTheSlopStillFitsInOneFrame() throws {
+    // A finger creeping 6 pt over 150 s, then setting off: what it held back must not overflow
+    // the one message it goes out in, nor lose any of the way it went.
+    var pad = Pad()
+    pad.land(1, 400, 200)
+    pad.move([1], 6, 0, frames: 150 * 120)
+    pad.clear()
+    pad.move([1], 10, 0, frames: 1)
+    let frame = try FrameCodec.encode(PhoneToMac.events(pad.events))
+    #expect(frame.count - 4 <= FrameCodec.maxFrame)
+    #expect(frame.count < 16_384)
+    #expect(near(pad.travel.dx, 16))
+}
+
 @Test func jitterInsideTheSlopIsStillATapAndMovesNothing() {
     var pad = Pad()
     pad.land(1, 400, 200)
