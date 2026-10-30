@@ -20,6 +20,8 @@ struct GlowState {
     static let bloomTime = 0.35
     /// How much smaller than its peak the contact gets before the bloom is gone.
     static let disperseAt = 0.3
+    /// How much of a deep press's bloom a plain press shows.
+    static let pressLift = 0.35
 
     private var radius: Double?
     private var last: (t: Double, verdict: TouchVerdict)?
@@ -36,20 +38,25 @@ struct GlowState {
             press = (now, r)
             dispersed = 0
         }
+        // Released: the light drops back at once, with the release click.
+        if verdict == .live || verdict == .rejected { press = nil }
         last = (now, verdict)
         let light = r * Self.spread
         guard verdict != .rejected else {
             return GlowShape(light: light, bloom: 0, bloomAlpha: 0, hollow: true)
         }
         guard var press else {
-            return GlowShape(light: light, bloom: light, bloomAlpha: 0, hollow: false)
+            let lift = verdict == .pressed ? Self.pressLift : 0
+            return GlowShape(light: light, bloom: light * (1 + 0.55 * lift), bloomAlpha: 0.6 * lift,
+                             hollow: false)
         }
         press.peak = max(press.peak, r)
         self.press = press
         let rise = min(1, (now - press.t) / Self.bloomTime)
         // Easing off never brings it back: the click stands, as on a MacBook.
         if rise == 1 { dispersed = max(dispersed, min(1, (1 - r / press.peak) / Self.disperseAt)) }
-        let grow = 1 - pow(1 - rise, 3)
+        // A deep press is a press too, so it blooms from the pressed light instead of dipping.
+        let grow = max(Self.pressLift, 1 - pow(1 - rise, 3))
         return GlowShape(light: light, bloom: light * (1 + 0.55 * grow + 0.8 * dispersed),
                          bloomAlpha: 0.6 * grow * (1 - dispersed), hollow: false)
     }

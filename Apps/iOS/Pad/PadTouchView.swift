@@ -19,6 +19,7 @@ final class PadTouchView: UIView {
     private var link: CADisplayLink?
     private var fast: Bool?
     private var lastTouch = 0.0
+    private var prepared = 0.0
 
     init(model: AppModel) {
         loop = PadLoop(model: model)
@@ -61,6 +62,10 @@ final class PadTouchView: UIView {
         loop.tick(now: now)
         draw(now)
         if loop.live.isEmpty, now - lastTouch > 1 { pace(touching: false) }
+        if !loop.live.isEmpty, now - prepared > 1 {
+            haptics.prepare()
+            prepared = now
+        }
     }
 
     /// Full rate while fingers are down and for a second after, so taps resolve on time; a slow

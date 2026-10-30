@@ -60,6 +60,19 @@ import Testing
     #expect(glow.step(contact: 14, verdict: .force, now: 3 + GlowState.bloomTime).bloomAlpha > 0)
 }
 
+@Test func aPressLiftsTheLightAndItsReleaseDropsItAtOnce() {
+    var glow = GlowState()
+    #expect(glow.step(contact: 24.3, verdict: .live, now: 1).bloomAlpha == 0)
+    let pressed = glow.step(contact: 24.3, verdict: .pressed, now: 1.01)
+    #expect(pressed.bloomAlpha > 0)
+    #expect(pressed.bloom > pressed.light)
+    let deep = glow.step(contact: 36.4, verdict: .force, now: 1.01 + GlowState.bloomTime)
+    let deeper = glow.step(contact: 36.4, verdict: .force, now: 1.02 + 2 * GlowState.bloomTime)
+    #expect(deeper.bloomAlpha > pressed.bloomAlpha)
+    #expect(deep.bloom > pressed.bloom)
+    #expect(glow.step(contact: 36.4, verdict: .live, now: 2).bloomAlpha == 0)
+}
+
 @Test func aRejectedTouchIsDrawnHollow() {
     var glow = GlowState()
     #expect(glow.step(contact: 30, verdict: .rejected, now: 1).hollow)
