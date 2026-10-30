@@ -12,6 +12,7 @@ struct KeyStroke: Equatable {
     static let paste = KeyStroke(code: 9, flags: .maskCommand)
     static let lookUp = KeyStroke(code: 2, flags: [.maskControl, .maskCommand])
     static let quickLook = KeyStroke(code: 49)
+    static let escape = KeyStroke(code: 53)
 }
 
 extension Shortcut {
