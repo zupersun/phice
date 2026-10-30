@@ -11,7 +11,8 @@ extension Recogniser {
             if lockedSince != nil {
                 session.locked = true
                 lockedSince = nil
-            } else if let tap = lastTap, tap.fingers == 1, track.startT - tap.t <= tuning.dragWindow {
+            } else if let tap = lastTap, tap.fingers == 1, tap.tapped,
+                      track.startT - tap.t <= tuning.dragWindow {
                 session.tapDrag = true
             }
             mode = .pending
@@ -64,6 +65,11 @@ extension Recogniser {
             if moved {
                 if session.held.isEmpty { session.heldFrom = max(previous, t - tuning.restSample) }
                 session.held.append((t, dx, dy))
+                if session.held.count > tuning.heldSamples {
+                    let oldest = session.held.removeFirst()
+                    session.held[0].dx += oldest.dx
+                    session.held[0].dy += oldest.dy
+                }
             }
             let strayed = session.live.contains { (tracks[$0]?.travel ?? 0) > tuning.slop }
             return strayed ? classify(at: t) : []
@@ -149,6 +155,14 @@ extension Recogniser {
             mode = .swiping(4)
             return swipe(4)
         }
+    }
+
+    /// Every way out of the copy gesture lets the cursor move again and takes the bead away: the Mac
+    /// drops every move while frozen, and heartbeats keep its silence timeout from ever freeing it.
+    mutating func unfreeze() -> [PadEvent] {
+        guard grab != nil else { return [] }
+        grab = nil
+        return [.freeze(false)]
     }
 
     /// Tap-to-drag takes hold: the button goes down on whatever is under the cursor.
@@ -246,11 +260,9 @@ extension Recogniser {
         self.mode = .idle
         let tapped = session.tap && t - session.start <= tuning.tapTime
         if mode == .copying {
-            let inZone = grab?.inZone == true && !session.cancelled
-            grab = nil
             // After a drop the Mac lets the button go itself, where it was pressed.
-            if inZone { return [.drop(dropAction)] }
-            return [.freeze(false), .button(.left, down: false, clicks: 1)]
+            if grab?.inZone == true, !session.cancelled { return [.drop(dropAction)] + unfreeze() }
+            return unfreeze() + [.button(.left, down: false, clicks: 1)]
         }
         if session.locked {
             if tapped { return [.button(.left, down: false, clicks: 1)] }
@@ -265,7 +277,8 @@ extension Recogniser {
             return endScroll(at: t)
         case let .dragging(held, _) where session.pressed:
             if let track = tracks[held] {
-                lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: session.pressClicks)
+                lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: session.pressClicks,
+                              tapped: false)
             }
             return [.button(.left, down: false, clicks: session.pressClicks)]
         case .dragging:

@@ -243,6 +243,8 @@ public struct Recogniser: Sendable {
     /// and a press soon after counts as the next click.
     mutating func release(_ track: inout Track, at t: Double) -> [PadEvent] {
         let clicks = session.pressClicks
+        // Eased off while still carrying something to the pill: that copy is called off.
+        let thaw = unfreeze()
         track.pressedAt = nil
         track.easedSince = nil
         track.verdict = .live
@@ -251,8 +253,8 @@ public struct Recogniser: Sendable {
         track.baseY = track.y
         session.pressed = false
         mode = .pointing
-        lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: clicks)
-        return [.button(.left, down: false, clicks: clicks)]
+        lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: clicks, tapped: false)
+        return thaw + [.button(.left, down: false, clicks: clicks)]
     }
 
     /// A wide touch that landed with a three-finger hand is that hand's thumb, pinching or
