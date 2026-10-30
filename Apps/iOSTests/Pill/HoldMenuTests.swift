@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import PhiceiOS
 
@@ -110,4 +111,14 @@ private let origin = CGPoint(x: 30, y: 200)
     #expect(Press.swell(-0.01) == 0)
     let rising = stride(from: 0.0, to: Press.holdDelay / 2, by: 0.01).map(Press.swell)
     #expect(rising == rising.sorted())
+}
+
+/// The hold sleeps, then checks how long the finger has been down. Both must read one monotonic
+/// clock: against the wall clock an NTP slew could leave the check short and the menu shut.
+@MainActor @Test func pillTimeIsTheMonotonicClockItsTimersSleepOn() async throws {
+    #expect(abs(PillLayer.now - ProcessInfo.processInfo.systemUptime) < 1)
+    let before = PillLayer.now
+    try await Task.sleep(for: .seconds(Press.holdDelay), clock: .suspending)
+    var press = Press(at: .zero, t: before)
+    #expect(press.tick(PillLayer.now) == .hold)
 }

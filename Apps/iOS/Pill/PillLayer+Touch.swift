@@ -104,7 +104,7 @@ extension PillLayer {
         holdTask?.cancel()
         press = Press(at: point, t: Self.now)
         holdTask = Task {
-            try? await Task.sleep(for: .seconds(Press.holdDelay))
+            try? await Task.sleep(for: .seconds(Press.holdDelay), clock: .suspending)
             guard !Task.isCancelled, press?.tick(Self.now) == .hold else { return }
             onHold()
         }
@@ -120,8 +120,7 @@ extension PillLayer {
     private func dragMoved(to point: CGPoint, _ g: PillGeometry) {
         guard var carried else { return }
         let over = g.overPad(point, columnWidth: model.columnWidth)
-        let t = ProcessInfo.processInfo.systemUptime
-        if let move = carried.out.move(to: point, overPad: over, t: t) {
+        if let move = carried.out.move(to: point, overPad: over, t: Self.now) {
             model.send([move])
         }
         carried.at = point

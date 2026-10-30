@@ -84,8 +84,8 @@ struct PillLayer: View {
     }
 
     private func canvas(_ g: PillGeometry) -> some View {
-        TimelineView(.animation(paused: model.grab == nil && !settling && !pressing)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
+        TimelineView(.animation(paused: model.grab == nil && !settling && !pressing)) { _ in
+            let t = Self.now
             let grab = model.grab.map { g.onScreen($0, columnWidth: model.columnWidth) }
             let distance = grab.map { Double(g.distanceFromEdge($0)) }
             let frame = swallow.frame(at: t, live: grab, distance: distance,
@@ -127,12 +127,12 @@ struct PillLayer: View {
         if old.inZone {
             resultsAtRelease = model.dropResults
             Task {
-                try? await Task.sleep(for: .seconds(Swallow.pullIn))
+                try? await Task.sleep(for: .seconds(Swallow.pullIn), clock: .suspending)
                 merged()
             }
         }
         Task {
-            try? await Task.sleep(for: .seconds(1.6))
+            try? await Task.sleep(for: .seconds(1.6), clock: .suspending)
             if model.grab == nil, swallow.isSettled(at: Self.now) { settling = false }
         }
     }
@@ -144,7 +144,10 @@ struct PillLayer: View {
         merges += 1
     }
 
-    static var now: Double { Date.now.timeIntervalSinceReferenceDate }
+    /// The pill's one clock: monotonic uptime, the base `SuspendingClock` sleeps on, so a timer that
+    /// slept a duration always finds at least that much elapsed. Frames, presses and the swallow all
+    /// read it; the wall clock can be stepped or slewed under them.
+    static var now: Double { ProcessInfo.processInfo.systemUptime }
 }
 
 extension LinkState {
