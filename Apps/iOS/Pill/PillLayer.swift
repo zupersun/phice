@@ -41,9 +41,11 @@ struct PillLayer: View {
             let g = PillGeometry(screen: proxy.size, side: model.pillSide)
             ZStack(alignment: .topLeading) {
                 canvas(g)
-                if !model.linkState.isConnected, !surfaceShown { ConnectingSweep(rect: g.pill) }
-
                 if surfaceShown { MorphSurface(surface: surface, geometry: g, border: border) }
+                // Around whatever the pill has become, except the column, which is not the pill.
+                if !model.linkState.isConnected, surface != .column {
+                    ConnectingSweep(rect: surface.rect(g))
+                }
                 if surface == .menu {
                     HoldMenuView(geometry: g, highlight: menu.highlight, enabled: model.enabled)
                         .transition(appearing)
@@ -76,7 +78,7 @@ struct PillLayer: View {
         .onChange(of: model.pill) { optimistic = false }
         .onAppear { model.restoreSaved() }
         .sensoryFeedback(.selection, trigger: menu.highlight) { $1 != nil }
-        .sensoryFeedback(.impact(weight: .light), trigger: holds)
+        .sensoryFeedback(.impact(weight: .medium), trigger: holds)
         .sensoryFeedback(.success, trigger: merges)
         .sensoryFeedback(.error, trigger: errors)
     }
@@ -89,9 +91,10 @@ struct PillLayer: View {
             let frame = swallow.frame(at: t, live: grab, distance: distance,
                                       pill: CGPoint(x: g.pill.midX, y: g.pill.midY),
                                       reduceMotion: reduceMotion)
-            PillCanvas(press: pressing ? 1 : 0, geometry: g, frame: frame, border: border,
-                       filled: optimistic || model.pill != nil, drawsPill: !surfaceShown)
-                .animation(.easeOut(duration: 0.3), value: pressing)
+            PillCanvas(press: pressing && !reduceMotion ? 1 : 0, geometry: g, frame: frame,
+                       border: border, filled: optimistic || model.pill != nil,
+                       drawsPill: !surfaceShown)
+                .animation(.spring(duration: 0.2, bounce: 0.3), value: pressing)
         }
     }
 

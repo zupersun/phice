@@ -47,8 +47,8 @@ import Testing
     ]
     try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
     for (name, view) in shots {
-        // The pill's moments are cropped to the edge it lives on, the menu and column shown whole.
-        let width: CGFloat = name.hasPrefix("8") || name.hasPrefix("9") ? 852 : 200
+        // The pill and its menu are cropped to the edge they live on, the column shown whole.
+        let width: CGFloat = name.hasPrefix("9") ? 852 : 200
         let renderer = ImageRenderer(content: view.frame(width: 852, height: 393)
             .frame(width: width, height: 393, alignment: .leading).clipped().background(Color.black)
             .environment(\.colorScheme, .dark))

@@ -14,8 +14,9 @@ struct PillGeometry: Equatable {
     static let fallbackInset: CGFloat = 11.33
     static let border: CGFloat = 2
     /// Hold-menu items sit this far apart along the edge, clipboard at the pill's centre.
-    static let itemSpacing: CGFloat = 80.25
-    static let menuSize = CGSize(width: 63, height: 290)
+    static let itemSpacing: CGFloat = 60
+    /// The menu is the pill grown along the edge: its thickness, long enough for three items.
+    static let menuLength: CGFloat = 200
     // The clipboard column, from the approved mockup at 852 pt wide.
     static let columnInset = CGSize(width: 22, height: 30)
     static let columnPadding: CGFloat = 17
@@ -35,9 +36,8 @@ struct PillGeometry: Equatable {
     }
 
     var menu: CGRect {
-        let size = Self.menuSize
-        return mirrored(CGRect(x: inset, y: (screen.height - size.height) / 2,
-                               width: size.width, height: size.height))
+        mirrored(CGRect(x: inset, y: (screen.height - Self.menuLength) / 2,
+                        width: Self.island.height, height: Self.menuLength))
     }
 
     /// What the pad gives up on the pill's side while the column is open: about a third.

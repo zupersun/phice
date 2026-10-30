@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The surface the pill grows into: itself, the hold menu, or the clipboard column. One shape whose
-/// frame, corners and inks spring between the three, so the pill visibly becomes each of them.
+/// frame and corners spring between the three, so the pill visibly becomes each of them. The menu
+/// wears the pill's own black and white border; only the column is a panel.
 enum Surface {
     case pill, menu, column
 
@@ -26,17 +27,18 @@ struct MorphSurface: View {
     var body: some View {
         let rect = surface.rect(geometry)
         let shape = RoundedRectangle(cornerRadius: surface.cornerRadius(geometry))
-        let isPill = surface == .pill
-        shape.fill(isPill ? Color.black : Palette.panel)
-            .overlay(shape.strokeBorder(isPill ? Color.white.opacity(border) : Palette.line,
-                                        lineWidth: isPill ? PillGeometry.border : 1))
+        let isPanel = surface == .column
+        shape.fill(isPanel ? Palette.panel : Color.black)
+            .overlay(shape.strokeBorder(isPanel ? Palette.line : Color.white.opacity(border),
+                                        lineWidth: isPanel ? 1 : PillGeometry.border))
             .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
             .allowsHitTesting(false)
     }
 }
 
-/// The hold menu's three buttons, glyphs only. Touches are handled by `PillLayer`.
+/// The hold menu's three glyphs, inside the grown pill. The power glyph carries Phice's green or
+/// red; the item under the finger gets a faint disc. Touches are handled by `PillLayer`.
 struct HoldMenuView: View {
     let geometry: PillGeometry
     let highlight: MenuItem?
@@ -45,14 +47,12 @@ struct HoldMenuView: View {
     var body: some View {
         ForEach(MenuItem.allCases) { item in
             ZStack {
-                Circle().fill(item == .power ? stateColour.opacity(0.2) : Color.clear)
                 if item == highlight { Circle().fill(Color.white.opacity(0.16)) }
                 Image(systemName: symbol(item))
-                    .font(.system(size: 21, weight: .medium))
-                    .foregroundStyle(item == .power ? stateColour
-                                     : item == highlight ? .white : Palette.ink)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(item == .power ? stateColour : Color.white.opacity(PillInk.glyph))
             }
-            .frame(width: 48, height: 48)
+            .frame(width: 29, height: 29)
             .position(geometry.centre(of: item))
         }
         .allowsHitTesting(false)

@@ -65,7 +65,9 @@ struct HoldMenu: Equatable {
 struct Press: Equatable {
     enum Kind { case hold, drag }
 
-    static let holdDelay = 0.4
+    /// About a long press on the Dynamic Island: Haptic Touch at its default speed, not UIKit's
+    /// 0.5 s long press. 0.4 s felt slow on the iPhone.
+    static let holdDelay = 0.25
     static let slop: CGFloat = 10
 
     let start: CGPoint
