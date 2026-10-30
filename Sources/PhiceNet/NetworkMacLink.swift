@@ -30,8 +30,9 @@ import PhiceCore
 
     /// Pairing connections held at once, the one being asked about included. More than one lets a
     /// second asker show up as a conflict instead of waiting, unseen, behind the first; one more than
-    /// this is a conflict too. Room to spare: one phone racing its paths opened 7 (measured).
-    static let pairingSlots = 8
+    /// this is a conflict too, so a larger cap costs no security, only memory for the 60 s window.
+    /// Room to spare: one phone racing its paths opened 7 (measured), more with extra interfaces.
+    static let pairingSlots = 32
 
     private struct Claim {
         let metadata: sec_protocol_metadata_t

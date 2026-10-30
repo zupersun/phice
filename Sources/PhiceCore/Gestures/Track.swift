@@ -19,10 +19,10 @@ struct Track: Sendable {
     var moved = false
     var status: Status
     /// Where it last came to rest and since when, and its contact size there in steps once it has
-    /// stayed `baselineDelay`. Force press reads against that.
+    /// stayed `baselineDelay`. A press reads against that.
     var baseX: Double, baseY: Double, baseT: Double
     var baseline: Int?
-    /// It is still resting where it landed, so a firm landing held still can force-click.
+    /// It is still resting where it landed, so a firm landing held still can press.
     var landing = true
     /// The size it pressed at, while the press holds the button down; and since when its contact
     /// has eased a step, for the release.

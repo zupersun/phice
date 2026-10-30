@@ -164,7 +164,7 @@ public struct Recogniser: Sendable {
 
     /// Reads the resting size whenever the finger comes to rest, rejects a palm at once and a
     /// resting hand once it has stayed wide and still, and lets a waiting touch in once it moves
-    /// or shrinks to a finger's size. A touch that has force-clicked is a finger pressing, not a hand.
+    /// or shrinks to a finger's size. A touch that has pressed is a finger pressing, not a hand.
     mutating func judge(_ track: inout Track, at t: Double) {
         let force = tuning.force, size = steps(track.radius)
         let fromRest = hypot(track.x - track.baseX, track.y - track.baseY)
