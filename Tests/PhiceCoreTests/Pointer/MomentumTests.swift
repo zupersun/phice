@@ -27,6 +27,14 @@ private func run(_ momentum: Momentum, dt: Double) -> [(dx: Double, dy: Double)]
     #expect(run(Momentum(vx: 10, vy: 20), dt: 1.0 / 60).isEmpty)
 }
 
+@Test func liftsCoastWhereThisMacsTrackpadDid() {
+    // Recorded on the built-in trackpad: slow scrolls lifted at up to 496 counts/s stayed put,
+    // and the gentlest flick that coasted left at 4133.
+    let perPoint = Trackpad.countsPerPoint
+    #expect(run(Momentum(vx: 0, vy: 496 / perPoint), dt: 1.0 / 60).isEmpty)
+    #expect(!run(Momentum(vx: 0, vy: 4133 / perPoint), dt: 1.0 / 60).isEmpty)
+}
+
 @Test func momentumDistanceDoesNotDependOnTheTickRate() {
     let at60 = run(Momentum(vx: 0, vy: 1500), dt: 1.0 / 60).reduce(0) { $0 + $1.dy }
     let at120 = run(Momentum(vx: 0, vy: 1500), dt: 1.0 / 120).reduce(0) { $0 + $1.dy }
@@ -34,8 +42,11 @@ private func run(_ momentum: Momentum, dt: Double) -> [(dx: Double, dy: Double)]
 }
 
 @Test func weakMomentumDiesFasterThanStrong() {
-    // Below the tail speed the retention falls toward 0.91 per 8 ms.
-    var strong = Momentum(vx: 0, vy: 1000), weak = Momentum(vx: 0, vy: 80)
+    // Below the tail speed the retention falls toward 0.905 per 8 ms. Momentum only gets that weak
+    // by decaying, so the weak one is started there directly.
+    var slowStart = Momentum.Parameters()
+    slowStart.startSpeed = 0
+    var strong = Momentum(vx: 0, vy: 1000), weak = Momentum(vx: 0, vy: 80, parameters: slowStart)
     let s0 = strong.step(dt: 0.008)!.dy / 1000, w0 = weak.step(dt: 0.008)!.dy / 80
     #expect(w0 < s0)
 }
