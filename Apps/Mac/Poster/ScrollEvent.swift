@@ -17,18 +17,17 @@ enum ScrollEvent {
 
     static func isOurs(_ tag: Int64) -> Bool { tag & ~0xFF == tagBase }
 
-    /// `dx`/`dy` go into the event as given (CGEvent's signs); `tag` records what was meant when
-    /// the signs were flipped on the way in. The tag is set once: CGEvent ignores any later write
-    /// to kCGEventSourceUserData.
-    static func make(dx: Int, dy: Int, phase: ScrollPhase?, momentum: MomentumPhase?,
-                     tag meant: Int64? = nil) -> CGEvent {
+    /// `dx`/`dy` go into the event as given (CGEvent's signs) and the tag records those same signs.
+    /// What a reverser did is then what came out compared with what went in. The tag is set once:
+    /// CGEvent ignores any later write to kCGEventSourceUserData.
+    static func make(dx: Int, dy: Int, phase: ScrollPhase?, momentum: MomentumPhase?) -> CGEvent {
         // wheelCount 2 is valid, so this cannot fail.
         let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
                             wheel1: Int32(clamping: dy), wheel2: Int32(clamping: dx), wheel3: 0)!
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase.map(raw) ?? 0)
         event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum.map(raw) ?? 0)
-        event.setIntegerValueField(.eventSourceUserData, value: meant ?? tag(dx: dx, dy: dy))
+        event.setIntegerValueField(.eventSourceUserData, value: tag(dx: dx, dy: dy))
         return event
     }
 

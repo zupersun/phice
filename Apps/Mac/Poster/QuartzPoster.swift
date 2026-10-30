@@ -7,7 +7,7 @@ import PhiceCore
 final class QuartzPoster: EventPoster {
     /// Set by the controller from the Accessibility grant. Closed until it says otherwise.
     var trusted = false {
-        didSet { if trusted { scrollWatch.start() } }
+        didSet { if trusted && watchScroll { scrollWatch.start() } }
     }
     /// The shortcuts the Shortcuts app listed; a name from the phone must be one of them.
     var allowedShortcuts: Set<String> = []
@@ -16,13 +16,20 @@ final class QuartzPoster: EventPoster {
     private(set) var posted = 0
 
     private let clipboard: Clipboard
+    private let watchScroll: Bool
+    private let sink: (CGEvent) -> Void
     private var lastPosted: CGPoint?
     private var accumulator = ScrollAccumulator()
     private var displays: [CGRect] = []
     private var displaysRead = 0.0
 
-    init(clipboard: Clipboard) {
+    /// `sink` is where events go: the window server, unless a test stands in for it, in which case
+    /// `watchScroll: false` also keeps the scroll tap (and its permission prompt) out of it.
+    init(clipboard: Clipboard, watchScroll: Bool = true,
+         sink: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
         self.clipboard = clipboard
+        self.watchScroll = watchScroll
+        self.sink = sink
     }
 
     var cursor: (x: Double, y: Double) { (position.x, position.y) }
@@ -102,11 +109,10 @@ final class QuartzPoster: EventPoster {
         let marksAPhase = (phase != nil && phase != .changed)
             || (momentum != nil && momentum != .continue)
         guard whole != (0, 0) || marksAPhase else { return nil }
-        // The tag records what was meant, so the watch can tell a reverser from our own correction.
         return ScrollEvent.make(
             dx: scrollWatch.reversedX ? -whole.dx : whole.dx,
             dy: scrollWatch.reversedY ? -whole.dy : whole.dy,
-            phase: phase, momentum: momentum, tag: ScrollEvent.tag(dx: whole.dx, dy: whole.dy))
+            phase: phase, momentum: momentum)
     }
 
     func scroll(dx: Double, dy: Double, phase: ScrollPhase?, momentum: MomentumPhase?) {
@@ -154,7 +160,7 @@ final class QuartzPoster: EventPoster {
     }
 
     private func send(_ event: CGEvent) {
-        event.post(tap: .cghidEventTap)
+        sink(event)
         posted += 1
     }
 

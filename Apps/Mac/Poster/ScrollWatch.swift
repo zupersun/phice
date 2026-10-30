@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// Constraint 2: Scroll Reverser and its kind negate every scroll event they take for a mouse's,
 /// posted ones included, and nothing short of looking tells. A tap behind every reverser reads our
@@ -10,8 +11,12 @@ final class ScrollWatch {
     private(set) var reversedY = false
     private(set) var mode = Mode.off
     private var tap: CFMachPort?
+    private var logged: Mode?
 
-    /// Compare an event's signs with the signs recorded in its tag.
+    /// An event came out of the window server: is each sign what we posted? The tag holds the signs
+    /// posted, after any pre-flip, so a reverser that is being corrected for still reads as active
+    /// and the correction holds. (Compared with the signs meant instead, the correction would read as
+    /// no reverser and switch itself off, and the scroll would flip every step.)
     func observe(_ event: CGEvent) {
         let tag = event.getIntegerValueField(.eventSourceUserData)
         guard ScrollEvent.isOurs(tag) else { return }
@@ -25,6 +30,16 @@ final class ScrollWatch {
     @discardableResult
     func start() -> Mode {
         guard tap == nil else { return mode }
+        let result = create()
+        if result != logged {
+            logged = result
+            // "off" means no compensation: a reverser then flips every scroll the same way.
+            NSLog("PHICE scroll watch: %@", "\(result)")
+        }
+        return result
+    }
+
+    private func create() -> Mode {
         let mask = CGEventMask(1) << CGEventType.scrollWheel.rawValue
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         // Listen-only first; some macOS versions want Input Monitoring for it, where a filter that

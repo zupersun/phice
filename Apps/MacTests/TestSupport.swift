@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 @testable import Phice
 
@@ -36,4 +37,13 @@ func everythingWritten(under url: URL) -> Data {
         if let data = try? Data(contentsOf: file) { all.append(data) }
     }
     return all
+}
+
+/// What a scroll reverser does to an event on its way to the apps: the same event, negated.
+func negated(_ event: CGEvent) -> CGEvent {
+    let copy = event.copy()!
+    for axis in [CGEventField.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2] {
+        copy.setIntegerValueField(axis, value: -event.getIntegerValueField(axis))
+    }
+    return copy
 }
