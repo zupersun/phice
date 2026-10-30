@@ -1,3 +1,4 @@
+import CoreMotion
 import PhiceNet
 import SwiftUI
 
@@ -8,14 +9,16 @@ struct OnboardingView: View {
     @State private var flow = OnboardingFlow()
 
     var body: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             VStack(spacing: 0) {
                 screen
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
                 Spacer(minLength: 24)
                 if flow.step == .install || flow.step == .accessibility {
-                    Button("Continue") { flow.next() }
+                    // A phone paired before onboarding restarted is already connected: no change
+                    // of link state is coming to move it past the list.
+                    Button("Continue") { flow.next(); flow.linkChanged(to: model.linkState) }
                         .buttonStyle(.borderedProminent)
                         .tint(Palette.accent)
                         .controlSize(.large)
@@ -25,14 +28,31 @@ struct OnboardingView: View {
             .padding(.horizontal, 32)
             .padding(.bottom, 40)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onChange(of: proxy.size.width > proxy.size.height && flow.step == .sideways) { _, done in
-                if done { OnboardingFlow.finish(model) }
-            }
         }
         .foregroundStyle(Palette.ink)
         .background(Color.black)
         .preferredColorScheme(.dark)
         .onChange(of: model.linkState) { _, state in flow.linkChanged(to: state) }
+        .task(id: flow.step == .sideways) {
+            guard flow.step == .sideways else { return }
+            await waitUntilSideways()
+            if !Task.isCancelled { OnboardingFlow.finish(model) }
+        }
+    }
+
+    /// By gravity, not the window: onboarding holds the window portrait, so it never turns, and
+    /// Portrait Orientation Lock hides the turn from UIKit as well. The simulator has no
+    /// accelerometer and does not wait.
+    private func waitUntilSideways() async {
+        let motion = CMMotionManager()
+        guard motion.isAccelerometerAvailable else { return }
+        motion.accelerometerUpdateInterval = 0.1
+        motion.startAccelerometerUpdates()
+        defer { motion.stopAccelerometerUpdates() }
+        while !Task.isCancelled {
+            if let g = motion.accelerometerData?.acceleration, abs(g.x) > 0.7 { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     @ViewBuilder private var screen: some View {
