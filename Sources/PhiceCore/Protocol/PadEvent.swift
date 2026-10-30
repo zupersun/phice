@@ -46,5 +46,5 @@ public enum PadEvent: Codable, Sendable, Equatable {
 
 /// How the recogniser read one finger; it drives the glow.
 public enum TouchVerdict: String, Codable, Sendable {
-    case live, force, rejected
+    case live, pressed, force, rejected
 }
