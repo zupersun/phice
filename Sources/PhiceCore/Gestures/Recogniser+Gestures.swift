@@ -184,12 +184,12 @@ extension Recogniser {
         let (dx, dy) = session.acc
         let long = max(abs(dx), abs(dy)), short = min(abs(dx), abs(dy))
         guard long >= tuning.swipeDistance, long >= short * tuning.swipeDominance else { return [] }
-        let count = Fingers(rawValue: fingers)
+        guard let count = Fingers(rawValue: fingers) else { return [] }
         let pages = settings.swipePages == .threeFingerSwipe || settings.swipePages == .both
         let shortcut: Shortcut?
         if abs(dx) > abs(dy) {
             // Content follows the fingers: swiping left brings in what is to the right.
-            if settings.swipeSpaces == count {
+            if settings.swipeSpaces.contains(count) {
                 shortcut = dx < 0 ? .spaceRight : .spaceLeft
             } else if fingers == 3, pages {
                 shortcut = dx > 0 ? .back : .forward
@@ -197,9 +197,9 @@ extension Recogniser {
                 shortcut = nil
             }
         } else if dy < 0 {
-            shortcut = settings.missionControl == count ? .missionControl : nil
+            shortcut = settings.missionControl.contains(count) ? .missionControl : nil
         } else {
-            shortcut = settings.appExpose == count ? .appExpose : nil
+            shortcut = settings.appExpose.contains(count) ? .appExpose : nil
         }
         // Nothing for this many fingers: stay open, so a finger still landing can make it one.
         guard let shortcut else { return [] }

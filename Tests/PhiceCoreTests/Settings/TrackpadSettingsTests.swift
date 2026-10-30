@@ -31,26 +31,45 @@ import Testing
 @Test func settingsFromAnOlderOrNewerAppDecodeWithDefaultsForWhatIsMissing() throws {
     // The phone (App Store) and the Mac agent (download) update separately, so a settings message
     // may lack a field the receiver knows about, or carry one it does not.
-    let json = Data(#"{"tapToClick":false,"swipeSpaces":4,"someFutureSetting":1}"#.utf8)
+    let json = Data(#"{"tapToClick":false,"swipeSpaces":[4],"someFutureSetting":1}"#.utf8)
     let settings = try JSONDecoder().decode(TrackpadSettings.self, from: json)
     #expect(settings.tapToClick == false)
-    #expect(settings.swipeSpaces == .four)
+    #expect(settings.swipeSpaces == [.four])
     #expect(settings.scrollSpeed == TrackpadSettings().scrollSpeed)
     #expect(settings.missionControl == TrackpadSettings().missionControl)
 }
 
 @Test func settingsRoundTrip() throws {
     var settings = TrackpadSettings()
-    settings.appExpose = .four
-    settings.swipeSpaces = nil
+    settings.appExpose = [.four]
+    settings.swipeSpaces = []
+    settings.missionControl = [.three, .four]
     let back = try JSONDecoder().decode(TrackpadSettings.self, from: JSONEncoder().encode(settings))
     #expect(back == settings)
 }
 
 @Test func aSwitchedOffGestureStaysOffAcrossTheWire() throws {
     var settings = TrackpadSettings()
-    settings.missionControl = nil
+    settings.missionControl = []
     let json = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
-    #expect(json.contains(#""missionControl":null"#))
-    #expect(try JSONDecoder().decode(TrackpadSettings.self, from: Data(json.utf8)).missionControl == nil)
+    #expect(json.contains(#""missionControl":[]"#))
+    #expect(try JSONDecoder().decode(TrackpadSettings.self, from: Data(json.utf8)).missionControl == [])
+}
+
+@Test func fingerCountsAreWrittenAsASortedList() throws {
+    // Sorted, so the same settings always encode the same: fixtures and logs diff cleanly.
+    var settings = TrackpadSettings()
+    settings.swipeSpaces = [.four, .three]
+    let json = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
+    #expect(json.contains(#""swipeSpaces":[3,4]"#))
+}
+
+@Test func overridesSavedWhenEachGestureHadOneFingerCountStillLoad() throws {
+    // The phone keeps its overrides as JSON; ones saved before the list must not be lost.
+    let json = Data(#"{"tapToClick":false,"swipeSpaces":3,"missionControl":null,"appExpose":4}"#.utf8)
+    let settings = try JSONDecoder().decode(TrackpadSettings.self, from: json)
+    #expect(settings.tapToClick == false)
+    #expect(settings.swipeSpaces == [.three])
+    #expect(settings.missionControl == [])
+    #expect(settings.appExpose == [.four])
 }

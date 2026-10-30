@@ -135,7 +135,7 @@ private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double
 }
 
 @Test func fourFingersLandingRaggedlyMidSwipeStillOpenMissionControl() {
-    var pad = Pad { $0.missionControl = .four }
+    var pad = Pad { $0.missionControl = [.four] }
     raggedSwipe(&pad, fingers: 4, gap: 0.08, dx: 0, dy: -120)
     #expect(pad.actions == [.shortcut(.missionControl)])
 }
@@ -151,15 +151,32 @@ private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double
     pad.lift(1, 2, 3)
     #expect(pad.events == [.shortcut(.missionControl)])
 
-    var expose = Pad { $0.appExpose = .three }
+    var expose = Pad { $0.appExpose = [.three] }
     expose.land(three)
     expose.move([1, 2, 3], 0, 100, frames: 8)
     expose.lift(1, 2, 3)
     #expect(expose.events == [.shortcut(.appExpose)])
 }
 
+@Test func whenTheMacEnablesThreeAndFourFingersBothSwipe() {
+    // This Mac's own setting: both swipe keys at 2, as macOS ships.
+    var pad = Pad()
+    pad.land(three)
+    pad.move([1, 2, 3], -100, 0, frames: 8)
+    pad.lift(1, 2, 3)
+    pad.wait(0.6)
+    pad.land(four)
+    pad.move([1, 2, 3, 4], -100, 0, frames: 8)
+    pad.lift(1, 2, 3, 4)
+    pad.wait(0.6)
+    pad.land(four)
+    pad.move([1, 2, 3, 4], 0, -100, frames: 8)
+    pad.lift(1, 2, 3, 4)
+    #expect(pad.events == [.shortcut(.spaceRight), .shortcut(.spaceRight), .shortcut(.missionControl)])
+}
+
 @Test func fourFingerSwipesFollowTheMacsChoiceOfFingers() {
-    var pad = Pad { $0.swipeSpaces = .four; $0.missionControl = .four }
+    var pad = Pad { $0.swipeSpaces = [.four]; $0.missionControl = [.four] }
     pad.land(four)
     pad.move([1, 2, 3, 4], -100, 0, frames: 8)
     pad.lift(1, 2, 3, 4)
@@ -175,7 +192,7 @@ private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double
 }
 
 @Test func threeFingerPageSwipesGoBackAndForwardWhenSpacesUseFour() {
-    var pad = Pad { $0.swipePages = .threeFingerSwipe; $0.swipeSpaces = .four }
+    var pad = Pad { $0.swipePages = .threeFingerSwipe; $0.swipeSpaces = [.four] }
     pad.land(three)
     pad.move([1, 2, 3], 100, 0, frames: 8)
     pad.lift(1, 2, 3)

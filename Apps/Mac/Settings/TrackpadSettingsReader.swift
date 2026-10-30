@@ -71,8 +71,12 @@ enum TrackpadSettingsReader {
         func flag(_ d: [String: Any], _ key: String) -> Bool? {
             number(d, key).map { $0.intValue != 0 }
         }
-        func fingers(_ three: Int?, _ four: Int?, on value: Int) -> Fingers? {
-            three == value ? .three : four == value ? .four : nil
+        // macOS keeps a key for three fingers and one for four, and honours every one that is on.
+        func fingers(_ three: Int?, _ four: Int?, on value: Int) -> Set<Fingers> {
+            var counts: Set<Fingers> = []
+            if three == value { counts.insert(.three) }
+            if four == value { counts.insert(.four) }
+            return counts
         }
 
         if let v = number(global, "com.apple.trackpad.scaling")?.doubleValue {
