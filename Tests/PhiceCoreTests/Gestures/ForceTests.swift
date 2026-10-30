@@ -3,6 +3,7 @@ import Testing
 
 // Contact as the iPhone 17 measured it: whole steps of 12.139 pt, a 1→2 ramp in the first 50 ms,
 // 2 steps for an ordinary finger, 3 for a firm press, 4 and up for a thumb or a hand, 0 on lifting.
+// Pressing is in PressTests; this is how contact size is judged.
 
 @Test func aTouchDownRampingFromOneStepToTwoIsAnOrdinaryTap() {
     var pad = Pad()
@@ -14,54 +15,6 @@ import Testing
     #expect(pad.events == click())
 }
 
-@Test func restingThenPressingHarderForceClicksOnTheRise() {
-    var pad = Pad()
-    pad.land(1, 400, 200, r: steps(1))
-    pad.hold(0.02)
-    pad.press(1, to: steps(2))
-    pad.hold(0.38)
-    #expect(pad.events.isEmpty)
-    pad.press(1, to: steps(3))
-    #expect(pad.events == [.forceClick])
-    #expect(pad.r.verdicts[1] == .force)
-    pad.hold(0.3)
-    pad.lift(1)
-    #expect(pad.events == [.forceClick])
-}
-
-@Test func aQuickFirmPressIsAForceClickAndNotAlsoATap() {
-    var pad = Pad()
-    pad.land(1, 400, 200)
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    pad.lift(1)
-    #expect(pad.events == [.forceClick])
-}
-
-@Test func forceClickReArmsOnlyAfterReturningToRest() {
-    var pad = Pad()
-    pad.land(1, 400, 200)
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    pad.hold(0.2)
-    #expect(pad.events == [.forceClick])
-    pad.press(1, to: steps(2))
-    pad.hold(0.05)
-    pad.press(1, to: steps(3))
-    #expect(pad.events == [.forceClick, .forceClick])
-}
-
-@Test func aFingerThatPointedAndThenRestsCanForceClick() {
-    // Move onto the word, stop, press: as on a MacBook, without lifting first.
-    var pad = Pad()
-    pad.land(1, 400, 200)
-    pad.move([1], 60, 0)
-    pad.hold(0.15)
-    pad.press(1, to: steps(3))
-    #expect(pad.actions == [.forceClick])
-    #expect(pad.r.verdicts[1] == .force)
-}
-
 @Test func aSlowGlideThatFlattensIsNotAPress() {
     var pad = Pad()
     pad.land(1, 400, 200)
@@ -69,43 +22,6 @@ import Testing
     pad.move([1], 60, 0, frames: 120, radius: steps(3))
     pad.lift(1)
     #expect(pad.actions.isEmpty)
-}
-
-@Test func easingOffAStepReArmsWithoutLifting() {
-    // The probe's shape: resting at 1 step, pressed to 3, eased back to 2 while still down.
-    var pad = Pad()
-    pad.land(1, 400, 200, r: steps(1))
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    pad.hold(0.2)
-    pad.press(1, to: steps(2))
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    #expect(pad.events == [.forceClick, .forceClick])
-}
-
-@Test func aFirmLandingReArmsAfterEasingOff() {
-    var pad = Pad()
-    pad.land(1, 400, 200, r: steps(3))
-    pad.hold(0.3)
-    #expect(pad.events == [.forceClick])
-    pad.press(1, to: steps(2))
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    #expect(pad.events == [.forceClick, .forceClick])
-}
-
-@Test func movingOnAndRestingAgainReArms() {
-    var pad = Pad()
-    pad.land(1, 400, 200)
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    pad.move([1], 40, 0)
-    pad.hold(0.15)
-    pad.press(1, to: steps(2))
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    #expect(pad.actions == [.forceClick, .forceClick])
 }
 
 @Test func risingOnlyToTwoStepsIsNotAPress() {
@@ -126,27 +42,6 @@ import Testing
     #expect(pad.events == click())
 }
 
-@Test func landingFirmAndHoldingStillIsAForceClick() {
-    var pad = Pad()
-    pad.land(1, 400, 200, r: steps(3))
-    pad.hold(0.2)
-    #expect(pad.events.isEmpty)
-    pad.wait(0.08)
-    #expect(pad.events == [.forceClick] && pad.r.verdicts[1] == .force)
-    pad.hold(0.3)
-    pad.lift(1)
-    #expect(pad.events == [.forceClick])
-}
-
-@Test func aForceClickedTouchPressedEvenHarderKeepsItsBloom() {
-    var pad = Pad()
-    pad.land(1, 400, 200, r: steps(3))
-    pad.hold(0.3)
-    pad.press(1, to: steps(4))
-    pad.hold(0.3)
-    #expect(pad.events == [.forceClick] && pad.r.verdicts[1] == .force)
-}
-
 @Test func aFingerThatFlattensAsItSlidesJustMoves() {
     var pad = Pad()
     pad.land(1, 400, 200, r: steps(1))
@@ -156,17 +51,7 @@ import Testing
     #expect(pad.actions.isEmpty && near(pad.travel.dx, 60))
 }
 
-@Test func whenTheMacLooksUpWithAThreeFingerTapAPressIsJustATap() {
-    var pad = Pad { $0.lookUpForceClick = false }
-    pad.land(1, 400, 200)
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    #expect(pad.r.verdicts[1] == .live)
-    pad.lift(1)
-    #expect(pad.events == click())
-}
-
-@Test func aSecondFingerDownMeansNoForceClick() {
+@Test func aSecondFingerDownMeansNoPress() {
     var pad = Pad()
     pad.land([(1, 400, 200), (2, 440, 200)])
     pad.hold(0.1)
@@ -270,14 +155,4 @@ import Testing
     pad.move([1], 30, 0)
     pad.lift(1)
     #expect(pad.events.isEmpty)
-}
-
-@Test func theQuantumFollowsTheDevice() {
-    // A device reporting steps of 10 pt: 30 pt is a firm press there, not an ordinary finger.
-    var pad = Pad()
-    pad.r.tuning.force.quantum = 10
-    pad.land(1, 400, 200, r: 20)
-    pad.hold(0.1)
-    pad.press(1, to: 30)
-    #expect(pad.events == [.forceClick])
 }

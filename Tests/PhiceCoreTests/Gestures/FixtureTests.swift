@@ -43,7 +43,7 @@ enum Fixture: String, CaseIterable, Sendable {
         case .pinch: [.shortcut(.zoomIn), .shortcut(.zoomIn), .shortcut(.zoomOut)]
         case .restingThumb: click()
         case .rampTap, .firmTap: click()
-        case .restThenPress, .firmHold: [.forceClick]
+        case .restThenPress, .firmHold: [press, release]
         case .thumbRoll: click()
         case .movingRise: []
         case .copyDrop: click() + [press, .freeze(true), .drop(.copy)]

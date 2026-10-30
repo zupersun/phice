@@ -24,8 +24,13 @@ struct Track: Sendable {
     var baseline: Int?
     /// It is still resting where it landed, so a firm landing held still can force-click.
     var landing = true
-    /// The size it last force-clicked at; nil while armed.
-    var firedAt: Int?
+    /// The size it pressed at, while the press holds the button down; whether that press has gone
+    /// deep; and since when its contact has eased a step, for the release.
+    var pressedAt: Int?
+    var deep = false
+    var easedSince: Double?
+    /// Joined a three-finger hand as its thumb: wide, but not a resting hand.
+    var thumb = false
     /// Since when it has been at a resting hand's size and still, and where.
     var wideSince: Double?
     var wideX = 0.0, wideY = 0.0
@@ -99,6 +104,9 @@ struct Session: Sendable {
     var tapDrag = false
     /// Landed while drag lock held the button.
     var locked = false
+    /// A press holds the button down, with the click count it went down with.
+    var pressed = false
+    var pressClicks = 1
     /// Common travel of the fingers since `refT`, when their references were last set.
     var acc = (x: 0.0, y: 0.0)
     var refT = 0.0

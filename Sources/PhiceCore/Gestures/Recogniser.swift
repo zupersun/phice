@@ -103,6 +103,7 @@ public struct Recogniser: Sendable {
             tracks[touch.id] = track
         }
         for id in landed { out += land(id, at: t) }
+        out += joinThumbs(at: t)
         if movers > 0 { out += travel(sum.x / movers, sum.y / movers, at: t) }
         out += pressure(at: t)
         for lift in lifted { out += self.lift(lift.id, at: t, cancelled: lift.cancelled) }
@@ -132,6 +133,7 @@ public struct Recogniser: Sendable {
             if was == .waiting, track.status == .live { out += land(id, at: now) }
             if was == .live, track.status == .rejected { out += lift(id, at: now, cancelled: true) }
         }
+        out += joinThumbs(at: now)
         out += pressure(at: now)
         if mode == .pending, session.tapDrag, session.live.count == 1,
            now - session.start >= tuning.dragHold {
@@ -175,7 +177,6 @@ public struct Recogniser: Sendable {
             track.baseT = t
             track.baseline = nil
             track.landing = false
-            track.firedAt = nil
         } else if track.baseline == nil, t - track.baseT >= force.baselineDelay {
             track.baseline = size
         }
@@ -188,7 +189,8 @@ public struct Recogniser: Sendable {
             track.wideY = track.y
         }
         guard track.status != .rejected else { return }
-        let resting = track.verdict != .force
+        // A finger pressing, or a hand's thumb, is wide on purpose.
+        let resting = track.pressedAt == nil && !track.thumb
             && track.wideSince.map { t - $0 >= force.restingHold } == true
         if size >= force.palmSteps || resting {
             track.reject()
@@ -197,31 +199,85 @@ public struct Recogniser: Sendable {
         }
     }
 
-    /// A lone finger at rest pressing, as on a MacBook: from where it landed or wherever pointing
-    /// left it, it rose a step past rest to `forceSteps`, or it landed there and held. Easing off a
-    /// step re-arms it without a lift; nothing fires while it moves.
+    /// The Force Touch trackpad's levels for a lone finger, from wherever it came to rest: a press
+    /// (its contact a step larger, or landing that firm and held) holds the left button down and
+    /// lets it drag; a further step is the deep press, the force click; easing back a step for
+    /// `releaseHold` lets the button up, as lifting does. Nothing presses while it moves.
     mutating func pressure(at t: Double) -> [PadEvent] {
-        guard settings.lookUpForceClick, session.live.count == 1, mode == .pending || mode == .pointing,
-              let id = session.live.first, var track = tracks[id], let rest = track.baseline
-        else { return [] }
-        let force = tuning.force, size = steps(track.radius)
+        guard session.live.count == 1, !session.locked, let id = session.live.first,
+              var track = tracks[id] else { return [] }
         defer { tracks[id] = track }
-        if let fired = track.firedAt {
-            guard size < fired else { return [] }
-            track.firedAt = nil
+        let force = tuning.force, size = steps(track.radius)
+        if let pressed = track.pressedAt {
+            guard session.pressed else { return [] }
+            if size > pressed, !track.deep, settings.lookUpForceClick {
+                track.deep = true
+                track.verdict = .force
+                return [.forceClick]
+            }
+            guard size < pressed else {
+                track.easedSince = nil
+                return []
+            }
+            let since = track.easedSince ?? t
+            track.easedSince = since
+            return t - since >= force.releaseHold ? release(&track, at: t) : []
         }
-        // The lightest it has rested at is its rest: easing off counts from there.
+        guard mode == .pending || mode == .pointing, let rest = track.baseline else { return [] }
+        // The lightest it has rested at is its rest.
         let baseline = min(rest, size)
         track.baseline = baseline
-        let firm = track.landing && baseline >= force.forceSteps
-        let target = firm ? force.forceSteps : max(baseline + 1, force.forceSteps)
+        let firm = track.landing && baseline >= force.pressSteps
+        let target = firm ? force.pressSteps : max(baseline + 1, force.pressSteps)
         let held = !firm || t - track.startT >= force.firmHold
+        let near = hypot(track.x - track.baseX, track.y - track.baseY) <= force.pressDrift
         // Four steps and up is a hand's size, judged as one, not a press.
-        guard size >= target, size < force.restingSteps, held else { return [] }
-        track.firedAt = size
-        track.verdict = .force
+        guard size >= target, size < force.restingSteps, held, near else { return [] }
+        let clicks = (following(fingers: 1, at: (track.x, track.y), t)?.clicks ?? 0) + 1
+        lastTap = nil
+        track.pressedAt = size
+        track.verdict = .pressed
         session.tap = false
-        return [.forceClick]
+        session.pressed = true
+        session.pressClicks = clicks
+        mode = .dragging(held: id, since: t)
+        return [.button(.left, down: true, clicks: clicks)]
+    }
+
+    /// The press lets go with the finger still down: it points again, rests anew, can press again,
+    /// and a press soon after counts as the next click.
+    mutating func release(_ track: inout Track, at t: Double) -> [PadEvent] {
+        let clicks = session.pressClicks
+        track.pressedAt = nil
+        track.deep = false
+        track.easedSince = nil
+        track.verdict = .live
+        track.baseline = steps(track.radius)
+        track.baseX = track.x
+        track.baseY = track.y
+        session.pressed = false
+        mode = .pointing
+        lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: clicks)
+        return [.button(.left, down: false, clicks: clicks)]
+    }
+
+    /// A wide touch that landed with a three-finger hand is that hand's thumb, pinching or
+    /// spreading, not a resting hand: it joins, even if it was judged one waiting for the fingers.
+    mutating func joinThumbs(at t: Double) -> [PadEvent] {
+        guard session.live.count >= 3,
+              let latest = session.live.compactMap({ tracks[$0]?.startT }).max() else { return [] }
+        var out: [PadEvent] = []
+        for id in tracks.keys.sorted() where !session.live.contains(id) {
+            guard var track = tracks[id], track.status != .live,
+                  steps(track.radius) < tuning.force.palmSteps,
+                  abs(latest - track.startT) <= tuning.handWindow else { continue }
+            track.status = .live
+            track.verdict = .live
+            track.thumb = true
+            tracks[id] = track
+            out += land(id, at: t)
+        }
+        return out
     }
 
     /// A finger gone without a proper lift: it vanished from the frames, or its id began again.

@@ -38,6 +38,9 @@ public struct GestureTuning: Sendable, Equatable {
     public var pinchInterval = 0.2
     /// Thumb and three fingers closing or opening by this ratio: Launchpad or Show Desktop.
     public var spreadRatio = 1.35
+    /// A wide touch landing this close to a three-finger hand's last finger is that hand's thumb,
+    /// pinching or spreading, not a resting hand.
+    public var handWindow = 0.3
     /// The corner-click regions, as fractions of the pad's width and height.
     public var cornerWidth = 0.25
     public var cornerHeight = 0.3
@@ -60,11 +63,18 @@ public struct ForceTuning: Sendable, Equatable {
     public var baselineDelay = 0.08
     /// A pointing finger drifting less than this over `baselineDelay` has stopped.
     public var restJitter = 3.0
-    /// A force press reaches at least this many steps, and at least one more than at rest.
-    public var forceSteps = 3
-    /// A touch already at `forceSteps` when its baseline is read, still there this long after landing,
-    /// pressed hard from the start. One that lifts sooner was a firm tap.
+    /// A press reaches at least this many steps, and at least one more than at rest. A deep press is
+    /// one more again: no fingertip in the probe got there (0 of 12 presses).
+    public var pressSteps = 3
+    /// A touch already at `pressSteps` when its baseline is read, still there this long after
+    /// landing, pressed hard from the start. One that lifts sooner was a firm tap.
     public var firmHold = 0.25
+    /// A press lands within this of where the finger rested (the probe's drifted 3.1 pt at most by
+    /// then); farther, a growing contact is a finger flattening as it sets off.
+    public var pressDrift = 5.0
+    /// A pressed contact must stay a step down this long before the button comes up. Steps are too
+    /// coarse to hold a margin in size, so the margin against a sliding finger's wobble is time.
+    public var releaseHold = 0.1
     /// Farther than this from where it rested and the touch is moving, not pressing; it needs a new
     /// rest before it can press again.
     public var stillDistance = 10.0

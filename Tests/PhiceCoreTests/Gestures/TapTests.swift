@@ -254,10 +254,11 @@ import Testing
     #expect(pad.events == click(.right) + click(.right))
 }
 
-@Test func threeFingerTapLooksUpOnlyWhenForceClickDoesNot() {
+@Test func threeFingerTapLooksUpWhicheverWayTheMacDoes() {
+    // A fingertip barely reaches a deep press, so Look Up is also where the Mac's own option puts it.
     var pad = Pad()
     pad.tap(fingers: 3)
-    #expect(pad.events.isEmpty)
+    #expect(pad.events == [.forceClick])
 
     var three = Pad { $0.lookUpForceClick = false }
     three.tap(fingers: 3)

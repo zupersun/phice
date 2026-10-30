@@ -263,6 +263,11 @@ extension Recogniser {
         case .scrolling:
             lastTap = nil
             return endScroll(at: t)
+        case let .dragging(held, _) where session.pressed:
+            if let track = tracks[held] {
+                lastTap = Tap(t: t, x: track.x, y: track.y, fingers: 1, clicks: session.pressClicks)
+            }
+            return [.button(.left, down: false, clicks: session.pressClicks)]
         case .dragging:
             if settings.dragLock {
                 lockedSince = t
@@ -307,10 +312,7 @@ extension Recogniser {
     /// on, and a Mac that has it off must not leave the phone unable to click.
     mutating func tap(at t: Double) -> [PadEvent] {
         let fingers = session.most, p = session.origin
-        let previous = lastTap.flatMap { tap in
-            tap.fingers == fingers && t - tap.t <= tuning.doubleClickInterval
-                && hypot(p.x - tap.x, p.y - tap.y) <= tuning.doubleClickDistance ? tap : nil
-        }
+        let previous = following(fingers: fingers, at: p, t)
         lastTap = nil
         switch fingers {
         case 1 where inCorner(p):
@@ -327,10 +329,18 @@ extension Recogniser {
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 2, clicks: 1)
             return settings.secondaryClick == .twoFingers ? click(.right, 1) : []
         case 3:
-            // Look Up by three-finger tap, when the Mac has it there instead of on force click.
-            return settings.lookUpForceClick ? [] : [.forceClick]
+            // Look Up, as the Mac's own option has it: a fingertip barely reaches a deep press.
+            return [.forceClick]
         default:
             return []
+        }
+    }
+
+    /// The last click, if this one follows it closely enough in time and place to count on from it.
+    func following(fingers: Int, at p: (x: Double, y: Double), _ t: Double) -> Tap? {
+        lastTap.flatMap { tap in
+            tap.fingers == fingers && t - tap.t <= tuning.doubleClickInterval
+                && hypot(p.x - tap.x, p.y - tap.y) <= tuning.doubleClickDistance ? tap : nil
         }
     }
 

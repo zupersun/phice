@@ -229,6 +229,71 @@ private func raggedSwipe(_ pad: inout Pad, fingers: Int, gap: Double, dx: Double
     #expect(off.actions.isEmpty)
 }
 
+/// A real thumb: wide enough to be judged a resting hand on its own.
+private let thumb = steps(4)
+private let threeAboveThumb: [(UInt16, Double, Double)] = [(2, 400, 120), (3, 450, 110), (4, 500, 120)]
+
+@Test func aWideThumbAndThreeFingersPinchToAppsAndSpreadToShowDesktop() {
+    var pad = Pad()
+    pad.land(1, 300, 330, r: thumb)
+    pad.land(threeAboveThumb)
+    pad.scale([1, 2, 3, 4], by: 0.5)
+    pad.lift(1, 2, 3, 4)
+    pad.wait(0.6)
+    pad.land(1, 380, 230, r: thumb)
+    pad.land([(2, 420, 170), (3, 445, 165), (4, 470, 170)])
+    pad.scale([1, 2, 3, 4], by: 2.2)
+    pad.lift(1, 2, 3, 4)
+    #expect(pad.events == [.shortcut(.launchpad), .shortcut(.showDesktop)])
+}
+
+@Test func aThumbPlacedJustBeforeTheFingersStillJoinsThePinch() {
+    // Long enough still to have been judged a resting hand before the fingers came down.
+    var pad = Pad()
+    pad.land(1, 300, 330, r: thumb)
+    pad.hold(0.2)
+    pad.land(threeAboveThumb)
+    pad.hold(0.1)
+    pad.scale([1, 2, 3, 4], by: 0.5)
+    pad.lift(1, 2, 3, 4)
+    #expect(pad.events == [.shortcut(.launchpad)])
+}
+
+@Test func aThumbLandingJustAfterTheFingersJoinsThePinch() {
+    var pad = Pad()
+    pad.land(threeAboveThumb)
+    pad.hold(0.05)
+    pad.land(1, 300, 330, r: thumb)
+    pad.scale([1, 2, 3, 4], by: 0.5)
+    pad.lift(1, 2, 3, 4)
+    #expect(pad.events == [.shortcut(.launchpad)])
+}
+
+@Test func aThumbGrippingThePhoneLongBeforeStaysOutOfAThreeFingerSwipe() {
+    var pad = Pad()
+    pad.land(1, 120, 380, r: thumb)
+    pad.hold(1.0)
+    pad.land(threeAboveThumb)
+    pad.move([2, 3, 4], -120, 0, frames: 10)
+    pad.lift(2, 3, 4)
+    pad.lift(1)
+    #expect(pad.events == [.shortcut(.spaceRight)])
+}
+
+@Test func threeFingersSpreadAcrossThePadSwipeSidewaysWhicheverWay() {
+    // Fingers a finger's width apart, one pressing firmer, landing a few ms apart.
+    for (dx, expected) in [(-150.0, Shortcut.spaceRight), (150, .spaceLeft)] {
+        var pad = Pad()
+        pad.land(1, 300, 220)
+        pad.hold(0.02)
+        pad.land(2, 400, 200, r: steps(3))
+        pad.land(3, 500, 215)
+        pad.move([1, 2, 3], dx, 8, frames: 14)
+        pad.lift(1, 2, 3)
+        #expect(pad.events == [.shortcut(expected)])
+    }
+}
+
 @Test func twoFingersSwipingInFromTheRightEdgeOpenNotificationCentre() {
     var pad = Pad()
     pad.land([(1, 850, 150), (2, 852, 200)])
