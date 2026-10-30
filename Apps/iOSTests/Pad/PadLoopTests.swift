@@ -78,3 +78,22 @@ private func sample(_ phase: Touch.Phase, t: Double, tolerance: Double = 0) -> T
     loop.touches([sample(.began, t: 4, tolerance: 9)])
     #expect(quantum() == 15)
 }
+
+/// End to end through the real recogniser: a finger rests, presses a step harder, then lifts.
+@MainActor @Test func aRealPressPlaysItsClickThenItsReleaseOnLift() {
+    let loop = PadLoop(model: AppModel(link: KeptLink()))
+    loop.size = CGSize(width: 874, height: 402)
+    var played: [Haptic] = []
+    loop.play = { played.append($0) }
+    func still(_ phase: Touch.Phase, t: Double, steps: Double) -> TouchSample {
+        TouchSample(key: 1, x: 400, y: 200, radius: steps * 12.139, phase: phase, t: t)
+    }
+    loop.touches([still(.began, t: 1, steps: 2)])
+    for i in 1 ... 10 { loop.tick(now: 1 + Double(i) * 0.01) }
+    #expect(played.isEmpty)
+    loop.touches([still(.moved, t: 1.11, steps: 3)])
+    #expect(played == [.press])
+    loop.tick(now: 1.3)
+    loop.touches([still(.ended, t: 1.4, steps: 0)])
+    #expect(played == [.press, .release])
+}
