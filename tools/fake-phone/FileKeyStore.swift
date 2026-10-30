@@ -5,7 +5,13 @@ import PhiceNet
 final class FileKeyStore: KeyStore {
     private struct Contents: Codable {
         var localID = UUID().uuidString
-        var keys: [String: Data] = [:]
+        var entries: [String: Entry] = [:]
+    }
+
+    private struct Entry: Codable {
+        var key: Data
+        var label: String
+        var date: Date
     }
 
     let url: URL
@@ -18,12 +24,14 @@ final class FileKeyStore: KeyStore {
     }
 
     var localID: String { contents.localID }
-    var peers: [String] { contents.keys.keys.sorted() }
+    var peers: [String] { contents.entries.keys.sorted() }
 
-    func key(for peer: String) -> Data? { contents.keys[peer] }
+    func entry(for peer: String) -> KeyEntry? {
+        contents.entries[peer].map { KeyEntry(key: $0.key, label: $0.label, date: $0.date) }
+    }
 
-    func setKey(_ key: Data?, for peer: String) {
-        contents.keys[peer] = key
+    func setKey(_ key: Data?, label: String, for peer: String) {
+        contents.entries[peer] = key.map { Entry(key: $0, label: label, date: Date()) }
         save()
     }
 

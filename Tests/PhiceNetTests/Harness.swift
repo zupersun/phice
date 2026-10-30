@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 import PhiceCore
@@ -32,14 +33,30 @@ func randomKey() -> Data {
     let phone: NetworkPhoneLink
     var atMac: [PhoneToMac] = []
     var atPhone: [MacToPhone] = []
-    var requests: [String] = []
+    /// Every pairing event, as text: "request <name>", "withdrawn", "conflict".
+    var events: [String] = []
+    /// The requests shown, in order.
+    var shown: [PairingRequest] = []
+    /// Answers each request this way at once; nil leaves it on screen.
+    var autoAnswer: Bool?
+    var requests: [String] { shown.map(\.deviceName) }
     /// `connectedDevice` at each of the Mac's `onChange` calls.
     var macChanges: [String?] = []
 
-    init() {
-        mac = NetworkMacLink(macName: "Test Mac", keyStore: macStore, timing: .fast, advertises: false)
-        phone = NetworkPhoneLink(deviceName: "Test iPhone", keyStore: phoneStore, timing: .fast,
+    init(timing: LinkTiming = .fast) {
+        mac = NetworkMacLink(macName: "Test Mac", keyStore: macStore, timing: timing, advertises: false)
+        phone = NetworkPhoneLink(deviceName: "Test iPhone", keyStore: phoneStore, timing: timing,
                                  browses: false)
+        mac.onPairing = { [unowned self] event in
+            switch event {
+            case .request(let request):
+                events.append("request \(request.deviceName)")
+                shown.append(request)
+                if let autoAnswer { request.respond(autoAnswer) }
+            case .withdrawn: events.append("withdrawn")
+            case .conflict: events.append("conflict")
+            }
+        }
         mac.onMessage = { [unowned self] in atMac.append($0) }
         mac.onChange = { [unowned self] in macChanges.append(mac.connectedDevice) }
         phone.onMessage = { [unowned self] in atPhone.append($0) }
@@ -137,5 +154,55 @@ func randomKey() -> Data {
             if case .ready = state { MainActor.assumeIsolated { self?.port = listener.port } }
         }
         listener.start(queue: .main)
+    }
+}
+
+/// A new phone speaking `Handshake` by hand, keeping what the Mac answers.
+@MainActor final class PairingClient {
+    let connection: NWConnection
+    let phoneID: String
+    let secret = Curve25519.KeyAgreement.PrivateKey()
+    private var decoder = FrameDecoder<Handshake>()
+    private(set) var answers: [Handshake] = []
+    private(set) var state = NWConnection.State.setup
+    /// The Mac closed it.
+    private(set) var ended = false
+
+    init(port: NWEndpoint.Port, phoneID: String = UUID().uuidString) {
+        self.phoneID = phoneID
+        connection = NWConnection(host: "127.0.0.1", port: port,
+                                  using: Pairing.parameters(keys: [(Pairing.identity,
+                                                                    Pairing.publicKey)]))
+        connection.stateUpdateHandler = { [weak self] state in
+            MainActor.assumeIsolated { self?.state = state }
+        }
+        connection.start(queue: .main)
+        receive()
+    }
+
+    func request(name: String) {
+        let request = Handshake.request(phoneID: phoneID, deviceName: name,
+                                        publicKey: secret.publicKey.rawRepresentation)
+        connection.send(content: try! FrameCodec.encode(request), completion: .idempotent)
+    }
+
+    /// The key the Mac stored for this phone, if it accepted.
+    func psk(name: String) -> Data? {
+        guard case let .accept(macID, macKey, _)? = answers.first else { return nil }
+        let transcript = Pairing.transcript(phoneID: phoneID, deviceName: name,
+                                            phoneKey: secret.publicKey.rawRepresentation,
+                                            macID: macID, macKey: macKey)
+        return try? Pairing.psk(secret, peer: macKey, transcript: transcript)
+    }
+
+    private func receive() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) {
+            [weak self] data, _, done, err in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let data, let got = try? self.decoder.push(data) { self.answers += got }
+                if done || err != nil { self.ended = true } else { self.receive() }
+            }
+        }
     }
 }

@@ -26,7 +26,6 @@ import Testing
 @MainActor @Test func nothingIsDeliveredBeforeAuthentication() async {
     let rig = Rig()
     rig.mac.pairingOpen = true
-    rig.mac.onPairingRequest = { [rig] in rig.requests.append($0.deviceName) }
     #expect(await rig.start())
 
     let plain = RawClient(port: rig.mac.port!, identity: nil)
@@ -109,8 +108,11 @@ func aBadFrameDropsTheConnection(frame: Data) async {
     #expect(store.peers.isEmpty)
 
     store.setKey(Data([1, 2, 3]), for: "peer")
-    store.setKey(Data([4]), for: "peer")
-    #expect(store.key(for: "peer") == Data([4]))
+    store.setKey(Data([4]), label: "Jasper’s iPhone", for: "peer")
+    let entry = store.entry(for: "peer")
+    #expect(entry?.key == Data([4]))
+    #expect(entry?.label == "Jasper’s iPhone")
+    #expect(entry?.date.map { abs($0.timeIntervalSinceNow) < 60 } == true)
     #expect(store.peers == ["peer"])
 
     store.setKey(nil, for: "peer")
