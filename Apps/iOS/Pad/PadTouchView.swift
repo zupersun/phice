@@ -31,6 +31,11 @@ final class PadTouchView: UIView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    // iOS's three-finger undo, redo and copy gestures cancel the app's touches as a third finger
+    // lands, killing every three- and four-finger gesture. The first responder can turn them off.
+    override var canBecomeFirstResponder: Bool { true }
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         loop.size = bounds.size
@@ -47,6 +52,7 @@ final class PadTouchView: UIView {
         fast = nil
         pace(touching: false)
         followRotation()
+        becomeFirstResponder()
     }
 
     @objc private func step() {
@@ -100,6 +106,8 @@ final class PadTouchView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Back from a sheet whose text field took it.
+        if !isFirstResponder { becomeFirstResponder() }
         haptics.prepare()
         pace(touching: true)
         handle(event)
