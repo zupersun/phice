@@ -55,8 +55,6 @@ public struct Recogniser: Sendable {
     var lockedSince: Double?
     var scrollEndedAt: Double?
     var smartZoomed = false
-    /// When a two-finger tap's right click was held back for a possible smart zoom.
-    var secondaryAt: Double?
 
     public init(settings: TrackpadSettings, geometry: PadGeometry) {
         self.settings = settings
@@ -65,7 +63,7 @@ public struct Recogniser: Sendable {
 
     public mutating func feed(_ frame: TouchFrame) -> [PadEvent] {
         let t = frame.t
-        var out = heldSecondary(before: [], at: t) + advance(to: t)
+        var out = advance(to: t)
         let present = Set(frame.touches.map(\.id))
         for id in tracks.keys.sorted() where !present.contains(id) { out += forget(id, at: t) }
 
@@ -112,23 +110,14 @@ public struct Recogniser: Sendable {
             tracks[touch.id] = nil
         }
         publish()
-        return heldSecondary(before: out, at: t)
+        return out
     }
 
     /// Time-based transitions: tap-to-drag hold, drag lock, baselines, firm holds, resting hands.
     public mutating func tick(now: Double) -> [PadEvent] {
         let out = advance(to: now)
         publish()
-        return heldSecondary(before: out, at: now)
-    }
-
-    /// A two-finger tap's right click waits while a second tap could still make it a smart zoom,
-    /// but goes out ahead of anything else that happens, so it lands where the tap was.
-    mutating func heldSecondary(before out: [PadEvent], at t: Double) -> [PadEvent] {
-        guard let since = secondaryAt, !out.isEmpty || t - since > tuning.doubleClickInterval
-        else { return out }
-        secondaryAt = nil
-        return click(.right, 1) + out
+        return out
     }
 
     // MARK: Time
@@ -171,15 +160,24 @@ public struct Recogniser: Sendable {
         return Track(touch, at: t, status: status)
     }
 
-    /// Reads the resting size once the touch-down ramp is over, rejects a palm at once and a
+    /// Reads the resting size whenever the finger comes to rest, rejects a palm at once and a
     /// resting hand once it has stayed wide and still, and lets a waiting touch in once it moves
     /// or shrinks to a finger's size. A touch that has force-clicked is a finger pressing, not a hand.
     mutating func judge(_ track: inout Track, at t: Double) {
         let force = tuning.force, size = steps(track.radius)
-        if track.baseline == nil, t - track.startT >= force.baselineDelay {
-            track.baseline = size
+        let fromRest = hypot(track.x - track.baseX, track.y - track.baseY)
+        // Settling onto the pad may drift as far as pressing does; a pointing finger has stopped
+        // only once it barely moves.
+        let drift = track.baseline != nil || track.landing ? force.stillDistance : force.restJitter
+        if fromRest > drift {
             track.baseX = track.x
             track.baseY = track.y
+            track.baseT = t
+            track.baseline = nil
+            track.landing = false
+            track.firedAt = nil
+        } else if track.baseline == nil, t - track.baseT >= force.baselineDelay {
+            track.baseline = size
         }
         if size < force.restingSteps {
             track.wideSince = nil
@@ -199,27 +197,29 @@ public struct Recogniser: Sendable {
         }
     }
 
-    /// A lone, still finger pressing: it rose a step past rest to `forceSteps`, or it landed there
-    /// and held. Fires once, re-armed by returning to rest; never during a move or scroll.
+    /// A lone finger at rest pressing, as on a MacBook: from where it landed or wherever pointing
+    /// left it, it rose a step past rest to `forceSteps`, or it landed there and held. Easing off a
+    /// step re-arms it without a lift; nothing fires while it moves.
     mutating func pressure(at t: Double) -> [PadEvent] {
-        guard settings.lookUpForceClick, session.live.count == 1, mode == .pending,
-              let id = session.live.first, var track = tracks[id], let baseline = track.baseline
+        guard settings.lookUpForceClick, session.live.count == 1, mode == .pending || mode == .pointing,
+              let id = session.live.first, var track = tracks[id], let rest = track.baseline
         else { return [] }
         let force = tuning.force, size = steps(track.radius)
-        let firm = baseline >= force.forceSteps
-        if !track.armed, !firm, size <= baseline { track.armed = true }
-        let still = hypot(track.x - track.baseX, track.y - track.baseY) < force.stillDistance
-        // Four steps and up is a hand's size, judged as one, not a press.
-        let target = max(baseline + (firm ? 0 : 1), force.forceSteps)
-        let held = !firm || t - track.startT >= force.firmHold
-        let pressed = size >= target && size < force.restingSteps && held
-        guard track.armed, still, pressed else {
-            tracks[id] = track
-            return []
+        defer { tracks[id] = track }
+        if let fired = track.firedAt {
+            guard size < fired else { return [] }
+            track.firedAt = nil
         }
-        track.armed = false
+        // The lightest it has rested at is its rest: easing off counts from there.
+        let baseline = min(rest, size)
+        track.baseline = baseline
+        let firm = track.landing && baseline >= force.forceSteps
+        let target = firm ? force.forceSteps : max(baseline + 1, force.forceSteps)
+        let held = !firm || t - track.startT >= force.firmHold
+        // Four steps and up is a hand's size, judged as one, not a press.
+        guard size >= target, size < force.restingSteps, held else { return [] }
+        track.firedAt = size
         track.verdict = .force
-        tracks[id] = track
         session.tap = false
         return [.forceClick]
     }

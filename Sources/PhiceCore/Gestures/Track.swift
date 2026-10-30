@@ -18,10 +18,14 @@ struct Track: Sendable {
     /// Strayed past the slop since landing, so it is not part of a tap.
     var moved = false
     var status: Status
-    /// Contact size at rest, in steps, read once the touch-down ramp is over; and where it was then.
+    /// Where it last came to rest and since when, and its contact size there in steps once it has
+    /// stayed `baselineDelay`. Force press reads against that.
+    var baseX: Double, baseY: Double, baseT: Double
     var baseline: Int?
-    var baseX = 0.0, baseY = 0.0
-    var armed = true
+    /// It is still resting where it landed, so a firm landing held still can force-click.
+    var landing = true
+    /// The size it last force-clicked at; nil while armed.
+    var firedAt: Int?
     /// Since when it has been at a resting hand's size and still, and where.
     var wideSince: Double?
     var wideX = 0.0, wideY = 0.0
@@ -36,6 +40,9 @@ struct Track: Sendable {
         radius = touch.radius
         refX = touch.x
         refY = touch.y
+        baseX = touch.x
+        baseY = touch.y
+        baseT = t
         self.status = status
         if status == .rejected { verdict = .rejected }
     }
