@@ -24,7 +24,10 @@ final class FileKeyStore: KeyStore {
     }
 
     var localID: String { contents.localID }
-    var peers: [String] { contents.entries.keys.sorted() }
+    var labels: [KeyLabel] {
+        contents.entries.sorted { $0.key < $1.key }
+            .map { KeyLabel(peer: $0.key, label: $0.value.label, date: $0.value.date) }
+    }
 
     func entry(for peer: String) -> KeyEntry? {
         contents.entries[peer].map { KeyEntry(key: $0.key, label: $0.label, date: $0.date) }

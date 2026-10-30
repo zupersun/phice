@@ -167,8 +167,9 @@ extension Sighting {
     }
 
     private func refreshMacs() {
+        let paired = Set(store.peers)  // listing reads no keys
         macs = sightings.map { id, seen in
-            DiscoveredMac(id: id, name: seen[0].name, paired: store.key(for: id) != nil,
+            DiscoveredMac(id: id, name: seen[0].name, paired: paired.contains(id),
                           pairingOpen: seen.contains(where: \.pairingOpen))
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
     }

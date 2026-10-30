@@ -18,11 +18,10 @@ import PhiceCore
     public private(set) var connectedDevice: String? {
         didSet { if connectedDevice != oldValue { onChange?() } }
     }
+    /// From the labels alone: showing the list must never read a key (a keychain prompt on the Mac).
     public var pairedPhones: [PairedPhone] {
-        store.peers.compactMap { id in
-            store.entry(for: id).map {
-                PairedPhone(id: id, name: Pairing.displayName($0.label), pairedAt: $0.date)
-            }
+        store.labels.map {
+            PairedPhone(id: $0.peer, name: Pairing.displayName($0.label), pairedAt: $0.date)
         }
     }
     public var onChange: (@MainActor () -> Void)?

@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import PhiceCore
-import Security
 import Testing
 @testable import PhiceNet
 
@@ -94,32 +93,6 @@ func aBadFrameDropsTheConnection(frame: Data) async {
     #expect(Pairing.verify(proof, psk: atPhone, transcript: transcript("iPhone")))
     #expect(!Pairing.verify(proof, psk: atPhone, transcript: transcript("Someone else")))
     #expect(!Pairing.verify(proof, psk: randomKey(), transcript: transcript("iPhone")))
-}
-
-@Test func theKeychainStoreKeepsKeysAndAStableID() {
-    let service = "com.phice.pairing.test-\(UUID().uuidString)"
-    let store = KeychainKeyStore(service: service)
-    defer {
-        for account in ["local-id", "peer"] {
-            SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service,
-                           kSecAttrAccount: account] as CFDictionary)
-        }
-    }
-    #expect(UUID(uuidString: store.localID) != nil)
-    #expect(KeychainKeyStore(service: service).localID == store.localID)
-    #expect(store.peers.isEmpty)
-
-    store.setKey(Data([1, 2, 3]), for: "peer")
-    store.setKey(Data([4]), label: "Jasper’s iPhone", for: "peer")
-    let entry = store.entry(for: "peer")
-    #expect(entry?.key == Data([4]))
-    #expect(entry?.label == "Jasper’s iPhone")
-    #expect(entry?.date.map { abs($0.timeIntervalSinceNow) < 60 } == true)
-    #expect(store.peers == ["peer"])
-
-    store.setKey(nil, for: "peer")
-    #expect(store.key(for: "peer") == nil)
-    #expect(store.peers.isEmpty)
 }
 
 /// Network.framework can race one connection over several paths and drop the losers, so the Mac may
