@@ -108,6 +108,25 @@ private let conflictNote = "Two devices asked to pair at the same time, so both 
     #expect(rig.agent.model.pairingRequest == nil)
     #expect(rig.agent.model.pairingNote == withdrawnNote)
     #expect(asked.answers.isEmpty)             // the link refused it; the UI sends nothing more
+
+    // The link then closes the window; the explanation must outlive that.
+    rig.agent.startPairing()
+    #expect(rig.agent.model.pairingNote == nil)
+    rig.link.raise(.withdrawn)                 // nothing on screen again: the note stays clear
+    rig.link.closePairing()
+    #expect(!rig.agent.model.pairingOpen)
+    #expect(rig.agent.model.pairingNote == nil)
+}
+
+@Test @MainActor func theWithdrawalNoteSurvivesTheLinkClosingPairing() {
+    let rig = LinkRig()
+    rig.agent.startPairing()
+    _ = rig.link.ask()
+    rig.link.raise(.withdrawn)
+    rig.link.closePairing()                    // what the link does right after a withdrawal
+    #expect(!rig.agent.model.pairingOpen)
+    #expect(rig.agent.model.pairingRequest == nil)
+    #expect(rig.agent.model.pairingNote == withdrawnNote)
 }
 
 @Test @MainActor func aConflictDismissesTheAlertAndWarns() {
