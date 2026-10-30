@@ -55,10 +55,16 @@ extension Recogniser {
         session.acc.y += dy
         if session.live.contains(where: { tracks[$0]?.moved == true }) { session.tap = false }
         let moved = dx != 0 || dy != 0
+        let previous = session.lastT
+        session.lastT = t
         switch mode {
         case .idle, .done:
             return []
         case .pending:
+            if moved {
+                if session.held.isEmpty { session.heldFrom = max(previous, t - tuning.restSample) }
+                session.held.append((t, dx, dy))
+            }
             let strayed = session.live.contains { (tracks[$0]?.travel ?? 0) > tuning.slop }
             return strayed ? classify(at: t) : []
         case .pointing, .dragging, .threeFingerDrag:
@@ -94,18 +100,21 @@ extension Recogniser {
     /// The fingers have moved past the slop: decide what they are doing from how many there are.
     mutating func classify(at t: Double) -> [PadEvent] {
         let (dx, dy) = session.acc
-        let move = PadEvent.move(dx: dx, dy: dy, t: t)
+        // A still move dates where the travel set off, then each sample as it came.
+        let held = session.held
+        let moves: [PadEvent] = held.isEmpty ? [] : [.move(dx: 0, dy: 0, t: session.heldFrom)]
+            + held.map { .move(dx: $0.dx, dy: $0.dy, t: $0.t) }
         if session.locked {
             mode = .dragging(held: session.live[0], since: session.start)
-            return [move]
+            return moves
         }
-        if session.tapDrag { return grabByTap() + [move] }
+        if session.tapDrag { return grabByTap() + moves }
         let spreadChange = abs(spreadSize() - spreadSize(atRef: true))
         let translation = hypot(dx, dy)
         switch session.live.count {
         case 1:
             mode = .pointing
-            return [move]
+            return moves
         case 2:
             let startX = session.live.compactMap { tracks[$0]?.refX }.max() ?? 0
             if settings.notificationCenter, dx < 0, abs(dx) > abs(dy),
@@ -123,7 +132,7 @@ extension Recogniser {
             return [.scroll(dx: dx, dy: dy, phase: .began, t: t)]
         case 3 where settings.threeFingerDrag && landedTogether():
             mode = .threeFingerDrag
-            return [.button(.left, down: true, clicks: 1), move]
+            return [.button(.left, down: true, clicks: 1)] + moves
         case 3:
             mode = .swiping(3)
             return swipe(3)
@@ -350,6 +359,8 @@ extension Recogniser {
         }
         session.acc = (0, 0)
         session.refT = t
+        session.held = []
+        session.lastT = t
     }
 
     func centroid() -> (x: Double, y: Double) {

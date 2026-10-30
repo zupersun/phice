@@ -62,6 +62,24 @@ private func isMove(_ call: FakePoster.Call) -> Bool {
     })
 }
 
+@Test func aFastStrokesFirstPointsPostWhatTheSameTravelPostsMidStroke() {
+    // 4 pt a frame at 120 Hz: the slop is crossed on the third, and those three must not post as
+    // one slow lump. From landing, and after resting first, when no frames come at all.
+    for rest in [0.0, 0.3] {
+        let calls = posted { pad in
+            pad.land(1, 300, 200)
+            pad.wait(rest)
+            pad.move([1], 48, 0, frames: 12)
+            pad.lift(1)
+        }
+        let steps = calls.compactMap { call -> Double? in
+            if case let .move(dx, _, _) = call, dx != 0 { dx } else { nil }
+        }
+        #expect(steps.count == 12)
+        #expect(steps.allSatisfy { close($0, steps[6]) }, "rest \(rest): \(steps)")
+    }
+}
+
 @Test func aHeldDragSurvivesAStillPauseLongerThanTheSilenceTimeout() {
     // The phone heartbeats while nothing happens; replay must too, or the driver lets go.
     let calls = posted { pad in

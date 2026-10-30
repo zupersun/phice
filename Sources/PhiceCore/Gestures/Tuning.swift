@@ -3,6 +3,9 @@
 public struct GestureTuning: Sendable, Equatable {
     /// A finger that strays farther than this from where it landed is moving, not tapping.
     public var slop = 8.0
+    /// A finger setting off from rest sends no frames before its first motion, so that motion is
+    /// dated at most this long after the last one: a trackpad report, as the Mac's own pad sees it.
+    public var restSample = 1.0 / 120
     /// A tap lifts within this long of the first finger landing.
     public var tapTime = 0.3
     /// Taps this close in time and on the pad count up into double and triple clicks (macOS: 0.5 s).
