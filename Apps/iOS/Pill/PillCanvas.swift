@@ -4,7 +4,7 @@ import SwiftUI
 /// (`Neck`); a white shape and a black one inset by the border are each the union of pill, bead and
 /// neck, and their necks share fillet centres, so the rim keeps its width all the way round.
 struct PillCanvas: View, Animatable {
-    /// 0...1 while a finger is down on the pill: it squishes slightly, as the island does.
+    /// 0...1 while a finger is down on the pill: how far it has swollen (`Press.swell`).
     var press: Double
     let geometry: PillGeometry
     let frame: Swallow.Frame
@@ -59,13 +59,13 @@ struct PillCanvas: View, Animatable {
         Path(roundedRect: rect, cornerRadius: min(rect.width, rect.height) / 2, style: .circular)
     }
 
-    /// The pill as it is right now: squished by the press, reaching toward the bead, gulping.
+    /// The pill as it is right now: swollen by the press, reaching toward the bead, gulping.
     private func pillRect() -> CGRect {
         let rest = geometry.pill
         let across = rest.width + frame.reach
-        let squish = 1 - 0.06 * press
-        let width = across * frame.stretch.width * squish
-        let height = rest.height * frame.stretch.height * squish
+        let swell = 1 + 0.08 * press
+        let width = across * frame.stretch.width * swell
+        let height = rest.height * frame.stretch.height * swell
         let centreX = geometry.side == .left ? rest.minX + across / 2 : rest.maxX - across / 2
         return CGRect(x: centreX - width / 2, y: rest.midY - height / 2, width: width, height: height)
     }

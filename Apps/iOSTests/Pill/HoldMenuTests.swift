@@ -73,12 +73,12 @@ private let origin = CGPoint(x: 30, y: 200)
     #expect(menu.isOpen)
 }
 
-/// As quick as a long press on the Dynamic Island: 0.4 s felt slow on the iPhone.
-@Test func aPressBecomesAHoldAfterAQuarterSecond() {
+/// One motion from contact: the swell's out-and-back is the hold, and the menu opens as it ends.
+@Test func aPressBecomesAHoldAfterTwoTenthsOfASecond() {
     var press = Press(at: origin, t: 10)
-    #expect(press.tick(10.24) == nil)
+    #expect(press.tick(10.19) == nil)
     #expect(press.move(to: CGPoint(x: 36, y: 204), t: 10.1) == nil)
-    #expect(press.tick(10.25) == .hold)
+    #expect(press.tick(10.2) == .hold)
     #expect(press.tick(10.5) == nil)
     #expect(press.move(to: CGPoint(x: 90, y: 200), t: 10.6) == nil)
 }
@@ -99,4 +99,15 @@ private let origin = CGPoint(x: 30, y: 200)
         == .move(dx: 5, dy: 5, t: 3))
     #expect(drag.lift(overPad: true) == .paste(itemID: "a"))
     #expect(drag.lift(overPad: false) == nil)
+}
+
+@Test func theSwellStartsOnContactPeaksHalfwayAndIsBackAsTheMenuOpens() {
+    #expect(Press.swell(0) == 0)
+    #expect(Press.swell(1.0 / 60) > 0.2)
+    #expect(abs(Press.swell(Press.holdDelay / 2) - 1) < 1e-9)
+    #expect(abs(Press.swell(Press.holdDelay)) < 1e-9)
+    #expect(Press.swell(Press.holdDelay + 0.05) == 0)
+    #expect(Press.swell(-0.01) == 0)
+    let rising = stride(from: 0.0, to: Press.holdDelay / 2, by: 0.01).map(Press.swell)
+    #expect(rising == rising.sorted())
 }
