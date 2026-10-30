@@ -176,7 +176,7 @@ final class QuartzPoster: EventPoster {
             let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("phice-input")
             let items = clipboard.store.types(for: item.id) ?? []
             if let input = ShortcutInput.file(for: items, in: scratch) {
-                ShortcutsCLI.run(name, input: input, temporary: input.path.hasPrefix(scratch.path))
+                ShortcutsCLI.run(name, input: input.url, temporary: input.temporary)
             }
             return true
         }

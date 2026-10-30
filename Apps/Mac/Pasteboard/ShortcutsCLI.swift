@@ -44,17 +44,24 @@ enum ShortcutsCLI {
 
 /// The copied item as a file, which is what a shortcut takes as input.
 enum ShortcutInput {
-    static func file(for items: [[String: Data]], in directory: URL) -> URL? {
+    struct Input {
+        var url: URL
+        /// We wrote it, so we delete it. A file the user copied is never ours to delete, wherever
+        /// its path points.
+        var temporary: Bool
+    }
+
+    static func file(for items: [[String: Data]], in directory: URL) -> Input? {
         guard let item = items.first else { return nil }
         if let data = item["public.file-url"], let text = String(data: data, encoding: .utf8),
            let url = URL(string: text), url.isFileURL {
-            return url
+            return Input(url: url, temporary: false)
         }
         let (type, ext) = [("public.png", "png"), ("public.tiff", "tiff"), ("public.jpeg", "jpg"),
                            ("public.utf8-plain-text", "txt")].first { item[$0.0] != nil } ?? ("", "")
         guard let data = item[type] else { return nil }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("\(UUID().uuidString).\(ext)")
-        return (try? data.write(to: url)) != nil ? url : nil
+        return (try? data.write(to: url)) != nil ? Input(url: url, temporary: true) : nil
     }
 }

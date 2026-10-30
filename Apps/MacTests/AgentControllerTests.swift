@@ -169,6 +169,25 @@ private final class Flag: @unchecked Sendable {
     #expect(rig.agent.model.pairingRequest == nil)
     #expect(rig.agent.model.connectedDevice == "Loopback iPhone")
 }
+
+// Any device nearby could have auto-paired, so a debug run must not hand it the clipboard.
+@Test @MainActor func autoAllowNeverSendsTheClipboardToThePhone() async {
+    let rig = Rig(autoAllow: true)
+    rig.agent.clipboard.store.add(text("private"), asPill: true, now: Date())
+    rig.agent.start()
+    rig.phone.start()
+    rig.phone.pair(with: rig.phone.macs[0])
+    await settle()
+    rig.agent.clipboard.store.add(text("copied while connected"), asPill: true, now: Date())
+    await settle()
+    let sent = rig.received.messages
+    #expect(sent.contains(.clipboard([])))
+    #expect(sent.contains(.pill(nil)))
+    for message in sent {
+        if case .clipboard(let items) = message { #expect(items.isEmpty) }
+        if case .pill(let item) = message { #expect(item == nil) }
+    }
+}
 #endif
 
 @Test @MainActor func withoutAutoAllowPairingStillWaitsForTheUser() async {
