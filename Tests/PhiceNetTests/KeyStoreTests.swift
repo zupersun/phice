@@ -45,6 +45,18 @@ private func keychainHasLocalID(_ service: String) -> Bool {
     }
 }
 
+/// Keys stored before labels existed have none, and the legacy macOS keychain reports the service
+/// name in its place: that reads as no label, not as a phone named after the service.
+@Test func aKeyStoredWithoutALabelReadsAsUnlabelled() {
+    withThrowawayService { service in
+        SecItemAdd([kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                    kSecAttrAccount: "peer", kSecValueData: Data([1])] as CFDictionary, nil)
+        let store = KeychainKeyStore(service: service)
+        #expect(store.labels.map(\.label) == [""])
+        #expect(store.entry(for: "peer")?.label == "")
+    }
+}
+
 /// The id is public (it is in the Bonjour TXT record), so it lives in UserDefaults; once there, the
 /// keychain is never asked for it, so a rebuilt Mac app can never come up with a different one.
 @Test func theLocalIDIsReadFromUserDefaultsFirst() {
