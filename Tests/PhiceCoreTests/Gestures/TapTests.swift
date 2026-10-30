@@ -19,6 +19,17 @@ import Testing
     #expect(near(pad.travel.dx, 30) && near(pad.travel.dy, -12))
 }
 
+@Test func theTravelInsideTheSlopArrivesAsTheSamplesThatMadeIt() {
+    // Each with its own time, after a still move dating where it started, so the Mac's
+    // acceleration sees how fast the finger went rather than one lump.
+    var pad = Pad()
+    pad.land(1, 400, 200)
+    pad.move([1], 12, 0, frames: 3)
+    let t = (1 ... 4).map { Double($0) / 120 }
+    #expect(pad.events == [.move(dx: 0, dy: 0, t: t[0]), .move(dx: 4, dy: 0, t: t[1]),
+                           .move(dx: 4, dy: 0, t: t[2]), .move(dx: 4, dy: 0, t: t[3])])
+}
+
 @Test func jitterInsideTheSlopIsStillATapAndMovesNothing() {
     var pad = Pad()
     pad.land(1, 400, 200)

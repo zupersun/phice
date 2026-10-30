@@ -102,6 +102,12 @@ struct Session: Sendable {
     /// Common travel of the fingers since `refT`, when their references were last set.
     var acc = (x: 0.0, y: 0.0)
     var refT = 0.0
+    /// That travel sample by sample while undecided, and when the first sample set off: it goes to
+    /// the Mac as the moves it was, not as one lump the Mac would read as slow.
+    var held: [(t: Double, dx: Double, dy: Double)] = []
+    var heldFrom = 0.0
+    /// The last frame the fingers were seen in.
+    var lastT = 0.0
     /// Pinch or spread size at the last step.
     var scale = 0.0
     var lastStep = -Double.infinity
