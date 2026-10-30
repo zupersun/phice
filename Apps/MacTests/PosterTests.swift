@@ -116,3 +116,68 @@ private let right = CGRect(x: 1440, y: -200, width: 1920, height: 1080)
     #expect(momentumSteps > 0)                  // the coast is part of what is checked
     #expect(Set(arrived.dropFirst()).count == 1, "arrived \(arrived)")
 }
+
+// MARK: Which keys a shortcut posts depends on what is in front
+
+private func keyDowns(_ events: [CGEvent]) -> [(code: Int64, flags: CGEventFlags)] {
+    events.filter { $0.type == .keyDown }
+        .map { ($0.getIntegerValueField(.keyboardEventKeycode), $0.flags.intersection(
+            [.maskCommand, .maskControl, .maskShift, .maskAlternate])) }
+}
+
+private final class Posted {
+    var events: [CGEvent] = []
+}
+
+private func poster(front: @escaping () -> String?, into posted: Posted) -> QuartzPoster {
+    let poster = QuartzPoster(
+        clipboard: Clipboard(pasteboard: .withUniqueName(),
+                             store: ClipStore(directory: tempDirectory())),
+        watchScroll: false, sink: { posted.events.append($0) }, frontmost: front)
+    poster.trusted = true
+    return poster
+}
+
+// The four-finger spread is Show Desktop (F11); with Apps open it is what dismisses it.
+@Test func theSpreadDismissesAppsWhenAppsIsFrontmostAndShowsTheDesktopOtherwise() {
+    var front: String? = "com.apple.Safari"
+    let posted = Posted()
+    let poster = poster(front: { front }, into: posted)
+
+    poster.shortcut(.showDesktop)
+    #expect(keyDowns(posted.events).map(\.code) == [103])               // F11
+    #expect(posted.events.map(\.type) == [.keyDown, .keyUp])
+
+    for apps in ["com.apple.apps.launcher", "com.apple.launchpad.launcher"] {
+        posted.events.removeAll()
+        front = apps
+        poster.shortcut(.showDesktop)
+        #expect(keyDowns(posted.events).map(\.code) == [53], "\(apps)")  // Escape
+        #expect(posted.events.map(\.type) == [.keyDown, .keyUp])
+    }
+
+    posted.events.removeAll()
+    front = nil                                                   // nothing in front: no Apps
+    poster.shortcut(.showDesktop)
+    #expect(keyDowns(posted.events).map(\.code) == [103])
+}
+
+@Test func otherShortcutsAreUnaffectedByAppsBeingOpen() {
+    let posted = Posted()
+    let poster = poster(front: { "com.apple.apps.launcher" }, into: posted)
+    poster.shortcut(.missionControl)
+    #expect(keyDowns(posted.events).map(\.code) == [126])
+}
+
+@Test func forceClickIsQuickLookInFinderAndLookUpElsewhere() {
+    var front: String? = "com.apple.finder"
+    let posted = Posted()
+    let poster = poster(front: { front }, into: posted)
+    poster.forceClick()
+    #expect(keyDowns(posted.events).map(\.code) == [49])                // Space
+    posted.events.removeAll()
+    front = "com.apple.Safari"
+    poster.forceClick()
+    #expect(keyDowns(posted.events).map(\.code) == [2])                 // ⌃⌘D
+    #expect(keyDowns(posted.events).first?.flags == [.maskControl, .maskCommand])
+}

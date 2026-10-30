@@ -17,6 +17,7 @@ final class QuartzPoster: EventPoster {
 
     private let clipboard: Clipboard
     private let watchScroll: Bool
+    private let frontmost: () -> String?
     private let sink: (CGEvent) -> Void
     private var lastPosted: CGPoint?
     private var accumulator = ScrollAccumulator()
@@ -25,10 +26,15 @@ final class QuartzPoster: EventPoster {
 
     /// `sink` is where events go: the window server, unless a test stands in for it, in which case
     /// `watchScroll: false` also keeps the scroll tap (and its permission prompt) out of it.
+    /// `frontmost` names the app in front, which a few shortcuts depend on.
     init(clipboard: Clipboard, watchScroll: Bool = true,
-         sink: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) }) {
+         sink: @escaping (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) },
+         frontmost: @escaping () -> String? = {
+             NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+         }) {
         self.clipboard = clipboard
         self.watchScroll = watchScroll
+        self.frontmost = frontmost
         self.sink = sink
     }
 
@@ -135,9 +141,20 @@ final class QuartzPoster: EventPoster {
             } else if let stroke = shortcut.keystroke {
                 key(stroke)
             }
+        case .showDesktop where appsIsShowing:
+            // The four-finger spread dismisses Apps the way it does on a MacBook, rather than
+            // showing the desktop behind it.
+            key(.escape)
         default:
             if let stroke = shortcut.keystroke { key(stroke) }
         }
+    }
+
+    /// Apps (Launchpad before macOS 26) takes focus while it is open, so it is the frontmost app
+    /// exactly then: no window list or private call needed, and a lingering process does not count.
+    private var appsIsShowing: Bool {
+        guard let id = frontmost() else { return false }
+        return ["com.apple.apps.launcher", "com.apple.launchpad.launcher"].contains(id)
     }
 
     func forceClick() {
@@ -145,9 +162,7 @@ final class QuartzPoster: EventPoster {
         key(finderIsFrontmost ? .quickLook : .lookUp)
     }
 
-    private var finderIsFrontmost: Bool {
-        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
-    }
+    private var finderIsFrontmost: Bool { frontmost() == "com.apple.finder" }
 
     private func key(_ stroke: KeyStroke) {
         let source = CGEventSource(stateID: .hidSystemState)

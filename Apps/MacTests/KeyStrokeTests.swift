@@ -33,3 +33,7 @@ import Testing
     #expect(KeyStroke.lookUp == KeyStroke(code: 2, flags: [.maskControl, .maskCommand]))
     #expect(KeyStroke.quickLook == KeyStroke(code: 49, flags: []))
 }
+
+@Test func escapeIsKeyCode53() {
+    #expect(KeyStroke.escape == KeyStroke(code: 53))
+}
