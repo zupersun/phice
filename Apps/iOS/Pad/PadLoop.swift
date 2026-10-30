@@ -39,9 +39,6 @@ import PhiceCore
             events += recogniser.feed(frame)
             if model.recording { batch.append(frame) }
         }
-        // To the second is all the pill's dimming needs, and every write redraws the pill.
-        let now = Date()
-        if now.timeIntervalSince(model.lastTouch) >= 1 { model.lastTouch = now }
         publish(events)
     }
 

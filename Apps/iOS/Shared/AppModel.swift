@@ -50,8 +50,6 @@ struct Appearance: Codable, Equatable {
     // What the recogniser sees, written by the pad
     var verdicts: [UInt16: TouchVerdict] = [:]
     var grab: Grab?
-    /// When a finger last touched the pad or the pill; the pill's border dims 30 s after it.
-    var lastTouch = Date()
     /// Which edge the pill is on right now; follows the device-bottom edge through rotation.
     var pillSide = Side.left
 
