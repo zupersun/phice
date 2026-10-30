@@ -65,9 +65,9 @@ struct HoldMenu: Equatable {
 struct Press: Equatable {
     enum Kind { case hold, drag }
 
-    /// About a long press on the Dynamic Island: Haptic Touch at its default speed, not UIKit's
-    /// 0.5 s long press. 0.4 s felt slow on the iPhone.
-    static let holdDelay = 0.25
+    /// The swell's out-and-back: the pill moves from contact and opens as it settles. 0.4 s, and
+    /// then 0.25 s with no visible motion until the menu, both felt like a delay on the iPhone.
+    static let holdDelay = 0.2
     static let slop: CGFloat = 10
 
     let start: CGPoint
@@ -77,6 +77,13 @@ struct Press: Equatable {
     init(at point: CGPoint, t: Double) {
         start = point
         t0 = t
+    }
+
+    /// How far the pill has swollen, 0...1, `elapsed` seconds after the finger landed: moving from
+    /// the first frame, fullest halfway, back to rest the moment the hold opens the menu.
+    static func swell(_ elapsed: Double) -> Double {
+        guard elapsed > 0, elapsed < holdDelay else { return 0 }
+        return sin(.pi * elapsed / holdDelay)
     }
 
     /// Returns `.drag` the moment the finger leaves the slop before the hold fires.

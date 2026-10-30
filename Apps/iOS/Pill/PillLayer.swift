@@ -84,17 +84,19 @@ struct PillLayer: View {
     }
 
     private func canvas(_ g: PillGeometry) -> some View {
-        TimelineView(.animation(paused: model.grab == nil && !settling)) { context in
+        TimelineView(.animation(paused: model.grab == nil && !settling && !pressing)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let grab = model.grab.map { g.onScreen($0, columnWidth: model.columnWidth) }
             let distance = grab.map { Double(g.distanceFromEdge($0)) }
             let frame = swallow.frame(at: t, live: grab, distance: distance,
                                       pill: CGPoint(x: g.pill.midX, y: g.pill.midY),
                                       reduceMotion: reduceMotion)
-            PillCanvas(press: pressing && !reduceMotion ? 1 : 0, geometry: g, frame: frame,
+            let swell = pressing && !reduceMotion ? press.map { Press.swell(t - $0.t0) } ?? 0 : 0
+            PillCanvas(press: swell, geometry: g, frame: frame,
                        border: border, filled: optimistic || model.pill != nil,
                        drawsPill: !surfaceShown)
-                .animation(.spring(duration: 0.2, bounce: 0.3), value: pressing)
+                // Lifting or dragging out mid-swell settles it back rather than snapping.
+                .animation(.spring(duration: 0.18, bounce: 0), value: pressing)
         }
     }
 
