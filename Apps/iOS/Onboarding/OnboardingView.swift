@@ -58,7 +58,7 @@ struct OnboardingView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Phice, switched on")
         case .choose:
-            heading("Choose your Mac", "Macs nearby with Phice's setup open")
+            heading("Choose your Mac", "in Phice on the Mac, click Pair New iPhone")
             MacList(model: model) { mac in
                 flow.chose(mac)
                 model.link.pair(with: mac)
@@ -80,7 +80,7 @@ struct OnboardingView: View {
     }
 }
 
-/// Only Macs whose setup window is open, by their own names.
+/// Only Macs where Pair New iPhone was just clicked, by their own names.
 private struct MacList: View {
     let model: AppModel
     let choose: (DiscoveredMac) -> Void
@@ -89,7 +89,7 @@ private struct MacList: View {
         let macs = model.macs.filter(\.pairingOpen)
         VStack(spacing: 10) {
             if macs.isEmpty {
-                Text("Open Phice on your Mac to see it here")
+                Text("Waiting for a Mac to open pairing")
                     .font(.system(size: 17))
                     .foregroundStyle(Palette.mute)
             }

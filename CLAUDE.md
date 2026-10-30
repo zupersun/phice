@@ -99,9 +99,12 @@ Carried over from the Python version, where each was learned the hard way, plus 
    orderings two or three times in four. `LSUIElement` stays fixed.
 6. **Ask for event-posting access from the agent itself** (`CGRequestPostEventAccess`), never from
    a terminal, or macOS lists the terminal. A new grant takes effect after the agent relaunches.
-7. **The Allow click is the pairing security boundary.** The Mac advertises that it accepts a new
-   phone only while its setup window is open; first contact is a key agreement the user approves
-   on the Mac; every later connection is TLS-PSK. No unauthenticated message ever reaches
+7. **The Allow click is the pairing security boundary.** The Mac accepts a new phone only for 60 s
+   after Pair New iPhone is clicked, closes after one answer, and refuses both when two devices ask
+   at once: iOS names every phone "iPhone", so the dialog cannot tell a nearby attacker from the
+   user's phone, and the race is all there is to defend (the user chose this over a matching code).
+   First contact is a key agreement the user approves on the Mac; every later connection is TLS 1.2
+   PSK. The Mac lists paired phones and can remove them. No unauthenticated message ever reaches
    `MacDriver`.
 8. **Nothing user-visible on the clipboard leaks.** Items marked `org.nspasteboard.ConcealedType`
    or `TransientType` are never shown, sent to the phone, or written to disk.
