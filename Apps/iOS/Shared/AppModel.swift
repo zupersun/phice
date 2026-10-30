@@ -22,7 +22,7 @@ struct Appearance: Codable, Equatable {
     var glow = true
     var glowColor = GlowColor.warmWhite
     var glowIntensity = 1.0
-    var borderBrightness = 0.85
+    var borderBrightness = 1.0
 }
 
 /// State the pad and the pill share. The pad writes what the fingers are doing; the pill draws it;

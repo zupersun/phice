@@ -74,8 +74,12 @@ private let large = CGSize(width: 956, height: 440)
     #expect(g.overPad(CGPoint(x: 400, y: 200), columnWidth: 307))
 }
 
-@Test func theBorderDimsThirtySecondsAfterTheLastTouch() {
-    #expect(!Dimming.isDimmed(now: 129.9, lastTouch: 100))
-    #expect(Dimming.isDimmed(now: 130, lastTouch: 100))
-    #expect(!Dimming.isDimmed(now: 130, lastTouch: 130))
+/// The pad holds the screen at minimum brightness, where the old dimmed pill (16% white) vanished.
+@Test func thePillStaysBrightEnoughToSeeAtMinimumScreenBrightness() {
+    #expect(Appearance().borderBrightness == 1)
+    #expect(PillInk.border(1, connected: true) == 1)
+    #expect(PillInk.border(0.7, connected: true) == 0.7)
+    #expect(PillInk.border(1, connected: false) == 0.5)
+    #expect(PillInk.border(0.5, connected: false) == 0.5)
+    #expect(PillInk.glyph == 1)
 }
