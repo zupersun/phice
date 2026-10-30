@@ -199,10 +199,10 @@ public struct Recogniser: Sendable {
         }
     }
 
-    /// The Force Touch trackpad's levels for a lone finger, from wherever it came to rest: a press
-    /// (its contact a step larger, or landing that firm and held) holds the left button down and
-    /// lets it drag; a further step is the deep press, the force click; easing back a step for
-    /// `releaseHold` lets the button up, as lifting does. Nothing presses while it moves.
+    /// A Force Touch trackpad's click for a lone finger, from wherever it came to rest: a press (its
+    /// contact a step larger, or landing that firm and held) holds the left button down and lets it
+    /// drag; easing back a step for `releaseHold` lets the button up, as lifting does. Nothing lies
+    /// above the press, and nothing presses while the finger moves.
     mutating func pressure(at t: Double) -> [PadEvent] {
         guard session.live.count == 1, !session.locked, let id = session.live.first,
               var track = tracks[id] else { return [] }
@@ -210,11 +210,6 @@ public struct Recogniser: Sendable {
         let force = tuning.force, size = steps(track.radius)
         if let pressed = track.pressedAt {
             guard session.pressed else { return [] }
-            if size > pressed, !track.deep, settings.lookUpForceClick {
-                track.deep = true
-                track.verdict = .force
-                return [.forceClick]
-            }
             guard size < pressed else {
                 track.easedSince = nil
                 return []
@@ -249,7 +244,6 @@ public struct Recogniser: Sendable {
     mutating func release(_ track: inout Track, at t: Double) -> [PadEvent] {
         let clicks = session.pressClicks
         track.pressedAt = nil
-        track.deep = false
         track.easedSince = nil
         track.verdict = .live
         track.baseline = steps(track.radius)

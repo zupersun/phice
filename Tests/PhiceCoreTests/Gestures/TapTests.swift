@@ -255,7 +255,7 @@ import Testing
 }
 
 @Test func threeFingerTapLooksUpWhicheverWayTheMacDoes() {
-    // A fingertip barely reaches a deep press, so Look Up is also where the Mac's own option puts it.
+    // The pad has no press deeper than a click, so Look Up is where the Mac's own option puts it.
     var pad = Pad()
     pad.tap(fingers: 3)
     #expect(pad.events == [.forceClick])

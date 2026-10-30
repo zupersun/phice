@@ -1,9 +1,9 @@
 import Testing
 @testable import PhiceCore
 
-// The Force Touch trackpad's three levels on a phone that reads contact size in 12.1 pt steps:
-// a tap clicks; a press (the contact a step larger at rest) holds the button down; a further step
-// while pressed is a deep press, the force click.
+// A Force Touch trackpad's click on a phone that reads contact size in 12.1 pt steps: a tap clicks,
+// a press (the contact a step larger at rest) holds the button down. Nothing lies above the press:
+// a fingertip barely reaches another step, and Look Up is the three-finger tap.
 
 private let down = PadEvent.button(.left, down: true, clicks: 1)
 private let up = PadEvent.button(.left, down: false, clicks: 1)
@@ -95,25 +95,14 @@ private let up = PadEvent.button(.left, down: false, clicks: 1)
     #expect(pad.actions.isEmpty)
 }
 
-@Test func aFurtherStepWhilePressedIsADeepPress() {
+@Test func aFurtherStepWhilePressedDoesNothingMore() {
     var pad = Pad()
     pad.land(1, 400, 200)
     pad.hold(0.1)
     pad.press(1, to: steps(3))
     pad.press(1, to: steps(4))
-    #expect(pad.events == [down, .forceClick])
-    #expect(pad.r.verdicts[1] == .force)
-    pad.hold(0.3)
-    pad.lift(1)
-    #expect(pad.events == [down, .forceClick, up])
-}
-
-@Test func aDeepPressNeedsLookUpOnForceClick() {
-    var pad = Pad { $0.lookUpForceClick = false }
-    pad.land(1, 400, 200)
-    pad.hold(0.1)
-    pad.press(1, to: steps(3))
-    pad.press(1, to: steps(4))
+    #expect(pad.events == [down])
+    #expect(pad.r.verdicts[1] == .pressed)
     pad.lift(1)
     #expect(pad.events == [down, up])
 }
@@ -124,8 +113,8 @@ private let up = PadEvent.button(.left, down: false, clicks: 1)
     pad.hold(0.3)
     pad.press(1, to: steps(4))
     pad.hold(0.3)
-    #expect(pad.events == [down, .forceClick])
-    #expect(pad.r.verdicts[1] == .force)
+    #expect(pad.events == [down])
+    #expect(pad.r.verdicts[1] == .pressed)
 }
 
 @Test func aSecondFingerOnAPressedItemGrabsIt() {

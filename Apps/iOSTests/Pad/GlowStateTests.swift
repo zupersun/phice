@@ -28,48 +28,12 @@ import Testing
     #expect(glow.step(contact: 36.4, verdict: .live, now: 1.24).light > 35 * GlowState.spread)
 }
 
-@Test func aForcePressBloomsThenDispersesAsTheFingerEasesOff() {
-    var glow = GlowState()
-    _ = glow.step(contact: 10, verdict: .live, now: 1)
-    let start = glow.step(contact: 14, verdict: .force, now: 1.1)
-    let mid = glow.step(contact: 14, verdict: .force, now: 1.1 + GlowState.bloomTime / 2)
-    let full = glow.step(contact: 14, verdict: .force, now: 1.1 + GlowState.bloomTime)
-    #expect(start.bloom < mid.bloom && mid.bloom < full.bloom)
-    #expect(start.bloomAlpha < mid.bloomAlpha && mid.bloomAlpha <= full.bloomAlpha)
-    #expect(full.bloom > full.light)
-
-    // Easing off: the contact shrinks and the extra light spreads out and fades, for good.
-    var now = 1.1 + GlowState.bloomTime
-    var last = full
-    for contact in [12.0, 10, 9, 9, 9, 9, 9, 9, 9, 9] {
-        now += 0.05
-        let shape = glow.step(contact: contact, verdict: .force, now: now)
-        #expect(shape.bloomAlpha <= last.bloomAlpha)
-        #expect(shape.bloom >= shape.light)
-        last = shape
-    }
-    #expect(last.bloomAlpha == 0)
-    #expect(glow.step(contact: 14, verdict: .force, now: now + 0.05).bloomAlpha == 0)
-}
-
-@Test func aSecondForcePressBloomsAgain() {
-    var glow = GlowState()
-    _ = glow.step(contact: 14, verdict: .force, now: 1)
-    _ = glow.step(contact: 9, verdict: .live, now: 2)
-    _ = glow.step(contact: 14, verdict: .force, now: 3)
-    #expect(glow.step(contact: 14, verdict: .force, now: 3 + GlowState.bloomTime).bloomAlpha > 0)
-}
-
 @Test func aPressLiftsTheLightAndItsReleaseDropsItAtOnce() {
     var glow = GlowState()
     #expect(glow.step(contact: 24.3, verdict: .live, now: 1).bloomAlpha == 0)
     let pressed = glow.step(contact: 24.3, verdict: .pressed, now: 1.01)
     #expect(pressed.bloomAlpha > 0)
     #expect(pressed.bloom > pressed.light)
-    let deep = glow.step(contact: 36.4, verdict: .force, now: 1.01 + GlowState.bloomTime)
-    let deeper = glow.step(contact: 36.4, verdict: .force, now: 1.02 + 2 * GlowState.bloomTime)
-    #expect(deeper.bloomAlpha > pressed.bloomAlpha)
-    #expect(deep.bloom > pressed.bloom)
     #expect(glow.step(contact: 36.4, verdict: .live, now: 2).bloomAlpha == 0)
 }
 

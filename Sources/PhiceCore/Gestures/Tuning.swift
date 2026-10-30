@@ -63,8 +63,7 @@ public struct ForceTuning: Sendable, Equatable {
     public var baselineDelay = 0.08
     /// A pointing finger drifting less than this over `baselineDelay` has stopped.
     public var restJitter = 3.0
-    /// A press reaches at least this many steps, and at least one more than at rest. A deep press is
-    /// one more again: no fingertip in the probe got there (0 of 12 presses).
+    /// A press reaches at least this many steps, and at least one more than at rest.
     public var pressSteps = 3
     /// A touch already at `pressSteps` when its baseline is read, still there this long after
     /// landing, pressed hard from the start. One that lifts sooner was a firm tap.

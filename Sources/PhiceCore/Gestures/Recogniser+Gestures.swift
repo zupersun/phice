@@ -19,7 +19,7 @@ extension Recogniser {
         session.live.append(id)
         session.most = max(session.most, session.live.count)
         session.start = min(session.start, track.startT)
-        if track.moved || track.verdict == .force { session.tap = false }
+        if track.moved { session.tap = false }
         guard session.live.count > 1 else {
             resetRefs(at: t)
             return []
@@ -329,7 +329,7 @@ extension Recogniser {
             lastTap = Tap(t: t, x: p.x, y: p.y, fingers: 2, clicks: 1)
             return settings.secondaryClick == .twoFingers ? click(.right, 1) : []
         case 3:
-            // Look Up, as the Mac's own option has it: a fingertip barely reaches a deep press.
+            // Look Up, where the Mac's own option puts it: the pad has no press deeper than a click.
             return [.forceClick]
         default:
             return []

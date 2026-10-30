@@ -24,10 +24,9 @@ struct Track: Sendable {
     var baseline: Int?
     /// It is still resting where it landed, so a firm landing held still can force-click.
     var landing = true
-    /// The size it pressed at, while the press holds the button down; whether that press has gone
-    /// deep; and since when its contact has eased a step, for the release.
+    /// The size it pressed at, while the press holds the button down; and since when its contact
+    /// has eased a step, for the release.
     var pressedAt: Int?
-    var deep = false
     var easedSince: Double?
     /// Joined a three-finger hand as its thumb: wide, but not a resting hand.
     var thumb = false
