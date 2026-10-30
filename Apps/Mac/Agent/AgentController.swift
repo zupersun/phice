@@ -134,8 +134,9 @@ import PhiceNet
     }
 
     private func pushClipboard() {
-        send(.clipboard(ClipboardPayload.items(from: clipboard.store.history)))
-        send(.pill(clipboard.store.pill))
+        // Under --auto-allow any device in range may have paired itself; it gets none of this.
+        send(.clipboard(autoAllow ? [] : ClipboardPayload.items(from: clipboard.store.history)))
+        send(.pill(autoAllow ? nil : clipboard.store.pill))
     }
 
     // MARK: Clock
