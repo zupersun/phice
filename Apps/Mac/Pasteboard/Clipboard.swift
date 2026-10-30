@@ -23,6 +23,9 @@ final class Clipboard {
         capture(asPill: false, now: now)
     }
 
+    /// Look at the pasteboard without keeping anything, so a later poll sees only later copies.
+    func discardChanges() { seen = pasteboard.changeCount }
+
     /// Read the pasteboard into the store now. nil when it holds nothing, something private, or
     /// more than a clipboard should.
     @discardableResult

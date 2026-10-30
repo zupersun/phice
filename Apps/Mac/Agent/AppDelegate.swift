@@ -28,7 +28,7 @@ import SwiftUI
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func windowWillClose(_ notification: Notification) {
-        controller?.setPairingOpen(false)
+        controller?.cancelPairing()
     }
 
     private func showSetup() {
@@ -36,7 +36,6 @@ import SwiftUI
         let window = window ?? makeWindow(for: controller)
         self.window = window
         controller.refreshLoginItem()
-        controller.setPairingOpen(true)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }

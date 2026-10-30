@@ -70,16 +70,7 @@ import PhiceNet
     func start() {
         link.onChange = { [weak self] in self?.linkChanged() }
         link.onMessage = { [weak self] message in self?.receive(message) }
-        link.onPairing = { [weak self] event in
-            // shortcut: .withdrawn and .conflict are not shown yet; the window UI comes next.
-            guard let self, case let .request(request) = event else { return }
-            if autoAllow {
-                NSLog("PHICE --auto-allow: accepted pairing request from %@", request.deviceName)
-                return request.respond(true)
-            }
-            model.pairingRequest = request
-            onNeedsWindow?()
-        }
+        link.onPairing = { [weak self] event in self?.pairing(event) }
         clipboard.store.onChange = { [weak self] in self?.pushClipboard() }
         refreshAccessibility()
         refreshLoginItem()
@@ -90,6 +81,7 @@ import PhiceNet
             link.pairingOpen = true
         }
         link.start()
+        syncLink()
     }
 
     // MARK: Messages
@@ -109,6 +101,7 @@ import PhiceNet
     }
 
     private func linkChanged() {
+        syncLink()
         let device = link.connectedDevice
         guard device != model.connectedDevice else { return }
         model.connectedDevice = device
@@ -168,8 +161,9 @@ import PhiceNet
 
     /// Four times a second: copies made on the Mac go to history. Every fourth beat the permission,
     /// and every hour the history's age, is checked.
-    private func housekeep() {
-        clipboard.poll()
+    func housekeep() {
+        // No phone has ever been allowed, so nothing of the clipboard is kept for one.
+        if model.pairedPhones.isEmpty { clipboard.discardChanges() } else { clipboard.poll() }
         beats += 1
         if beats % 4 == 0 { refreshAccessibility() }
         if beats % 14_400 == 0 { clipboard.store.prune(now: Date()) }
@@ -187,15 +181,68 @@ import PhiceNet
 
     // MARK: Window actions
 
-    /// A new iPhone can pair only while the window is open (constraint 7).
-    func setPairingOpen(_ open: Bool) {
-        link.pairingOpen = open || autoAllow
+    /// The link closes pairing itself after this long, after any answer, and on a conflict; this is
+    /// only for the countdown.
+    static let pairingWindow: TimeInterval = 60
+
+    /// Constraint 7: pairing opens from the button and nothing else, never from opening the window.
+    func startPairing() {
+        guard model.pairingRequest == nil else { return }
+        model.pairingNote = nil
+        link.pairingOpen = true
+        syncLink()
+        if model.pairingOpen { model.pairingDeadline = Date().addingTimeInterval(Self.pairingWindow) }
     }
 
-    func resolvePairing(allow: Bool) {
-        let request = model.pairingRequest
+    /// Cancel, or the window closed. Under --auto-allow pairing stays open regardless.
+    func cancelPairing() {
+        link.pairingOpen = autoAllow
+        syncLink()
+    }
+
+    /// Answers the request the alert was opened with. Anything else (the alert outlived it) is a
+    /// click on nothing: it must never allow whichever phone is asking now.
+    func resolvePairing(_ request: PairingRequest, allow: Bool) {
+        guard model.pairingRequest?.id == request.id else { return }
         model.pairingRequest = nil
-        request?.respond(allow)
+        request.respond(allow)
+    }
+
+    func remove(_ phone: PairedPhone) {
+        link.remove(phone.id)
+        syncLink()
+    }
+
+    private func pairing(_ event: PairingEvent) {
+        switch event {
+        case .request(let request):
+            if autoAllow {
+                NSLog("PHICE --auto-allow: accepted pairing request from %@", request.deviceName)
+                return request.respond(true)
+            }
+            // The link asks about one phone at a time; a second never takes the alert from the first.
+            guard model.pairingRequest == nil else { return request.respond(false) }
+            model.pairingRequest = request
+            model.pairingNote = nil
+            onNeedsWindow?()
+        case .withdrawn:
+            guard model.pairingRequest != nil else { return }
+            model.pairingRequest = nil
+            model.pairingNote = "The iPhone stopped asking. Click Pair New iPhone to try again."
+        case .conflict:
+            model.pairingRequest = nil
+            model.pairingNote = "Two devices asked to pair at the same time, so both were refused. "
+                + "If only one was yours, someone nearby tried to pair. Try again."
+            onNeedsWindow?()
+        }
+    }
+
+    /// What the window shows of the link, taken whenever it says something changed.
+    private func syncLink() {
+        if autoAllow, !link.pairingOpen { link.pairingOpen = true }
+        model.pairingOpen = link.pairingOpen
+        if !link.pairingOpen { model.pairingDeadline = nil }
+        model.pairedPhones = link.pairedPhones
     }
 
     /// Whether the grant changed since the last look. The phone is told, and the poster stops or

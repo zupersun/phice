@@ -13,6 +13,8 @@ struct SetupView: View {
             Divider()
             pairing
             Divider()
+            paired
+            Divider()
             login
             HStack {
                 Spacer()
@@ -21,13 +23,15 @@ struct SetupView: View {
         }
         .padding(24)
         .frame(width: 420)
+        // Bound to the request it was opened with: its buttons answer that one or nothing.
         .alert(
             "Allow “\(model.pairingRequest?.deviceName ?? "iPhone")” to control this Mac?",
-            isPresented: Binding(get: { model.pairingRequest != nil }, set: { _ in })
-        ) {
-            Button("Allow") { controller.resolvePairing(allow: true) }
-            Button("Don't Allow", role: .cancel) { controller.resolvePairing(allow: false) }
-        } message: {
+            isPresented: Binding(get: { model.pairingRequest != nil }, set: { _ in }),
+            presenting: model.pairingRequest
+        ) { request in
+            Button("Allow") { controller.resolvePairing(request, allow: true) }
+            Button("Don't Allow", role: .cancel) { controller.resolvePairing(request, allow: false) }
+        } message: { _ in
             Text("Only allow an iPhone that is yours. It will be able to move the pointer and click.")
         }
     }
@@ -69,12 +73,60 @@ struct SetupView: View {
         }
     }
 
+    /// Idle: a button. Open: the countdown and Cancel. Whatever ended the last attempt is noted.
     private var pairing: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Pair a new iPhone").font(.headline)
-            Text("Open Phice on your iPhone and choose “\(model.macName)”. "
-                 + "This Mac accepts a new iPhone only while this window is open.")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.pairingOpen ? "Waiting for an iPhone" : "Pair a new iPhone")
+                        .font(.headline)
+                    pairingDetail
+                }
+                Spacer()
+                if model.pairingOpen {
+                    Button("Cancel") { controller.cancelPairing() }
+                } else {
+                    Button("Pair New iPhone") { controller.startPairing() }
+                }
+            }
+            if let note = model.pairingNote {
+                Text(note).font(.callout).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    @ViewBuilder private var pairingDetail: some View {
+        if model.pairingOpen {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let left = model.pairingSecondsLeft(now: context.date) ?? 0
+                Text("Open Phice on your iPhone and choose “\(model.macName)”. \(left) s left.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        } else {
+            Text("Click, then open Phice on your iPhone and choose “\(model.macName)”.")
                 .font(.callout).foregroundStyle(.secondary)
+        }
+    }
+
+    private var paired: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Paired iPhones").font(.headline)
+            if model.pairedPhones.isEmpty {
+                Text("None yet.").font(.callout).foregroundStyle(.secondary)
+            }
+            ForEach(model.pairedPhones) { phone in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(phone.name)
+                        if let date = phone.pairedAt {
+                            Text("Paired \(date.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Button("Remove") { controller.remove(phone) }
+                }
+            }
         }
     }
 

@@ -111,15 +111,6 @@ private final class Flag: @unchecked Sendable {
     #expect(rig.received.messages.isEmpty)
 }
 
-@Test @MainActor func pairingStaysOpenOnlyWhileTheWindowIs() {
-    let rig = Rig()
-    #expect(!rig.mac.pairingOpen)
-    rig.agent.setPairingOpen(true)
-    #expect(rig.mac.pairingOpen)
-    rig.agent.setPairingOpen(false)
-    #expect(!rig.mac.pairingOpen)
-}
-
 @Test @MainActor func recordingWritesOneJSONLineForEveryFrame() async throws {
     let rig = Rig()
     await rig.connect()
@@ -161,7 +152,7 @@ private final class Flag: @unchecked Sendable {
     let rig = Rig(autoAllow: true)
     rig.agent.start()
     #expect(rig.mac.pairingOpen)
-    rig.agent.setPairingOpen(false)             // closing the window must not close pairing
+    rig.agent.cancelPairing()                   // closing the window must not close pairing
     #expect(rig.mac.pairingOpen)
     rig.phone.start()
     rig.phone.pair(with: rig.phone.macs[0])
@@ -193,8 +184,6 @@ private final class Flag: @unchecked Sendable {
 @Test @MainActor func withoutAutoAllowPairingStillWaitsForTheUser() async {
     let rig = Rig()
     rig.agent.start()
-    rig.agent.setPairingOpen(false)
-    #expect(!rig.mac.pairingOpen)
     rig.phone.start()
     rig.phone.pair(with: rig.phone.macs[0])
     await settle()
