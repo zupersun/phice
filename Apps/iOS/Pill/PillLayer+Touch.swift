@@ -31,7 +31,6 @@ extension PillLayer {
                 .onChanged { value in
                     let item = g.item(at: value.location)
                     guard menu.phase == .open else { return menu.move(to: value.location, over: item) }
-                    model.lastTouch = .now
                     menu.touchDown(over: item)
                     if !menu.isOpen { collapse() }
                 }
@@ -103,7 +102,6 @@ extension PillLayer {
     /// A finger landed: unless it moves first, `onHold` runs after the hold delay.
     private func beginPress(at point: CGPoint, onHold: @escaping @MainActor () -> Void) {
         holdTask?.cancel()
-        model.lastTouch = .now
         press = Press(at: point, t: Self.now)
         holdTask = Task {
             try? await Task.sleep(for: .seconds(Press.holdDelay))

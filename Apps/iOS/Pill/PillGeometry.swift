@@ -101,11 +101,14 @@ struct PillGeometry: Equatable {
     }
 }
 
-/// The pill's border dims after this long without a touch, and the next touch restores it.
-enum Dimming {
-    static let after = 30.0
-    /// The border's and glyph's brightness while dimmed, relative to normal: .85 → .16.
-    static let level = 0.19
+/// How bright the pill's white is. The pad holds the screen at minimum brightness, so nothing here
+/// goes faint: a pill dimmed to 16% white there was invisible on a real iPhone.
+enum PillInk {
+    static let glyph = 1.0
 
-    static func isDimmed(now: Double, lastTouch: Double) -> Bool { now - lastTouch >= after }
+    /// While the connecting sweep runs the border is held at half, so the blue reads over it
+    /// without the outline disappearing.
+    static func border(_ brightness: Double, connected: Bool) -> Double {
+        connected ? brightness : min(brightness, 0.5)
+    }
 }

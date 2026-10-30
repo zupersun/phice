@@ -19,7 +19,6 @@ struct PillLayer: View {
     @State var carried: Carried?
     @State var swallow = Swallow()
     @State var settling = false
-    @State var dimmed = false
     /// Filled from the merge until the Mac says otherwise: the drop failed, or the pill changed.
     @State var optimistic = false
     @State var resultsAtRelease = 0
@@ -41,12 +40,8 @@ struct PillLayer: View {
         GeometryReader { proxy in
             let g = PillGeometry(screen: proxy.size, side: model.pillSide)
             ZStack(alignment: .topLeading) {
-                Group {
-                    canvas(g)
-                    if !model.linkState.isConnected, !surfaceShown { ConnectingSweep(rect: g.pill) }
-                }
-                .opacity(dimmed ? Dimming.level : 1)
-                .animation(.easeInOut(duration: dimmed ? 1.5 : 0.2), value: dimmed)
+                canvas(g)
+                if !model.linkState.isConnected, !surfaceShown { ConnectingSweep(rect: g.pill) }
 
                 if surfaceShown { MorphSurface(surface: surface, geometry: g, border: border) }
                 if surface == .menu {
@@ -79,7 +74,6 @@ struct PillLayer: View {
             errors += 1
         }
         .onChange(of: model.pill) { optimistic = false }
-        .background { DimWatcher(model: model, dimmed: $dimmed).allowsHitTesting(false) }
         .onAppear { model.restoreSaved() }
         .sensoryFeedback(.selection, trigger: menu.highlight) { $1 != nil }
         .sensoryFeedback(.impact(weight: .light), trigger: holds)
@@ -101,8 +95,9 @@ struct PillLayer: View {
         }
     }
 
-    /// The white border's opacity: the appearance's brightness, dropped while the sweep runs.
-    var border: Double { model.linkState.isConnected ? model.appearance.borderBrightness : 0.25 }
+    var border: Double {
+        PillInk.border(model.appearance.borderBrightness, connected: model.linkState.isConnected)
+    }
 
     var motion: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.25)
@@ -145,23 +140,6 @@ struct PillLayer: View {
     }
 
     static var now: Double { Date.now.timeIntervalSinceReferenceDate }
-}
-
-/// Dims the pill 30 s after the last touch. Reads `lastTouch` alone, so the pad writing it on every
-/// touch re-evaluates this and nothing else.
-private struct DimWatcher: View {
-    let model: AppModel
-    @Binding var dimmed: Bool
-
-    var body: some View {
-        Color.clear.task(id: model.lastTouch) {
-            let last = model.lastTouch.timeIntervalSinceReferenceDate
-            dimmed = Dimming.isDimmed(now: PillLayer.now, lastTouch: last)
-            try? await Task.sleep(for: .seconds(Dimming.after))
-            guard !Task.isCancelled else { return }
-            dimmed = Dimming.isDimmed(now: PillLayer.now, lastTouch: last)
-        }
-    }
 }
 
 extension LinkState {

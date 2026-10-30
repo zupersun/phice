@@ -89,7 +89,7 @@ struct PillCanvas: View, Animatable {
 
     private func drawGlyph(_ ctx: GraphicsContext, at centre: CGPoint) {
         var ctx = ctx
-        ctx.opacity = 0.9
+        ctx.opacity = PillInk.glyph
         ctx.translateBy(x: centre.x, y: centre.y)
         ctx.scaleBy(x: frame.glyphPop * frame.stretch.width, y: frame.glyphPop * frame.stretch.height)
         var glyph = ctx.resolve(Image(systemName: filled ? "clipboard.fill" : "clipboard"))
