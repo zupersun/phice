@@ -70,8 +70,9 @@ import PhiceNet
     func start() {
         link.onChange = { [weak self] in self?.linkChanged() }
         link.onMessage = { [weak self] message in self?.receive(message) }
-        link.onPairingRequest = { [weak self] request in
-            guard let self else { return }
+        link.onPairing = { [weak self] event in
+            // shortcut: .withdrawn and .conflict are not shown yet; the window UI comes next.
+            guard let self, case let .request(request) = event else { return }
             if autoAllow {
                 NSLog("PHICE --auto-allow: accepted pairing request from %@", request.deviceName)
                 return request.respond(true)

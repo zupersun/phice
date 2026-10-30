@@ -6,10 +6,7 @@ import Testing
 @MainActor @Test func allowPairsThenCarriesMessagesBothWays() async {
     let rig = Rig()
     rig.mac.pairingOpen = true
-    rig.mac.onPairingRequest = { [rig] in
-        rig.requests.append($0.deviceName)
-        $0.respond(true)
-    }
+    rig.autoAnswer = true
     #expect(await rig.start())
     rig.showMac(pairingOpen: true)
     #expect(rig.phone.macs.map(\.paired) == [false])
@@ -19,10 +16,17 @@ import Testing
     #expect(await eventually { rig.phone.state == .connected })
     #expect(await eventually { rig.mac.connectedDevice == "Test iPhone" })
     #expect(rig.requests == ["Test iPhone"])
+    #expect(!rig.mac.pairingOpen)
     #expect(rig.phone.macs.map(\.paired) == [true])
-    let key = rig.phoneStore.key(for: rig.macStore.localID)
-    #expect(key?.count == 32)
-    #expect(key == rig.macStore.key(for: rig.phoneStore.localID))
+    let paired = rig.mac.pairedPhones
+    #expect(paired.map(\.name) == ["Test iPhone"])
+    #expect(paired.first?.pairedAt != nil)
+    // A fresh id for every pairing, kept beside the phone's key.
+    let mine = rig.phoneStore.entry(for: rig.macStore.localID)
+    #expect(paired.map(\.id) == [mine?.label])
+    #expect(mine?.label != rig.phoneStore.localID)
+    #expect(mine?.key.count == 32)
+    #expect(mine?.key == rig.macStore.key(for: paired.first?.id ?? ""))
     guard case .hello("Test iPhone", _)? = rig.atMac.first else {
         Issue.record("the first message was \(String(describing: rig.atMac.first)), not hello")
         return
@@ -37,15 +41,13 @@ import Testing
 @MainActor @Test func dontAllowStoresNothingAndDeliversNothing() async {
     let rig = Rig()
     rig.mac.pairingOpen = true
-    rig.mac.onPairingRequest = { [rig] in
-        rig.requests.append($0.deviceName)
-        $0.respond(false)
-    }
+    rig.autoAnswer = false
     #expect(await rig.start())
     rig.showMac(pairingOpen: true)
 
     rig.phone.pair(with: rig.phone.macs[0])
     #expect(await eventually { rig.requests.count == 1 && rig.phone.state == .searching })
+    #expect(!rig.mac.pairingOpen)
     rig.phone.send(.enabled(true))
     try? await Task.sleep(for: .milliseconds(200))
     #expect(rig.atMac.isEmpty)
@@ -55,7 +57,6 @@ import Testing
 
 @MainActor @Test func aMacWithPairingClosedRefusesANewPhone() async {
     let rig = Rig()
-    rig.mac.onPairingRequest = { [rig] in rig.requests.append($0.deviceName) }
     #expect(await rig.start())
     // The phone believes the flag; the Mac does not.
     rig.showMac(pairingOpen: true)
@@ -123,7 +124,8 @@ import Testing
     try? await Task.sleep(for: .milliseconds(300))
     #expect(rig.phone.state == .searching)
     #expect(rig.hellos == 1)
-    #expect(rig.macChanges == ["Test iPhone", nil])
+    #expect(rig.macChanges.first == "Test iPhone")
+    #expect(rig.macChanges.dropFirst().allSatisfy { $0 == nil })
     // The Mac's listener no longer holds the key either.
     let stale = RawClient(port: rig.mac.port!, identity: phoneID, key: oldKey)
     #expect(await eventually { stale.refused })

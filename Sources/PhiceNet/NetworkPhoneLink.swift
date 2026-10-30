@@ -33,6 +33,8 @@ extension Sighting {
 
     private struct Attempt {
         let macID: String
+        /// Fresh for every pairing, so a pairing never meets an old key on the Mac.
+        let phoneID = UUID().uuidString
         let secret: Curve25519.KeyAgreement.PrivateKey
         let connection: NWConnection
         var channel: FrameChannel<Handshake>?
@@ -43,7 +45,8 @@ extension Sighting {
     private let timing: LinkTiming
     private let browses: Bool
     private var browser: NWBrowser?
-    private var sightings: [String: Sighting] = [:]
+    /// Every endpoint seen for each id, so one advertising another Mac's id cannot hide it.
+    private var sightings: [String: [Sighting]] = [:]
     /// The connection to the paired Mac, from the first attempt until it closes.
     private var link: NWConnection?
     private var session: FrameChannel<MacToPhone>?
@@ -71,11 +74,11 @@ extension Sighting {
     }
 
     public func pair(with mac: DiscoveredMac) {
-        guard state != .idle, let sighting = sightings[mac.id] else { return }
+        guard state != .idle, let endpoint = endpoint(for: mac.id) else { return }
         hangUp()
         pairing?.connection.cancel()
         let parameters = Pairing.parameters(keys: [(Pairing.identity, Pairing.publicKey)])
-        let connection = NWConnection(to: sighting.endpoint, using: parameters)
+        let connection = NWConnection(to: endpoint, using: parameters)
         pairing = Attempt(macID: mac.id, secret: .init(), connection: connection)
         state = .pairing
         connection.stateUpdateHandler = { [weak self] state in
@@ -90,11 +93,12 @@ extension Sighting {
                     }
                     self.pairing?.channel = channel
                     let mine = attempt.secret.publicKey.rawRepresentation
-                    channel.send(Handshake.request(phoneID: self.store.localID,
+                    channel.send(Handshake.request(phoneID: attempt.phoneID,
                                                    deviceName: self.deviceName, publicKey: mine))
                 case .waiting, .failed: connection.cancel()
                 case .cancelled:
                     self.pairing = nil
+                    self.failures += 1  // the next try goes to the next endpoint
                     self.state = .searching
                     self.reconnect()
                 default: break
@@ -132,7 +136,7 @@ extension Sighting {
 
     /// What the browser saw; tests call it directly with a loopback endpoint.
     func see(_ found: [Sighting]) {
-        sightings = Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        sightings = Dictionary(grouping: found, by: \.id)
         refreshMacs()
         reconnect()
     }
@@ -163,10 +167,16 @@ extension Sighting {
     }
 
     private func refreshMacs() {
-        macs = sightings.values.map {
-            DiscoveredMac(id: $0.id, name: $0.name, paired: store.key(for: $0.id) != nil,
-                          pairingOpen: $0.pairingOpen)
+        macs = sightings.map { id, seen in
+            DiscoveredMac(id: id, name: seen[0].name, paired: store.key(for: id) != nil,
+                          pairingOpen: seen.contains(where: \.pairingOpen))
         }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
+    }
+
+    /// Each failure moves on to the next endpoint seen for the id.
+    private func endpoint(for id: String) -> NWEndpoint? {
+        guard let seen = sightings[id], !seen.isEmpty else { return nil }
+        return seen[failures % seen.count].endpoint
     }
 
     // MARK: The paired Mac
@@ -174,15 +184,17 @@ extension Sighting {
     /// Connect to the paired Mac if it is in sight and nothing else is under way.
     private func reconnect() {
         guard state != .idle, pairing == nil, link == nil, retry == nil else { return }
-        guard let macID = store.peers.first, let key = store.key(for: macID) else {
+        guard let macID = store.peers.first, let entry = store.entry(for: macID) else {
             return state = .searching
         }
-        guard let mac = sightings[macID] else { return waitToSee() }
+        guard let endpoint = endpoint(for: macID) else { return waitToSee() }
         unseen?.cancel()
         unseen = nil
         state = .connecting
-        let parameters = Pairing.parameters(keys: [(store.localID, key)])
-        let connection = NWConnection(to: mac.endpoint, using: parameters)
+        // The id this phone paired with; keys from before ids were per pairing used the device's.
+        let phoneID = entry.label.isEmpty ? store.localID : entry.label
+        let parameters = Pairing.parameters(keys: [(phoneID, entry.key)])
+        let connection = NWConnection(to: endpoint, using: parameters)
         link = connection
         connection.stateUpdateHandler = { [weak self] state in
             MainActor.assumeIsolated {
@@ -256,14 +268,14 @@ extension Sighting {
         guard case let .accept(macID, macKey, proof) = message, macID == attempt.macID else {
             return attempt.connection.cancel()  // a refusal, or not an answer at all
         }
-        let transcript = Pairing.transcript(phoneID: store.localID, deviceName: deviceName,
+        let transcript = Pairing.transcript(phoneID: attempt.phoneID, deviceName: deviceName,
                                             phoneKey: attempt.secret.publicKey.rawRepresentation,
                                             macID: macID, macKey: macKey)
         guard let psk = try? Pairing.psk(attempt.secret, peer: macKey, transcript: transcript),
               Pairing.verify(proof, psk: psk, transcript: transcript)
         else { return attempt.connection.cancel() }
         for other in store.peers where other != macID { store.setKey(nil, for: other) }
-        store.setKey(psk, for: macID)
+        store.setKey(psk, label: attempt.phoneID, for: macID)
         pairing = nil
         attempt.channel?.close()
         refreshMacs()

@@ -25,6 +25,18 @@ enum Pairing {
     static let identity = "phice-pair-v1"
     static let publicKey = Data(SHA256.hash(data: Data(identity.utf8)))
 
+    /// What the Mac shows and keeps for a name a phone sent: no control, format or separator
+    /// characters (a right-to-left override would flip the alert), at most 32 scalars, never blank.
+    static func displayName(_ raw: String) -> String {
+        let hidden: Set<Unicode.GeneralCategory> = [.control, .format, .lineSeparator,
+                                                     .paragraphSeparator]
+        let shown = raw.unicodeScalars.filter { !hidden.contains($0.properties.generalCategory) }
+        let trimmed = String(String.UnicodeScalarView(shown)).trimmingCharacters(in: .whitespaces)
+        let name = String(String.UnicodeScalarView(trimmed.unicodeScalars.prefix(32)))
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "iPhone" : name
+    }
+
     /// Every field length-prefixed, so no two different transcripts serialise alike.
     static func transcript(phoneID: String, deviceName: String, phoneKey: Data, macID: String,
                            macKey: Data) -> Data {

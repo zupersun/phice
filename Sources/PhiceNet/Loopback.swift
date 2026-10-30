@@ -1,3 +1,4 @@
+import Foundation
 import PhiceCore
 
 /// An in-memory phone and Mac wired to each other, so both apps can be built and tested before
@@ -34,11 +35,17 @@ public enum Loopback {
     public func pair(with mac: DiscoveredMac) {
         guard let peer else { return }
         state = .pairing
-        peer.onPairingRequest?(PairingRequest(deviceName: "Loopback iPhone") { [weak self, weak peer] ok in
+        let request = PairingRequest(deviceName: "Loopback iPhone") { [weak self, weak peer] ok in
             self?.state = ok ? .connected : .searching
+            if ok, peer?.pairedPhones.isEmpty == true {
+                peer?.pairedPhones = [PairedPhone(id: "loopback", name: "Loopback iPhone",
+                                                  pairedAt: Date())]
+            }
             peer?.connectedDevice = ok ? "Loopback iPhone" : nil
             self?.refresh()
-        })
+        }
+        peer.onPairing?(.request(request))
+        peer.onPairingRequest?(request)
     }
 
     public func send(_ message: PhoneToMac) {
@@ -57,11 +64,20 @@ public enum Loopback {
     weak var peer: LoopbackPhoneLink?
     public var pairingOpen = false { didSet { peer?.refresh() } }
     public internal(set) var connectedDevice: String? { didSet { onChange?() } }
+    public internal(set) var pairedPhones: [PairedPhone] = [] { didSet { onChange?() } }
     public var onChange: (@MainActor () -> Void)?
+    /// Requests only; the window's timing (closing after 60 s or an answer) is not modelled here.
+    public var onPairing: (@MainActor (PairingEvent) -> Void)?
+    /// The requests alone, as the iOS dev build and its tests take them.
     public var onPairingRequest: (@MainActor (PairingRequest) -> Void)?
     public var onMessage: (@MainActor (PhoneToMac) -> Void)?
 
     public func start() {}
+
+    public func remove(_ phoneID: String) {
+        pairedPhones.removeAll { $0.id == phoneID }
+        if pairedPhones.isEmpty { peer?.forget() }
+    }
 
     public func send(_ message: MacToPhone) {
         guard connectedDevice != nil else { return }

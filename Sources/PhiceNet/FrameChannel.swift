@@ -10,6 +10,8 @@ struct LinkTiming {
     /// A connection not ready by then is given up on. A cold Bonjour connection, racing every
     /// path at once, took 3.5 s to become ready (measured).
     var handshake = Duration.seconds(10)
+    /// How long `pairingOpen` stays true once the UI opens it.
+    var pairingWindow = Duration.seconds(60)
     var firstRetry = Duration.milliseconds(100)
     var maxRetry = Duration.seconds(2)
 }

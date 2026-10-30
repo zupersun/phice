@@ -5,12 +5,12 @@ import PhiceCore
 
 /// The Mac's side: one TLS-PSK listener, advertised over Bonjour and peer-to-peer Wi-Fi. A paired
 /// phone authenticates with its own key and gets a session; a new phone uses the public pairing key
-/// and gets a connection that carries only `Handshake`.
+/// and gets a connection that carries only `Handshake`, and only while the pairing window is open.
 @MainActor public final class NetworkMacLink: MacLink {
     public var pairingOpen = false {
         didSet {
             guard pairingOpen != oldValue else { return }
-            if !pairingOpen { refusePending() }
+            if pairingOpen { openWindow() } else { closeWindow() }
             advertise()
             onChange?()
         }
@@ -18,9 +18,26 @@ import PhiceCore
     public private(set) var connectedDevice: String? {
         didSet { if connectedDevice != oldValue { onChange?() } }
     }
+    public var pairedPhones: [PairedPhone] {
+        store.peers.compactMap { id in
+            store.entry(for: id).map {
+                PairedPhone(id: id, name: Pairing.displayName($0.label), pairedAt: $0.date)
+            }
+        }
+    }
     public var onChange: (@MainActor () -> Void)?
-    public var onPairingRequest: (@MainActor (PairingRequest) -> Void)?
+    public var onPairing: (@MainActor (PairingEvent) -> Void)?
     public var onMessage: (@MainActor (PhoneToMac) -> Void)?
+
+    /// Pairing connections held at once, the one being asked about included. More than one lets a
+    /// second asker show up as a conflict instead of waiting, unseen, behind the first.
+    static let pairingSlots = 4
+
+    private struct Claim {
+        let metadata: sec_protocol_metadata_t
+        let identity: String
+        let at: ContinuousClock.Instant
+    }
 
     private let macName: String
     private let store: any KeyStore
@@ -34,13 +51,16 @@ import PhiceCore
     /// Phones the running listener holds keys for.
     private var phones: Set<String> = []
     /// The identity each handshake in flight offered, as TLS reported it to `admit`.
-    private var claimed: [ObjectIdentifier: (metadata: sec_protocol_metadata_t, identity: String)] = [:]
+    private var claimed: [ObjectIdentifier: Claim] = [:]
     private var session: FrameChannel<PhoneToMac>?
+    private var sessionPhone: String?
     /// Authenticated, but yet to say anything.
-    private var newcomers: [FrameChannel<PhoneToMac>] = []
+    private var newcomers: [(channel: FrameChannel<PhoneToMac>, phoneID: String)] = []
+    /// Pairing connections, which last no longer than the window.
     private var pairings: [FrameChannel<Handshake>] = []
     /// The one request the user is being asked about.
     private var pending: FrameChannel<Handshake>?
+    private var window: Task<Void, Never>?
 
     public convenience init(macName: String, keyStore: any KeyStore = KeychainKeyStore()) {
         self.init(macName: macName, keyStore: keyStore, timing: LinkTiming(), advertises: true)
@@ -60,6 +80,20 @@ import PhiceCore
 
     public func send(_ message: MacToPhone) {
         session?.send(message)
+    }
+
+    public func remove(_ phoneID: String) {
+        store.setKey(nil, for: phoneID)
+        phones.remove(phoneID)
+        if sessionPhone == phoneID {
+            session?.close()
+            session = nil
+            sessionPhone = nil
+            connectedDevice = nil
+        }
+        newcomers.filter { $0.phoneID == phoneID }.forEach { $0.channel.close() }
+        relisten()
+        onChange?()
     }
 
     // MARK: Listening
@@ -125,12 +159,19 @@ import PhiceCore
         listener.service = NWListener.Service(type: Pairing.serviceType, txtRecord: txt)
     }
 
+    /// Claims expire rather than being flushed, so a flood of handshakes cannot evict a paired
+    /// phone's claim in flight; pairing ones are capped, other strangers fail at TLS.
     private func admit(_ metadata: sec_protocol_metadata_t, _ identity: String) -> Bool {
-        let pairs = identity == Pairing.identity
-        guard pairs ? pairingOpen && pending == nil : phones.contains(identity) else { return false }
-        // shortcut: entries of handshakes that fail after this are dropped only here; bounded, fine.
-        if claimed.count > 32 { claimed.removeAll() }
-        claimed[ObjectIdentifier(metadata as AnyObject)] = (metadata, identity)
+        let now = ContinuousClock.now
+        claimed = claimed.filter { now - $0.value.at < timing.handshake }
+        if identity == Pairing.identity {
+            let inFlight = claimed.values.filter { $0.identity == Pairing.identity }.count
+            guard pairingOpen, pairings.count + inFlight < Self.pairingSlots else { return false }
+        } else {
+            guard phones.contains(identity), claimed.count < 256 else { return false }
+        }
+        let claim = Claim(metadata: metadata, identity: identity, at: now)
+        claimed[ObjectIdentifier(metadata as AnyObject)] = claim
         return true
     }
 
@@ -163,27 +204,28 @@ import PhiceCore
                 self?.handshake($0, on: connection)
             })
         } else {
-            newcomers.append(FrameChannel(connection, deadAfter: timing.deadAfter) { [weak self] in
+            guard phones.contains(claim.identity) else { return connection.cancel() }  // removed since
+            let channel = FrameChannel<PhoneToMac>(connection, deadAfter: timing.deadAfter) {
+                [weak self] in
                 self?.received($0, on: connection, from: claim.identity)
-            })
+            }
+            newcomers.append((channel, claim.identity))
         }
     }
 
     private func received(_ message: PhoneToMac, on connection: NWConnection, from phoneID: String) {
         if session?.connection !== connection {
-            let index = newcomers.firstIndex { $0.connection === connection }
+            let index = newcomers.firstIndex { $0.channel.connection === connection }
             guard let index else { return }
             take(newcomers.remove(at: index))
         }
-        guard let session else { return }
         switch message {
         case .forget:
-            store.setKey(nil, for: phoneID)
-            session.close()
-            relisten()
-        case .hello(let deviceName, _):
-            connectedDevice = deviceName
-            onMessage?(message)
+            remove(phoneID)
+        case let .hello(deviceName, appVersion):
+            let name = Pairing.displayName(deviceName)
+            connectedDevice = name
+            onMessage?(.hello(deviceName: name, appVersion: appVersion))
         default:
             onMessage?(message)
         }
@@ -191,48 +233,93 @@ import PhiceCore
 
     /// One phone at a time: a new authenticated connection takes over on its first message. A
     /// duplicate the phone raced over another path and dropped never speaks, so it never wins.
-    private func take(_ channel: FrameChannel<PhoneToMac>) {
+    private func take(_ newcomer: (channel: FrameChannel<PhoneToMac>, phoneID: String)) {
         session?.close()
         // Passing through nil tells the app a new connection began, even with the same device name.
         connectedDevice = nil
-        channel.beat(MacToPhone.heartbeat, every: timing.heartbeat)
-        session = channel
+        newcomer.channel.beat(MacToPhone.heartbeat, every: timing.heartbeat)
+        session = newcomer.channel
+        sessionPhone = newcomer.phoneID
     }
 
     private func closed(_ connection: NWConnection) {
         if session?.connection === connection {
             session = nil
+            sessionPhone = nil
             connectedDevice = nil
         }
-        if pending?.connection === connection { pending = nil }
         pairings.removeAll { $0.connection === connection }
-        newcomers.removeAll { $0.connection === connection }
+        newcomers.removeAll { $0.channel.connection === connection }
+        if pending?.connection === connection {
+            pending = nil
+            onPairing?(.withdrawn)
+        }
     }
 
     // MARK: Pairing
 
+    private func openWindow() {
+        window = Task { [weak self, timing] in
+            try? await Task.sleep(for: timing.pairingWindow)
+            guard !Task.isCancelled else { return }
+            self?.pairingOpen = false
+        }
+    }
+
+    /// The end of the window is every pairing connection's deadline, however much it sends.
+    private func closeWindow() {
+        window?.cancel()
+        window = nil
+        if let pending {
+            self.pending = nil
+            pairings.removeAll { $0 === pending }
+            pending.finish(with: Handshake.refuse)
+            onPairing?(.withdrawn)
+        }
+        let open = pairings
+        pairings = []
+        open.forEach { $0.close() }
+    }
+
     private func handshake(_ message: Handshake, on connection: NWConnection) {
         guard let channel = pairings.first(where: { $0.connection === connection }) else { return }
-        guard case let .request(phoneID, deviceName, publicKey) = message, pending == nil, pairingOpen,
-              UUID(uuidString: phoneID) != nil,
-              (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: publicKey)) != nil,
-              let onPairingRequest
+        // A request never replaces a key: the phone takes a fresh id for every pairing.
+        guard case let .request(phoneID, deviceName, publicKey) = message, pairingOpen,
+              UUID(uuidString: phoneID) != nil, !store.peers.contains(phoneID),
+              (try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: publicKey)) != nil
         else { return channel.close() }
+        if let pending {
+            // The same phone asking twice is misbehaving; two phones asking is a conflict.
+            return pending === channel ? channel.close() : conflict(pending, channel)
+        }
+        guard let onPairing else { return channel.close() }
         pending = channel
-        channel.expire(after: nil)  // the user takes as long as they take
-        let shown = String(deviceName.prefix(64))
-        onPairingRequest(PairingRequest(deviceName: shown) { [weak self] allow in
+        channel.expire(after: nil)  // the user takes their time; the window's end still applies
+        let shown = Pairing.displayName(deviceName)
+        onPairing(.request(PairingRequest(deviceName: shown) { [weak self] allow in
             self?.answer(allow, on: channel, phoneID: phoneID, deviceName: deviceName,
                          publicKey: publicKey)
-        })
+        }))
+    }
+
+    /// Nobody can tell which of two askers is the user's phone, so neither gets in.
+    private func conflict(_ first: FrameChannel<Handshake>, _ second: FrameChannel<Handshake>) {
+        pending = nil
+        pairings.removeAll { $0 === first || $0 === second }
+        first.finish(with: Handshake.refuse)
+        second.finish(with: Handshake.refuse)
+        onPairing?(.conflict)
+        pairingOpen = false
     }
 
     private func answer(_ allow: Bool, on channel: FrameChannel<Handshake>, phoneID: String,
                         deviceName: String, publicKey: Data) {
-        guard pending === channel else { return }  // answered already, or the phone left
+        guard pending === channel else { return }  // answered, withdrawn, or refused in a conflict
         pending = nil
+        pairings.removeAll { $0 === channel }  // it outlives the window, to carry the answer
         channel.expire(after: timing.deadAfter)
-        guard allow else { return channel.send(Handshake.refuse) }
+        defer { pairingOpen = false }  // one answer per window
+        guard allow else { return channel.finish(with: Handshake.refuse) }
         let secret = Curve25519.KeyAgreement.PrivateKey()
         let macID = store.localID
         let macKey = secret.publicKey.rawRepresentation
@@ -241,18 +328,12 @@ import PhiceCore
         guard let psk = try? Pairing.psk(secret, peer: publicKey, transcript: transcript) else {
             return channel.close()
         }
-        store.setKey(psk, for: phoneID)
+        store.setKey(psk, label: Pairing.displayName(deviceName), for: phoneID)
+        onChange?()
         // Accept only once the listener knows the key, so the phone's reconnect finds it.
         relisten {
             let proof = Pairing.proof(psk: psk, transcript: transcript)
-            channel.send(Handshake.accept(macID: macID, publicKey: macKey, proof: proof))
+            channel.finish(with: Handshake.accept(macID: macID, publicKey: macKey, proof: proof))
         }
-    }
-
-    private func refusePending() {
-        guard let pending else { return }
-        self.pending = nil
-        pending.send(Handshake.refuse)
-        pending.expire(after: timing.deadAfter)
     }
 }
