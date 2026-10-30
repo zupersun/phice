@@ -37,17 +37,24 @@ struct ClipboardColumn: View {
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
                     .accessibilityAction(named: "Paste") { paste(item) }
+                if index < shown.count - 1 {
+                    Rectangle().fill(Palette.line)
+                        .frame(width: rect.width, height: 1)
+                        .position(x: rect.midX, y: rect.maxY + PillGeometry.rowGap / 2)
+                }
             }
         }
         .allowsHitTesting(false)
     }
 }
 
-/// One clipboard entry: an icon well and a one-line preview.
+/// One clipboard entry: an icon well and a one-line preview, on the column's black. Dragged out it
+/// becomes a small pill of its own: black, with the pill's white border.
 struct ClipRow: View {
     let item: ClipItem
     var ghost = false
     var lifted = false
+    var border = 1.0
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 10)
@@ -61,15 +68,16 @@ struct ClipRow: View {
         }
         .padding(.horizontal, 11)
         .frame(maxHeight: .infinity)
-        .background(ghost ? Color.clear : Palette.raise, in: shape)
+        .background(lifted ? Color.black : Color.clear, in: shape)
         .overlay {
             if ghost {
                 shape.strokeBorder(Palette.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
-            if lifted { shape.strokeBorder(Palette.accent, lineWidth: 1) }
+            if lifted {
+                shape.strokeBorder(Color.white.opacity(border), lineWidth: PillGeometry.border)
+            }
         }
         .opacity(ghost ? 0.3 : 1)
-        .shadow(color: .black.opacity(lifted ? 0.7 : 0), radius: 12, y: 10)
         .accessibilityElement(children: .combine)
     }
 

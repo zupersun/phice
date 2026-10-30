@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The surface the pill grows into: itself, the hold menu, or the clipboard column. One shape whose
-/// frame and corners spring between the three, so the pill visibly becomes each of them. The menu
-/// wears the pill's own black and white border; only the column is a panel.
+/// frame and corners spring between the three, so the pill visibly becomes each of them. All three
+/// wear the pill's own black fill and white border.
 enum Surface {
     case pill, menu, column
 
@@ -27,10 +27,8 @@ struct MorphSurface: View {
     var body: some View {
         let rect = surface.rect(geometry)
         let shape = RoundedRectangle(cornerRadius: surface.cornerRadius(geometry))
-        let isPanel = surface == .column
-        shape.fill(isPanel ? Palette.panel : Color.black)
-            .overlay(shape.strokeBorder(isPanel ? Palette.line : Color.white.opacity(border),
-                                        lineWidth: isPanel ? 1 : PillGeometry.border))
+        shape.fill(Color.black)
+            .overlay(shape.strokeBorder(Color.white.opacity(border), lineWidth: PillGeometry.border))
             .frame(width: rect.width, height: rect.height)
             .position(x: rect.midX, y: rect.midY)
             .allowsHitTesting(false)

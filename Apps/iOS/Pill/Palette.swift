@@ -4,8 +4,6 @@ import SwiftUI
 enum Palette {
     static let on = Color(hex: 0x30d158)
     static let off = Color(hex: 0xff453a)
-    static let panel = Color(hex: 0x15151a)
-    static let raise = Color(hex: 0x1c1c22)
     static let well = Color(hex: 0x2d2d35)
     static let line = Color(hex: 0x2a2a31)
     static let ink = Color(hex: 0xe9e8e3)

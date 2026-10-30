@@ -60,7 +60,7 @@ struct PillLayer: View {
                 if menu.phase == .open || menu.phase == .pressing { menuTouches(g) }
                 if surface == .pill || press != nil { pillTouches(g) }
                 if let carried {
-                    ClipRow(item: carried.item, lifted: true)
+                    ClipRow(item: carried.item, lifted: true, border: border)
                         .frame(width: 187, height: PillGeometry.rowHeight)
                         .position(x: carried.at.x, y: carried.at.y - 36)
                         .allowsHitTesting(false)
