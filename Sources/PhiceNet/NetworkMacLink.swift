@@ -251,8 +251,10 @@ import PhiceCore
         pairings.removeAll { $0.connection === connection }
         newcomers.removeAll { $0.channel.connection === connection }
         if pending?.connection === connection {
+            // Closing the window too, so nobody can step in the moment the asking phone leaves.
             pending = nil
             onPairing?(.withdrawn)
+            pairingOpen = false
         }
     }
 
