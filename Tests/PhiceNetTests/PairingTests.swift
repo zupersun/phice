@@ -60,12 +60,11 @@ import Testing
     #expect(await eventually { rig.macStore.peers == [next.phoneID] })
 }
 
-/// The window closes by itself, and a pairing connection gets no longer than the window however it
-/// trickles bytes: inbound data does not buy time.
-@MainActor @Test func thePairingWindowClosesByItselfAndTakesItsConnections() async {
-    var timing = LinkTiming.fast
-    timing.pairingWindow = .seconds(1)
-    let rig = Rig(timing: timing)
+/// A pairing connection lasts no longer than the window however it trickles bytes: inbound data
+/// does not buy time. The window keeps its full length here and is ended as the timer ends it, so
+/// nothing races the setup (a 1 s window once ran out under a busy suite before the request came).
+@MainActor @Test func aPairingConnectionLastsNoLongerThanTheWindow() async {
+    let rig = Rig()
     rig.mac.pairingOpen = true
     #expect(await rig.start())
 
@@ -75,14 +74,28 @@ import Testing
     waiting.request(name: "iPhone")
     #expect(await eventually { rig.events == ["request iPhone"] })
     trickler.connection.send(content: Data([0, 0, 0, 100]), completion: .idempotent)
-    for _ in 0 ..< 15 {  // a frame that never completes, a byte at a time, until past the window
+
+    rig.mac.pairingOpen = false
+    // A frame that never completes, a byte at a time: enough to keep any idle limit at bay.
+    for _ in 0 ..< 20 where !trickler.ended {
         trickler.connection.send(content: Data([0x20]), completion: .idempotent)
         try? await Task.sleep(for: .milliseconds(100))
     }
-    #expect(!rig.mac.pairingOpen)
-    #expect(rig.events == ["request iPhone", "withdrawn"])
-    #expect(waiting.answers == [.refuse])
     #expect(trickler.ended)
+    #expect(rig.events == ["request iPhone", "withdrawn"])
+    #expect(await eventually { waiting.answers == [.refuse] })
+}
+
+/// The window closes by itself. Nothing else happens in this test, so there is nothing to race.
+@MainActor @Test func thePairingWindowClosesByItself() async {
+    var timing = LinkTiming.fast
+    timing.pairingWindow = .milliseconds(300)
+    let rig = Rig(timing: timing)
+    #expect(await rig.start())
+    rig.mac.pairingOpen = true
+    #expect(rig.mac.pairingOpen)
+    #expect(await eventually { !rig.mac.pairingOpen })
+    #expect(rig.macChanges.count == 2)
 }
 
 /// Only four pairing handshakes at a time, and a flood of them never disturbs a paired phone's own.

@@ -67,11 +67,13 @@ func aBadFrameDropsTheConnection(frame: Data) async {
 
     let client = RawClient(port: rig.mac.port!, identity: phoneID, key: key)
     #expect(await eventually { client.ready })
+    // Timed from before the hello, never from noticing it: under a busy suite the test can notice
+    // late, and the drop, which is due 500 ms after the hello arrives, then looks early.
+    let quietSince = ContinuousClock.now
     client.send(.hello(deviceName: "Raw", appVersion: "1"))
     #expect(await eventually { rig.mac.connectedDevice == "Raw" })
-    let quietSince = ContinuousClock.now
     #expect(await eventually { client.ended && rig.mac.connectedDevice == nil })
-    #expect(ContinuousClock.now - quietSince >= .milliseconds(400))
+    #expect(ContinuousClock.now - quietSince >= .milliseconds(500))
 }
 
 @Test func bothSidesDeriveOneKeyAndTheProofBindsTheTranscript() throws {
