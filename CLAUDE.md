@@ -8,9 +8,9 @@ agent is meant to be forgotten.
 - Design (approved mockups, including the animated swallow):
   https://claude.ai/artifact/ABsR71QBPUtLGgDbPhjzhn
 - Build plan, decisions and phases: `~/.claude/plans/i-want-to-build-shimmering-pudding.md`
-- The Python air mouse this replaces is archived on branch `python-air-mouse` (tag
-  `v0.2.1-python`, both on GitHub), to be built on later: `git worktree add .worktrees/pointer
-  python-air-mouse` checks it out. `web/` stays until the Swift version ships: Vercel deploys the
+- The Python air mouse this replaces is archived on branch `air-mouse` (its last release
+  is `v0.2.1`), to be built on later: `git worktree add .worktrees/air-mouse air-mouse` checks it
+  out. `web/` stays until the Swift version ships: Vercel deploys the
   hosted page from it.
 
 ## Commands
@@ -85,7 +85,7 @@ Carried over from the Python version, where each was learned the hard way, plus 
    applies Natural only to real devices; Scroll Reverser, Mos and LinearMouse negate any event
    that looks like a mouse's, posted ones included. The poster tags each scroll event it posts,
    watches it come out of a listen-only tap behind every reverser, and pre-flips the next ones
-   when the sign has flipped. Port it from `src/phice/cursor_backend.py` on `python-air-mouse`.
+   when the sign has flipped. Port it from `src/phice/cursor_backend.py` on `air-mouse`.
    Do not replace it with reading `com.apple.swipescrolldirection`.
 3. **Never change `com.phice.app` and never lose the "Phice Self Signed" certificate.** macOS
    keys the Accessibility grant to the designated requirement (identifier + certificate root);
@@ -113,7 +113,7 @@ Carried over from the Python version, where each was learned the hard way, plus 
 ## Working in parallel
 
 - Worktrees live in `.worktrees/<branch>` (gitignored). Each piece of work owns its paths and
-  commits only to its own branch; the lead merges into `trackpad`.
+  commits only to its own branch; the lead merges into `main`.
 - `Apps/project.yml` uses whole folders as sources, so adding files never touches the project.
   Change `project.yml` or `Package.swift` only through the lead.
 - Other sessions may commit to the main checkout while you work: re-read before editing.
