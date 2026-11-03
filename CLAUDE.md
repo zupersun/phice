@@ -9,8 +9,9 @@ agent is meant to be forgotten.
   https://claude.ai/artifact/ABsR71QBPUtLGgDbPhjzhn
 - Build plan, decisions and phases: `~/.claude/plans/i-want-to-build-shimmering-pudding.md`
 - The Python air mouse this replaces is archived on branch `python-air-mouse` (tag
-  `v0.2.1-python`), to be built on later. `web/` stays until the Swift version ships: Vercel
-  deploys the hosted page from it.
+  `v0.2.1-python`, both on GitHub), to be built on later: `git worktree add .worktrees/pointer
+  python-air-mouse` checks it out. `web/` stays until the Swift version ships: Vercel deploys the
+  hosted page from it.
 
 ## Commands
 
