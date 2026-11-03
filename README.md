@@ -24,16 +24,6 @@ swift test                     # the suite
 cd Apps && xcodegen generate   # then build the PhiceMac and PhiceiOS schemes
 ```
 
-Architecture, and the constraints that are not negotiable, are in
-[CLAUDE.md](CLAUDE.md).
-
-## The air mouse
-
-The earlier Phice, an air mouse driven by a web page on the phone, is parked on
-the [`python-air-mouse`](https://github.com/zupersun/phice/tree/python-air-mouse)
-branch. Its last build is
-[Phice 0.2.1](https://github.com/zupersun/phice/releases/tag/v0.2.1).
-
 <div align="center">
 
 MIT · © 2026 Jasper Sun
